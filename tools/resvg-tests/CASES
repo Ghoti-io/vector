@@ -1,0 +1,29 @@
+# The cases that are not run, one rule per line: <glob or path> TAB <class> TAB <reason>.
+#
+# A case here is EXCLUDED: it is never given to the runner and so cannot pass,
+# but it stays in the headline denominator of the score (PASS over all cases).
+# The score file also prints PASS over all cases but the excluded ones, labelled,
+# so that the milestone's reach can be read without the second ratio ever being
+# read as the first.
+#
+# The path is relative to the corpus's tests/ directory. A rule matches with
+# fnmatch, where * crosses directories. Globs are for OUT_OF_SCOPE only: a
+# directory of cases that one decision puts outside this milestone is one rule,
+# not hundreds. ENVIRONMENT and REFERENCE rules name a case exactly.
+#
+# The classes are closed: OUT_OF_SCOPE (a feature this milestone does not read,
+# the reason naming the non-goal or the phase that excludes it), ENVIRONMENT (a
+# case that needs something the harness does not provide), REFERENCE (a case
+# whose reference the oracles show to be wrong, the reason giving the evidence).
+# score.py fails on an unknown class, a reason of fewer than three words, a rule
+# that matches no case, a case matched by two rules, and a glob outside
+# OUT_OF_SCOPE.
+filters/*	OUT_OF_SCOPE	filters are milestone 1 non-goal, read in a later milestone
+text/*	OUT_OF_SCOPE	text is a milestone 1 non-goal, read in a later milestone
+structure/image/*	OUT_OF_SCOPE	the image element is a milestone 1 non-goal, read in a later milestone
+painting/image-rendering/*	OUT_OF_SCOPE	image rendering applies to the image element, a milestone 1 non-goal, read in a later milestone
+structure/style/*	OUT_OF_SCOPE	style sheets and selectors are a milestone 1 non-goal, read in a later milestone
+masking/mask/*	OUT_OF_SCOPE	masks are a milestone 1 non-goal, read in a later milestone
+paint-servers/pattern/*	OUT_OF_SCOPE	patterns are a milestone 1 non-goal, read in a later milestone
+painting/mix-blend-mode/*	OUT_OF_SCOPE	blend modes are a milestone 1 non-goal, read in a later milestone
+painting/isolation/*	OUT_OF_SCOPE	isolation exists for blend modes, a milestone 1 non-goal, read in a later milestone

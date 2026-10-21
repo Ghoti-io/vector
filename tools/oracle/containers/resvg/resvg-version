@@ -1,0 +1,2 @@
+#!/bin/sh
+printf "resvg %s\n" "$(resvg --version)"

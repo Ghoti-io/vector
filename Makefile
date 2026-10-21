@@ -261,7 +261,7 @@ TESTFLAGS := `PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs --cfla
 
 # coverage clears this: --coverage links the gcov runtime, whose mangle_path
 # check-symbols is right to reject in a shipping library.
-TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples
+TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted
 
 VALGRIND_FLAGS := --leak-check=full --show-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=1 --suppressions=tests/valgrind.supp
 
@@ -405,6 +405,57 @@ examples: $(APP_DIR)/$(TARGET) $(EXAMPLES) ## Build the examples
 # built program sets LD_LIBRARY_PATH (CONVENTIONS section 6).
 run-examples: $(EXAMPLES) ## Build and run every example; fail on one that exits non-zero
 	@LD_LIBRARY_PATH="$(TEST_LD_PATH)" sh tools/run-examples.sh $(BUILD_DIR)/examples-out $(EXAMPLES)
+
+####################################################################
+# Conformance (story 2)
+####################################################################
+#
+# The runner is test code. It links shape-cpu to render and image to decode the
+# reference, which the library never does (check-edges governs src/, include/ and
+# the shared object's NEEDED list, none of which see these). They are installed
+# before this library in the suite's order; a missing one is a hard error here,
+# naming the fix, and only for the targets that build the runner.
+CONF_DEPS := shape-cpu shape-geometry shape-scene image
+CONF_PCS := $(foreach d,$(CONF_DEPS),ghoti.io-$(d)$(BRANCH))
+CONF_RUNNER := $(APP_DIR)/conformance/runner$(EXE_EXTENSION)
+CONF_SOURCES := $(wildcard tests/conformance/*.c)
+CONF_CORPUS := third_party/resvg-tests
+CONF_OUT := $(BUILD_DIR)/conformance
+conf_pc_missing = $(strip $(foreach pc,$(CONF_PCS),$(if $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --exists $(pc) 2>/dev/null && echo yes),,$(pc))))
+conf_cflags = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --cflags $(CONF_PCS) 2>/dev/null)
+conf_libs = $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs $(CONF_PCS) 2>/dev/null)
+conf_ld_path = $(TEST_LD_PATH):$(subst $(SPACE),:,$(strip $(patsubst -L%,%,$(filter -L%,$(conf_libs)))))
+
+$(CONF_RUNNER): $(CONF_SOURCES) tests/conformance/stubs.h $(APP_DIR)/$(STATIC_TARGET) $(FLAGS_STAMP) | $(APP_DIR)/$(TARGET) $(LIBVER_GEN)
+	@if [ -n "$(conf_pc_missing)" ]; then printf '%s was not found by pkg-config. The conformance runner links shape-cpu and image; build and install them into the prefix (install.sh in the suite repository builds every library in order).\n' "$(conf_pc_missing)" >&2; exit 1; fi
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDE) $(conf_cflags) -Itests/conformance -o $@ $(CONF_SOURCES) $(LDFLAGS) $(SELF_LIBRARY) $(conf_libs)
+
+.PHONY: conformance check-conformance check-conformance-planted oracle-images oracle-tolerance
+
+conformance: $(CONF_RUNNER) ## Score the resvg test suite (fetches it first if it is not there); writes build/*/conformance/score
+	@tools/resvg-tests/fetch.sh $(CONF_CORPUS)
+	@LD_LIBRARY_PATH="$(conf_ld_path)" python3 tools/resvg-tests/score.py --corpus $(CONF_CORPUS) --runner $(CONF_RUNNER) --out $(CONF_OUT)
+
+# The scorer's own checks, then the planted lowerings through the runner on a
+# synthetic corpus: each outcome produced, each check seen to fail. It needs no
+# fetched corpus and no oracle; the oracle wrapper's checks are skipped, counted,
+# when no container engine is present, and fail under GHOTI_ORACLE_REQUIRED=1.
+check-conformance: $(CONF_RUNNER) ## Fail unless the scorer, the runner's outcomes and the oracle wrapper behave
+	@LD_LIBRARY_PATH="$(conf_ld_path)" python3 tools/resvg-tests/selftest.py --runner $(CONF_RUNNER) --work $(CONF_OUT)/selftest
+
+check-conformance-planted: $(CONF_RUNNER) ## Fail unless the self-test catches each defect planted in the runner, the scorer and the oracle wrapper
+	@LD_LIBRARY_PATH="$(conf_ld_path)" python3 tools/resvg-tests/plant.py --work $(CONF_OUT)/planted \
+		--build '$(CC) $(CFLAGS) $(INCLUDE) $(conf_cflags) -Itests/conformance -o {out} {sources} $(LDFLAGS) $(SELF_LIBRARY) $(conf_libs)'
+
+oracle-images: ## Build the pixel oracle images (resvg, inkscape) named in tools/oracle/containers/IMAGES
+	@awk -F'\t' '!/^#/ && NF >= 3 { print $$1, $$2 }' tools/oracle/containers/IMAGES | while read name image; do \
+		$${GHOTI_CONTAINER_ENGINE:-podman} build -q -t $$image -f tools/oracle/containers/$$name/Containerfile tools/oracle/containers/$$name || exit 1; \
+	done
+
+oracle-tolerance: $(CONF_RUNNER) ## Render the in-scope cases with each oracle and write the distance tables to build/*/conformance/oracle
+	@tools/resvg-tests/fetch.sh $(CONF_CORPUS)
+	@LD_LIBRARY_PATH="$(conf_ld_path)" python3 tools/resvg-tests/oracle_tolerance.py --corpus $(CONF_CORPUS) --runner $(CONF_RUNNER) --out $(CONF_OUT)/oracle
 
 # The dependencies' library directories, from the -L words pkg-config gave, so
 # a test run finds them when they are installed in a prefix of their own.
@@ -853,7 +904,7 @@ help: ## Display this help
 
 $(FLAGS_STAMP): force-flags
 	@mkdir -p $(@D)
-	@printf '%s\n' '$(CC) $(CXX) $(LIB_CFLAGS) $(CFLAGS) $(CXXFLAGS) $(LDFLAGS) $(INCLUDE) $(SELF_LIBRARY) $(DEP_LIBS) $(AS_NEEDED) $(TESTFLAGS) $(TEST_LDFLAGS) $(OS_SPECIFIC_LIBRARY_NAME_FLAG)' > $@.new
+	@printf '%s\n' '$(CC) $(CXX) $(LIB_CFLAGS) $(CFLAGS) $(CXXFLAGS) $(LDFLAGS) $(INCLUDE) $(SELF_LIBRARY) $(DEP_LIBS) $(AS_NEEDED) $(TESTFLAGS) $(TEST_LDFLAGS) $(OS_SPECIFIC_LIBRARY_NAME_FLAG) $(conf_cflags) $(conf_libs)' > $@.new
 	@cmp -s $@.new $@ 2>/dev/null && rm -f $@.new || mv -f $@.new $@
 
 $(ASAN_FLAGS_STAMP): force-flags

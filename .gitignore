@@ -12,3 +12,6 @@ docs
 # Python
 **/__pycache__
 *.pyc
+
+# Fetched third-party data and build output
+third_party

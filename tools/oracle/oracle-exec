@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-only
+#
+# Copyright (C) 2026 Corey Pennycuff
+#
+# This file is part of Ghoti.io Vector.
+#
+# Ghoti.io Vector is free software: you can redistribute it and/or modify it
+# under the terms of the GNU Lesser General Public License version 3 as
+# published by the Free Software Foundation.
+"""Run one command in a pinned oracle image.
+
+    oracle-exec [--ro DIR]... [--scratch DIR]... <name> -- <argv...>
+    oracle-exec --check <name>
+
+It does not fail open. A missing engine, a missing image or a version that
+does not match containers/IMAGES exits 2 with the reason on stderr, which is
+distinct from the oracle running and returning non-zero (that status is the
+oracle's, passed through). A caller that cannot tell the two apart records "no
+oracle" for "the oracle said no".
+
+--check runs only the version probe and prints what the oracle answered.
+"""
+
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import oracle_env  # noqa: E402
+
+
+def main(argv):
+    ro, scratch, rest = [], [], list(argv)
+    check = False
+    while rest and rest[0].startswith("--"):
+        flag = rest.pop(0)
+        if flag == "--ro" and rest:
+            ro.append(rest.pop(0))
+        elif flag == "--scratch" and rest:
+            scratch.append(rest.pop(0))
+        elif flag == "--check":
+            check = True
+        else:
+            sys.stderr.write("oracle-exec: unknown flag %s\n" % flag)
+            return 2
+    if not rest:
+        sys.stderr.write("usage: oracle-exec [--ro DIR] [--scratch DIR] <name> -- <argv...>\n")
+        return 2
+    name = rest.pop(0)
+    try:
+        for path in scratch:
+            if not os.path.isdir(path):
+                raise oracle_env.OracleUnavailable("--scratch %s: no such directory" % path)
+        got = oracle_env.check_pin(name)
+        if check:
+            print(got)
+            return 0
+        if rest and rest[0] == "--":
+            rest.pop(0)
+        if not rest:
+            raise oracle_env.OracleUnavailable("no command after --")
+        cmd = oracle_env.command(name, rest, ro=ro, scratch=scratch)
+    except oracle_env.OracleUnavailable as err:
+        sys.stderr.write("oracle-exec: %s\n" % err)
+        return 2
+    return subprocess.run(cmd, stdin=subprocess.DEVNULL).returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

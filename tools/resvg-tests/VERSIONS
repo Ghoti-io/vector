@@ -1,0 +1,27 @@
+# The conformance corpus, pinned.
+#
+# One record per line: <name> <value>. Read by fetch.sh and score.py with the
+# same awk rule (first match wins). A record line is a contract: a moved pin is
+# a reviewed change, and the case count moves with it.
+#
+# The corpus is linebender/resvg-test-suite: SVG files under tests/, each with a
+# reference PNG beside it. It is fetched, not vendored: it is another project's
+# test suite, and a copy stops being the thing everyone else is measured against
+# the day it is taken. The fetch lands in third_party/resvg-tests/, which
+# .gitignore excludes.
+#
+# Licence, read from the checked-out tree 2026-10-21: LICENSE at the root is the
+# MIT licence (Copyright (c) 2018 Reizner Evgeniy). fonts/ carries one notice
+# per family (SIL OFL 1.1 for Amiri, M PLUS 1p, Noto, Sedgwick Ave Display and
+# Source Sans Pro; Apache 2.0 for Yellowtail). Nothing is copied into this
+# repository, so none of those licences attaches to it; the fonts are used only
+# by text cases, which this milestone does not read.
+#
+# The pin is the commit on the default branch when story 2 started
+# (2024-10-29, the last commit of the repository).
+resvg-test-suite-url     https://github.com/linebender/resvg-test-suite.git
+resvg-test-suite-commit  d8e064337faf01bc5a9579187a56dbdbe3eacc72
+
+# The number of tests/**/*.svg at the pin. score.py fails when the tree holds a
+# different number, so changing the pin without reviewing the population fails.
+expected-cases           1679

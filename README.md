@@ -81,7 +81,16 @@ installed into a prefix (the suite repository's `install.sh` builds them all in 
 * `check-test-data`: the fixtures and the fuzz seeds are exactly what `tools/gen-test-data.py`
   writes.
 * `fuzz-replay`: every seed through the load fuzzer, whose invariants abort on a violation.
+* `check-conformance`, `check-conformance-planted`: the conformance harness is shown to produce each outcome
+  and to reject a malformed case table, and a defect planted in it is caught.
 * `run-examples`: every example, each checking what it shows.
+
+## Conformance
+
+`make conformance` scores the library against the resvg test suite (fetched at a pinned commit, never vendored)
+with every case that is refused or not run still in the denominator, and writes the result under `build/`.
+`documentation/conformance.md` says what the score means and how the tolerance is measured against two
+independent renderers in pinned containers (`make oracle-images`, `make oracle-tolerance`).
 
 ## Status
 

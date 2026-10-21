@@ -1,0 +1,18 @@
+# The pixel oracles, pinned.
+#
+# One line per reference, tab-separated: <name> <image> <version> <what it
+# answers>. Machine-read by tools/oracle/oracle_env.py.
+#
+# Built here: no upstream digest of the finished image. What is pinned is
+# everything the Containerfile reads, and the run-time version check is the
+# guarantee. Raising a pin is deliberate: a newer renderer is newer answers.
+#
+# Building them:
+#   make oracle-images
+
+# resvg 0.45.1 (Debian). Renders an SVG file to a PNG of a stated size.
+resvg	localhost/ghoti-vector-oracle-resvg:0.45.1	resvg 0.45.1	SVG to PNG; the renderer the test suite's references were made and reviewed against
+
+# Inkscape 1.4 (Debian). Renders an SVG file to a PNG of a stated size,
+# headless.
+inkscape	localhost/ghoti-vector-oracle-inkscape:1.4	Inkscape 1.4	SVG to PNG by an independent renderer

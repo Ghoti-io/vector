@@ -1,7 +1,7 @@
 # Design
 
 **Status:** the library, the format registry and loading SVG are built (rules L1 to L11 below).
-The typed SVG document, its attribute grammars, the cascade and the lowering are not; the lowering
+The conformance harness scores the library against a published corpus (`conformance.md`). The typed SVG document, its attribute grammars, the cascade and the lowering are not built; the lowering
 entry points exist and refuse every document at its root.
 
 `vector` reads vector formats and lowers them into `shape-scene`'s two recording forms, an edit of
@@ -126,6 +126,8 @@ used on different threads at once.
 | `check-test-data` | a fixture or a fuzz seed that is not what `tools/gen-test-data.py` writes |
 | `fuzz-replay` | a seed that crashes or breaks an invariant, and a corpus that leaves an outcome unreached |
 | `check-planted` | a planted defect in an L-rule that no test catches |
+| `check-conformance` | a scorer, runner or oracle wrapper that gives a wrong outcome on a synthetic corpus (see `conformance.md`) |
+| `check-conformance-planted` | a defect planted in the runner, the scorer or the oracle wrapper that the check above does not catch |
 
 `check-front-end` reads the archive's undefined symbols, not the source, so a call reached through a
 macro or an inline wrapper is seen. The decimal conversions come from `math` because a C-library

@@ -1,0 +1,16 @@
+# The tolerance a rendered case must meet to PASS.
+#
+# max-diff     the largest per-channel difference (0 to 255) allowed anywhere
+# max-bad-ppm  pixels differing by more than 1/255 in any channel, in parts per
+#              million of the pixels
+# evidence     the row of the oracle tolerance table that supports the pair
+#              (documentation/conformance.md), or "none" while it is zero
+#
+# The tolerance is a finding, not a guess: shape-cpu's coverage is exact area and
+# each oracle anti-aliases differently, so the pair is set from what
+# `make oracle-tolerance` measures. Until a lowering exists to measure, it is
+# zero, which only an exact match meets, so nothing passes by being loosely
+# close. score.py fails on a nonzero pair whose evidence is "none".
+max-diff	0
+max-bad-ppm	0
+evidence	none
