@@ -1,0 +1,6 @@
+<!DOCTYPE svg [
+  <!ENTITY ns_svg "http://www.w3.org/2000/svg">
+  <!ENTITY ns_xlink "http://www.w3.org/1999/xlink">
+  <!ENTITY w "10">
+]>
+<svg xmlns="&ns_svg;" xmlns:xlink="&ns_xlink;" width="&w;" height="&w;"><title>&w;</title></svg>

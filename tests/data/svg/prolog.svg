@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- a comment before the doctype -->
+<?xml-stylesheet href="style.css" type="text/css"?>
+<!DOCTYPE svg [
+  <!ENTITY w "10">
+]>
+<svg xmlns="http://www.w3.org/2000/svg" width="&w;" height="10"/>

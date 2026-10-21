@@ -1,0 +1,7 @@
+Name: Ghoti.io Vector(BRANCH)
+Description: Vector formats, SVG first, read into a typed document and lowered into the shape waist.
+Version: (VERSION)
+URL: https://github.com/Ghoti-io/vector
+Libs: -L(PC_LIB_DIR) -l(SUITE)-(PROJECT)(BRANCH)
+CFlags: -I(PC_INCLUDE_DIR)
+Requires: (REQUIRES)
