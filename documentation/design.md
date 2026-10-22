@@ -227,7 +227,7 @@ uses 2,048 declarations. Those three are widened to the default caps when the fi
 
 ## Coverage
 
-`make coverage` measures line coverage of `src/`: 91.5% of 870 lines (GCC 16, the unit tests and the
-fuzz replay). By file: `svg_load.c` 85.5%, `stream.c` 88.4%, `transport.c` 91.3%, `codec.c` 93.0%,
-`core.c` 96.4%, `svg_codec.c` 98.3%. The lines not reached are allocation-failure arms in code that
-runs after the sweep's last failing allocation, and the file-read error arms.
+`make coverage` measures line coverage of `src/` with the unit tests and the fuzz replay: 90.2% of 2,975 lines (GCC 16).
+The lines not reached are mostly allocation-failure arms that the failing-allocator sweep reaches only for the
+documents it uses, and the file-read error arms of the stream. A 600 s libFuzzer run with the grammar-level mutator
+(1,273,653 executions) found nothing.
