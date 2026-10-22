@@ -153,7 +153,7 @@ PLANTS = [
      "a use does not count what the uses inside its referent instantiate"),
     ("T-graph", "src/codec/svg/svg_graph.c", "    if (u->href_target && u->expansion > limits->max_reference_expansion) {",
      "    if (u->href_target && u->expansion >= limits->max_reference_expansion) {", "a use exactly at the bound is refused"),
-    ("T-graph", "src/codec/svg/svg_graph.c", " || inside > 0) {", ") {", "a use inside another use's referent is counted twice in the total"),
+    ("T-graph", "src/codec/svg/svg_graph.c", " || inside > 0) {", " || inside < 0) {", "a use inside another use's referent is counted twice in the total"),
     ("T-graph", "src/codec/svg/svg_graph.c", "          if (loop) {\n            cyclic[m] = 1;\n          }", "          (void) loop;",
      "the members of a cycle of several uses are not marked"),
     ("T-graph", "src/codec/svg/svg_graph.c", "        bool loop = members > 1 || cyclic[u];", "        bool loop = cyclic[u];",
