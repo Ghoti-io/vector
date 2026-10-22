@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "../../core/core_internal.h"
+#include "svg_doc.h"
 #include "svg_internal.h"
 
 /* A status of the XML parser that is one of our limits, as that field. */
@@ -112,7 +113,7 @@ static const char * gvec_svg_parent_element(const GTEXT_Markup_Node * node) {
 }
 
 GVEC_Result gvec_svg_load(GVEC_Doc * doc, const unsigned char * data, size_t size, const GVEC_Limits * limits,
-    GVEC_Diagnostics * diagnostics) {
+    const GVEC_Load_Options * load_options, GVEC_Diagnostics * diagnostics) {
   GTEXT_XML_Parse_Options options;
   GTEXT_XML_Error error;
   GTEXT_Markup_Document * tree = NULL;
@@ -197,17 +198,40 @@ GVEC_Result gvec_svg_load(GVEC_Doc * doc, const unsigned char * data, size_t siz
     gtext_markup_document_free(tree);
     return GVEC_ERR_OOM;
   }
+  memset(svg, 0, sizeof(*svg));
   svg->root_line = location.line;
   svg->root_column = location.column;
   svg->root_offset = location.offset;
-  /* D-B: the typed document is built from the tree here (story 5); the tree
-   * itself is never kept. */
+  /* D-B: the typed document is built from the tree here, and the tree is freed. */
+  gvec_svg_build_options build;
+  build.limits = limits;
+  build.languages = load_options ? load_options->languages : NULL;
+  build.language_count = load_options ? load_options->language_count : 0;
+  if (!build.language_count) {
+    build.languages = NULL;
+  }
+  GVEC_Result built = gvec_svg_build(root, elements, &build, doc->allocator, diagnostics, &svg->document);
   gtext_markup_document_free(tree);
+  if (built == GVEC_OK) {
+    built = gvec_svg_resolve(svg->document, limits, diagnostics);
+  }
+  if (built == GVEC_OK) {
+    built = gvec_svg_conditional(svg->document, build.languages, build.language_count);
+  }
+  if (built != GVEC_OK) {
+    gvec_svg_document_free(svg->document);
+    gvec_free(doc->allocator, svg);
+    return built;
+  }
   doc->priv = svg;
   return GVEC_OK;
 }
 
 void gvec_svg_free(GVEC_Doc * doc) {
-  gvec_free(doc->allocator, doc->priv);
+  gvec_svg_doc * svg = doc->priv;
+  if (svg) {
+    gvec_svg_document_free(svg->document);
+  }
+  gvec_free(doc->allocator, svg);
   doc->priv = NULL;
 }

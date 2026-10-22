@@ -29,14 +29,20 @@
 #include <string.h>
 
 #include "../../core/core_internal.h"
+#include "svg_doc.h"
 #include "svg_internal.h"
+
+static GVEC_Result gvec_svg_dump(const GVEC_Doc * doc, GVEC_Stream * out) {
+  const gvec_svg_doc * svg = doc->priv;
+  return gvec_svg_dump_document(svg->document, out);
+}
 
 const GVEC_Codec gvec_svg_codec = {
     .name = "svg",
     .capabilities = GVEC_CAP_LOAD | GVEC_CAP_LOWER,
     .probe = gvec_svg_probe,
     .load = gvec_svg_load,
-    .dump = NULL,
+    .dump = gvec_svg_dump,
     .lower_edit = gvec_svg_lower_edit,
     .lower_list = gvec_svg_lower_list,
     .save = NULL,

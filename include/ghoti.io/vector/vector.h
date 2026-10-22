@@ -39,6 +39,7 @@
 #include <ghoti.io/vector/codec.h>
 #include <ghoti.io/vector/core.h>
 #include <ghoti.io/vector/lower.h>
+#include <ghoti.io/vector/svg.h>
 #include <ghoti.io/vector/stream.h>
 
 #ifdef __cplusplus

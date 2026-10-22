@@ -51,9 +51,13 @@ This is the first milestone's first step: the library, and loading.
 * **Lowering.** `gvec_doc_lower_edit` and `gvec_doc_lower_list` have their final signatures. Nothing
   is lowered yet: each refuses the document at its root, with its line, so that a renderer and a
   conformance harness see a correct, if empty, drawing and the reason.
-* **The document.** `gvec_doc_dump` writes a line-oriented text that is the same on every target,
-  and `gvec_doc_hash` is a hash of it. The typed SVG document, its attribute grammars and the
-  cascade come next.
+* **The typed document.** An SVG file is read into a tree of elements, one kind for every element of SVG 2, with
+  each attribute parsed by its own grammar (numbers, lengths, lists, points, `viewBox`, path data in the form it
+  was written and in absolute form, references, `data:` URIs, conditional processing), its errors located, its
+  references and cycles resolved, and a key for every element that is stable across loads (`svg.h`). CSS
+  properties and presentation attributes are held as written for the cascade, which comes next.
+* **The dump.** `gvec_doc_dump` writes a line-oriented text that is the same on every target,
+  and `gvec_doc_hash` is a hash of it.
 
 ## Building
 
@@ -81,6 +85,8 @@ installed into a prefix (the suite repository's `install.sh` builds them all in 
 * `check-test-data`: the fixtures and the fuzz seeds are exactly what `tools/gen-test-data.py`
   writes.
 * `fuzz-replay`: every seed through the load fuzzer, whose invariants abort on a violation.
+* `check-tables`, `check-doc-oracle`: the element and attribute tables are what the pinned specification pages
+  generate, and the typed document agrees with an independent reader of the same documents.
 * `check-conformance`, `check-conformance-planted`: the conformance harness is shown to produce each outcome
   and to reject a malformed case table, and a defect planted in it is caught.
 * `run-examples`: every example, each checking what it shows.

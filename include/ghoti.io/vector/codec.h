@@ -114,7 +114,13 @@ GVEC_API GVEC_Result gvec_probe(GVEC_Stream * stream, const GVEC_Limits * limits
 typedef struct GVEC_Load_Options {
   const GVEC_Limits * limits; ///< NULL for the defaults.
   const GVEC_Allocator * allocator; ///< For the document; NULL for the default.
-  uint8_t _reserved[16];       ///< Zero.
+  /**
+   * The languages `systemLanguage` is matched against, BCP 47 tags in preference order (D8: nothing is read from
+   * the environment). NULL, or a count of zero, selects the default, `{"en"}`.
+   */
+  const char * const * languages;
+  size_t language_count;       ///< How many entries `languages` has.
+  uint8_t _reserved[8];        ///< Zero.
 } GVEC_Load_Options;
 
 /**

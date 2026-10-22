@@ -162,6 +162,37 @@ def fixtures():
     f["bomb.svgz"] = gzip_member(
         ('<svg xmlns="%s"><!--' % SVG_NS).encode() + b" " * (2 * 1024 * 1024) + b"--></svg>\n"
     )
+    # The typed document (story 5): one fixture per family, each a requirement of the grammar chapters.
+    svg = lambda attrs, body: ('<svg xmlns="%s" xmlns:xlink="http://www.w3.org/1999/xlink" %s>%s</svg>\n' % (SVG_NS, attrs, body)).encode()
+    f["doc-kinds.svg"] = svg("", "<g><rect/><circle/><ellipse/><line/><path/><polygon/><polyline/><use/><symbol/><defs/>"
+                             "<switch/><text>t<tspan>u</tspan></text><linearGradient/><radialGradient/><stop/><clipPath/>"
+                             "<mask/><pattern/><marker/><image/><a/><title>x</title><desc/><metadata><r:RDF xmlns:r='urn:r'/></metadata>"
+                             "<style>g{}</style><script>1</script><filter/><feGaussianBlur/><foreignObject/><view/>"
+                             "<animate/><set/><blink/></g>")
+    f["doc-attributes.svg"] = svg('viewBox="0 0 100 50" preserveAspectRatio="xMidYMid slice" width="100%" version="1.1" '
+                                  'xml:space="preserve" data-note="1" foo:bar="x" xmlns:foo="urn:foo"',
+                                  '<line id="l" x1="1" y1="2em" x2="3%" y2="4" fill="red" style="stroke:blue" onclick="x" '
+                                  'aria-label="a" mystery="1" tabindex="3"/>'
+                                  '<linearGradient id="g" gradientUnits="objectBoundingBox" spreadMethod="reflect"><stop offset="25%"/></linearGradient>'
+                                  '<marker id="m" orient="auto-start-reverse" refX="center" markerWidth="3" markerUnits="strokeWidth"/>')
+    f["doc-paths.svg"] = svg("", '<path id="a" d="M 10 20 L 30 40 Z m 5 5 l 1 1 h 3 v -3 z"/>'
+                             '<path id="b" d="M0 0 C 1 1 2 2 3 3 S 5 5 6 6 Q 1 1 2 2 T 4 4 A1 1 0 11 5 5 a 2 3 45 0 1 10 -4"/>'
+                             '<path id="c" d="M10-5.5L.5.5 1e2-1e-1"/><path id="d" d="M 1 2 L 3"/><path id="e" d="L 1 1"/>'
+                             '<path id="f" d="M 0 0 A 1 1 0 2 0 5 5"/><polygon points="0,0 10,0 10,10"/><polyline points="1 2 3"/>')
+    f["doc-references.svg"] = svg("", '<defs><rect id="r"/><g id="a"><use href="#r"/></g></defs><use id="u1" href="#a"/>'
+                                  '<use id="u2" xlink:href="#r"/><use id="u3" href="#missing"/><use id="self" href="#self"/>'
+                                  '<g id="anc"><use href="#anc"/></g><linearGradient id="g1" href="#g2"/><linearGradient id="g2" href="#g1"/>'
+                                  '<image href="data:image/png;base64,iVBORw0KGgo="/><image href="data:,hello%20world"/><rect id="r"/>')
+    pyr = "<defs><g id=\"a0\"><rect/></g>"
+    for k in range(1, 31):
+        pyr += '<g id="a%d"><use href="#a%d"/><use href="#a%d"/></g>' % (k, k - 1, k - 1)
+    pyr += '</defs><use href="#a30"/>'
+    f["doc-pyramid.svg"] = svg("", pyr)
+    f["doc-conditional.svg"] = svg("", '<switch><g systemLanguage="fr"/><g systemLanguage="en-US" id="en"/><g/></switch>'
+                                   '<g requiredExtensions="http://example.org/x"/><g systemLanguage=""/><g requiredFeatures="x"/>')
+    f["doc-text.svg"] = svg("", "<text>one<tspan>two</tspan>three <b>four</b></text>stray<title>A &amp; B</title>")
+    f["doc-lists.svg"] = svg("", '<text x="1 2,3em" y="4" dx="5%" rotate="1 2 3">x</text><polygon points="1,2 3,4 5"/>'
+                             '<rect pathLength="-1" id=" bad"/>')
     return f
 
 
@@ -190,7 +221,11 @@ def corpus(fx):
         (5, "entities.svg"),
         (6, "deep-entities.svg"),
         (7, "references-8.svg"),
-        (8, "external-ge.svg"),
+        (8, "doc-paths.svg"),
+        (9, "doc-lists.svg"),
+        (10, "doc-pyramid.svg"),
+        (11, "doc-text.svg"),
+        (12, "external-ge.svg"),
     ]:
         c["limit-%d-%s" % (field, name)] = bytes([field, 0x00]) + fx[name]
     return c

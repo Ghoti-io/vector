@@ -94,6 +94,10 @@ static const size_t gvec_limit_defaults[GVEC_LIMIT_FIELD_COUNT] = {
     GVEC_DEFAULT_MAX_ENTITY_EXPANDED_BYTES,
     GVEC_DEFAULT_MAX_ENTITY_DEPTH,
     GVEC_DEFAULT_MAX_ENTITY_REFERENCES,
+    GVEC_DEFAULT_MAX_PATH_SEGMENTS,
+    GVEC_DEFAULT_MAX_LIST_ITEMS,
+    GVEC_DEFAULT_MAX_REFERENCE_EXPANSION,
+    GVEC_DEFAULT_MAX_TEXT_BYTES,
     GVEC_DEFAULT_MAX_DIAGNOSTICS,
 };
 
@@ -126,6 +130,14 @@ static size_t * gvec_limits_field(GVEC_Limits * limits, GVEC_Limit_Field field) 
     return &limits->max_entity_depth;
   case GVEC_LIMIT_ENTITY_REFERENCES:
     return &limits->max_entity_references;
+  case GVEC_LIMIT_PATH_SEGMENTS:
+    return &limits->max_path_segments;
+  case GVEC_LIMIT_LIST_ITEMS:
+    return &limits->max_list_items;
+  case GVEC_LIMIT_REFERENCE_EXPANSION:
+    return &limits->max_reference_expansion;
+  case GVEC_LIMIT_TEXT_BYTES:
+    return &limits->max_text_bytes;
   case GVEC_LIMIT_DIAGNOSTICS:
     return &limits->max_diagnostics;
   case GVEC_LIMIT_FIELD_COUNT:

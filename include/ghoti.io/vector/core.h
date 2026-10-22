@@ -99,6 +99,10 @@ GVEC_API const char * gvec_result_string(GVEC_Result result);
  * | max_entity_expanded_bytes | 64 MiB, the cumulative replacement text of every entity reference |
  * | max_entity_depth | 32 |
  * | max_entity_references | 1,000,000 |
+ * | max_path_segments | 4,194,304 segments in one path attribute |
+ * | max_list_items | 1,048,576 numbers, lengths or points in one list attribute |
+ * | max_reference_expansion | 1,000,000 elements a `use` (or all of them, in a document) instantiates |
+ * | max_text_bytes | 64 MiB of character data kept in the document |
  * | max_diagnostics | default 4096, ceiling 2^20 |
  *
  * The default of every field but max_diagnostics is also its ceiling: it is
@@ -113,6 +117,10 @@ typedef struct GVEC_Limits {
   size_t max_entity_expanded_bytes; ///< Total replacement text of entity references.
   size_t max_entity_depth;          ///< Entity references nested inside entity replacement text.
   size_t max_entity_references;     ///< Entity and character references in the document.
+  size_t max_path_segments;         ///< Segments in one path attribute; the rest are diagnosed.
+  size_t max_list_items;            ///< Items in one number, length or point list attribute.
+  size_t max_reference_expansion;   ///< Elements one `use` instantiates, and elements all of them do in a document.
+  size_t max_text_bytes;            ///< Bytes of character data kept in the document.
   size_t max_diagnostics;           ///< Diagnostics kept; the rest are counted.
   uint8_t _reserved[8];             ///< Zero.
 } GVEC_Limits;
@@ -127,6 +135,10 @@ typedef enum GVEC_Limit_Field {
   GVEC_LIMIT_ENTITY_EXPANDED_BYTES,
   GVEC_LIMIT_ENTITY_DEPTH,
   GVEC_LIMIT_ENTITY_REFERENCES,
+  GVEC_LIMIT_PATH_SEGMENTS,
+  GVEC_LIMIT_LIST_ITEMS,
+  GVEC_LIMIT_REFERENCE_EXPANSION,
+  GVEC_LIMIT_TEXT_BYTES,
   GVEC_LIMIT_DIAGNOSTICS,
   GVEC_LIMIT_FIELD_COUNT ///< The number of fields; not a field.
 } GVEC_Limit_Field;
@@ -162,6 +174,15 @@ typedef enum GVEC_Diag_Code {
   GVEC_DIAG_GZIP,           ///< The gzip transport could not be inflated; `detail` is the compress status.
   GVEC_DIAG_LIMIT,          ///< A cap was reached; `detail` is the GVEC_Limit_Field.
   GVEC_DIAG_LOWER_REFUSED,  ///< An element was not lowered; `detail` is a GVEC_Lower_Reason (lower.h).
+  GVEC_DIAG_ATTRIBUTE_INVALID, ///< An attribute failed its grammar; `detail` is the grammar (svg.h names it), the message says why.
+  GVEC_DIAG_UNKNOWN_ELEMENT,   ///< An element in the SVG namespace that SVG 2 does not define; kept, not rendered (once per name).
+  GVEC_DIAG_UNKNOWN_ATTRIBUTE, ///< An attribute SVG 2 does not define for its element; kept, ignored (once per name).
+  GVEC_DIAG_SCRIPT_IGNORED,    ///< Script (an event handler or a `script` element) is kept and never evaluated (once).
+  GVEC_DIAG_ANIMATION_NOT_APPLIED, ///< The document contains animation, which is kept and not applied (once).
+  GVEC_DIAG_DUPLICATE_ID,      ///< An `id` already used earlier in the document; the first one wins.
+  GVEC_DIAG_REFERENCE_MISSING, ///< An `href` names an element the document does not have.
+  GVEC_DIAG_REFERENCE_CYCLE,   ///< An element is on a reference cycle; its referring edge was cut.
+  GVEC_DIAG_EXPANSION_LIMIT,   ///< A `use` instantiates more elements than max_reference_expansion; it is not instantiated.
   GVEC_DIAG_CODE_COUNT      ///< One past the last code; not a code.
 } GVEC_Diag_Code;
 

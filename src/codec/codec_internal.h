@@ -59,7 +59,7 @@ typedef int (*gvec_codec_probe_fn)(const unsigned char * data, size_t size, cons
  * is left in `doc->priv`.
  */
 typedef GVEC_Result (*gvec_codec_load_fn)(GVEC_Doc * doc, const unsigned char * data, size_t size,
-    const GVEC_Limits * limits, GVEC_Diagnostics * diagnostics);
+    const GVEC_Limits * limits, const GVEC_Load_Options * options, GVEC_Diagnostics * diagnostics);
 
 /** Write the codec's lines of the dump, after the shared header. */
 typedef GVEC_Result (*gvec_codec_dump_fn)(const GVEC_Doc * doc, GVEC_Stream * out);

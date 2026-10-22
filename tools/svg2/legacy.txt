@@ -1,0 +1,9 @@
+# SVG 1.1 attributes that SVG 2 removed. Kept as written, with no notice: they are everywhere in older files.
+version
+baseProfile
+contentScriptType
+contentStyleType
+externalResourcesRequired
+requiredFeatures
+xml:base
+xml:lang

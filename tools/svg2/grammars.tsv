@@ -1,0 +1,158 @@
+# attribute<TAB>elements ("*" for all of the rows the index gives)<TAB>grammar<TAB>note
+# First matching rule wins. A trailing * in the attribute is a prefix match.
+# Every (element, attribute) pair of the CR's attribute index must be matched by a rule;
+# tools/svg2/gen-tables.py fails on one that is not, and on a rule that matches no pair.
+#
+# Grammars (src/codec/svg/svg_tables.h):
+#   RAW_*     kept as written, not interpreted in this milestone; the note names why
+#   EVENT     an event handler: kept, never evaluated
+#   LEGACY    an SVG 1.1 attribute SVG 2 removed: kept, no notice
+#
+aria-*	*	RAW_ARIA	accessibility metadata; does not affect drawing
+role	*	STRING	accessibility metadata
+on*	*	EVENT	script is never evaluated
+accumulate	*	RAW_ANIM	animation is kept and not applied
+additive	*	RAW_ANIM	animation is kept and not applied
+attributeName	*	RAW_ANIM	animation is kept and not applied
+begin	*	RAW_ANIM	animation is kept and not applied
+by	*	RAW_ANIM	animation is kept and not applied
+calcMode	*	RAW_ANIM	animation is kept and not applied
+dur	*	RAW_ANIM	animation is kept and not applied
+end	*	RAW_ANIM	animation is kept and not applied
+fill	animate,animateMotion,animateTransform,set	RAW_ANIM	animation is kept and not applied
+from	*	RAW_ANIM	animation is kept and not applied
+keyPoints	*	RAW_ANIM	animation is kept and not applied
+keySplines	*	RAW_ANIM	animation is kept and not applied
+keyTimes	*	RAW_ANIM	animation is kept and not applied
+max	*	RAW_ANIM	animation is kept and not applied
+min	*	RAW_ANIM	animation is kept and not applied
+origin	*	RAW_ANIM	animation is kept and not applied
+path	animateMotion	RAW_ANIM	animation is kept and not applied
+repeatCount	*	RAW_ANIM	animation is kept and not applied
+repeatDur	*	RAW_ANIM	animation is kept and not applied
+restart	*	RAW_ANIM	animation is kept and not applied
+rotate	animateMotion	RAW_ANIM	animation is kept and not applied
+to	*	RAW_ANIM	animation is kept and not applied
+type	animateTransform	RAW_ANIM	animation is kept and not applied
+values	animate,animateMotion,animateTransform	RAW_ANIM	animation is kept and not applied
+playbackorder	*	RAW_ANIM	timing is kept and not applied
+timelinebegin	*	RAW_ANIM	timing is kept and not applied
+amplitude	*	RAW_FILTER	filters are read in a later phase
+azimuth	*	RAW_FILTER	filters are read in a later phase
+baseFrequency	*	RAW_FILTER	filters are read in a later phase
+bias	*	RAW_FILTER	filters are read in a later phase
+diffuseConstant	*	RAW_FILTER	filters are read in a later phase
+divisor	*	RAW_FILTER	filters are read in a later phase
+dx	feDropShadow,feOffset	RAW_FILTER	filters are read in a later phase
+dy	feDropShadow,feOffset	RAW_FILTER	filters are read in a later phase
+edgeMode	*	RAW_FILTER	filters are read in a later phase
+elevation	*	RAW_FILTER	filters are read in a later phase
+exponent	*	RAW_FILTER	filters are read in a later phase
+in	*	RAW_FILTER	filters are read in a later phase
+in2	*	RAW_FILTER	filters are read in a later phase
+intercept	*	RAW_FILTER	filters are read in a later phase
+k1	*	RAW_FILTER	filters are read in a later phase
+k2	*	RAW_FILTER	filters are read in a later phase
+k3	*	RAW_FILTER	filters are read in a later phase
+k4	*	RAW_FILTER	filters are read in a later phase
+kernelMatrix	*	RAW_FILTER	filters are read in a later phase
+kernelUnitLength	*	RAW_FILTER	filters are read in a later phase
+limitingConeAngle	*	RAW_FILTER	filters are read in a later phase
+mode	*	RAW_FILTER	filters are read in a later phase
+numOctaves	*	RAW_FILTER	filters are read in a later phase
+offset	feFuncA,feFuncB,feFuncG,feFuncR	RAW_FILTER	filters are read in a later phase
+operator	*	RAW_FILTER	filters are read in a later phase
+order	*	RAW_FILTER	filters are read in a later phase
+pointsAtX	*	RAW_FILTER	filters are read in a later phase
+pointsAtY	*	RAW_FILTER	filters are read in a later phase
+pointsAtZ	*	RAW_FILTER	filters are read in a later phase
+preserveAlpha	*	RAW_FILTER	filters are read in a later phase
+radius	*	RAW_FILTER	filters are read in a later phase
+result	*	RAW_FILTER	filters are read in a later phase
+scale	*	RAW_FILTER	filters are read in a later phase
+seed	*	RAW_FILTER	filters are read in a later phase
+slope	*	RAW_FILTER	filters are read in a later phase
+specularConstant	*	RAW_FILTER	filters are read in a later phase
+specularExponent	*	RAW_FILTER	filters are read in a later phase
+stdDeviation	*	RAW_FILTER	filters are read in a later phase
+stitchTiles	*	RAW_FILTER	filters are read in a later phase
+surfaceScale	*	RAW_FILTER	filters are read in a later phase
+tableValues	*	RAW_FILTER	filters are read in a later phase
+targetX	*	RAW_FILTER	filters are read in a later phase
+targetY	*	RAW_FILTER	filters are read in a later phase
+type	feColorMatrix,feFuncA,feFuncB,feFuncG,feFuncR,feTurbulence	RAW_FILTER	filters are read in a later phase
+values	feColorMatrix	RAW_FILTER	filters are read in a later phase
+xChannelSelector	*	RAW_FILTER	filters are read in a later phase
+yChannelSelector	*	RAW_FILTER	filters are read in a later phase
+z	*	RAW_FILTER	filters are read in a later phase
+filterUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+primitiveUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+crossorigin	*	STRING	external resources are never fetched
+download	*	STRING	link attribute; never followed
+hreflang	*	STRING	link attribute; never followed
+media	*	STRING	style element attribute; stylesheets are read in a later phase
+ping	*	STRING	link attribute; never followed
+referrerpolicy	*	STRING	link attribute; never followed
+rel	*	STRING	link attribute; never followed
+target	*	STRING	link attribute; never followed
+title	*	STRING	style element attribute
+type	a,script,style	STRING	a media type
+xlink:title	*	STRING	link attribute
+class	*	STRING	kept for selectors, read in a later phase
+style	*	STRING	typed by the cascade
+lang	*	STRING	a language tag
+tabindex	*	TABINDEX	an integer
+id	*	ID	an XML name
+xml:space	*	ENUM_XML_SPACE	default | preserve
+href	*	HREF	a URL reference
+xlink:href	*	HREF	a URL reference
+systemLanguage	*	SYSTEM_LANGUAGE	a comma-separated list of language tags
+requiredExtensions	*	REQUIRED_EXTENSIONS	a space-separated list of URLs
+viewBox	*	VIEWBOX	min-x min-y width height
+preserveAspectRatio	*	PAR	align and meetOrSlice
+pathLength	*	NUMBER	a non-negative number
+points	*	POINTS	a list of number pairs
+path	textPath	PATH_DATA	path data
+gradientUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+clipPathUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+maskUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+maskContentUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+patternUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+patternContentUnits	*	ENUM_UNITS	userSpaceOnUse | objectBoundingBox
+spreadMethod	*	ENUM_SPREAD	pad | reflect | repeat
+gradientTransform	*	TRANSFORM	a transform list; typed by the cascade
+patternTransform	*	TRANSFORM	a transform list; typed by the cascade
+markerUnits	*	ENUM_MARKER_UNITS	userSpaceOnUse | strokeWidth
+markerWidth	*	LENGTH	a length
+markerHeight	*	LENGTH	a length
+refX	*	REF_COORD	a length or a keyword
+refY	*	REF_COORD	a length or a keyword
+orient	*	ORIENT	auto | auto-start-reverse | angle
+offset	stop	OFFSET	a number or a percentage
+lengthAdjust	*	ENUM_LENGTH_ADJUST	spacing | spacingAndGlyphs
+method	*	ENUM_METHOD	align | stretch
+side	*	ENUM_SIDE	left | right
+spacing	*	ENUM_SPACING	auto | exact
+startOffset	*	LENGTH	a length or a percentage
+textLength	*	LENGTH	a length or a percentage
+rotate	text,tspan	NUMBER_LIST	one rotation per glyph
+dx	text,tspan	COORD_LIST	a list of lengths
+dy	text,tspan	COORD_LIST	a list of lengths
+x	text,tspan	COORD_LIST	a list of lengths
+y	text,tspan	COORD_LIST	a list of lengths
+x	*	LENGTH	a length or a percentage
+y	*	LENGTH	a length or a percentage
+width	*	LENGTH	a length or a percentage
+height	*	LENGTH	a length or a percentage
+cx	*	LENGTH	a length or a percentage
+cy	*	LENGTH	a length or a percentage
+r	*	LENGTH	a length or a percentage
+fx	*	LENGTH	a length or a percentage
+fy	*	LENGTH	a length or a percentage
+fr	*	LENGTH	a length or a percentage
+x1	*	LENGTH	a length or a percentage
+y1	*	LENGTH	a length or a percentage
+x2	*	LENGTH	a length or a percentage
+y2	*	LENGTH	a length or a percentage
+transform	*	TRANSFORM	a transform list; typed by the cascade
+zoomAndPan	*	ENUM_ZOOM_PAN	disable | magnify

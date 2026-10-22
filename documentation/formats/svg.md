@@ -47,3 +47,26 @@ implementations disagree, with the reason. It grows with each part of SVG that i
 Script, SMIL and CSS animation, `foreignObject`, and anything outside the file (external
 references, fonts, images, style sheets) are not read. Each will be refused with its element and
 line when the document is built.
+
+## The typed document
+
+* **Tables from the specification.** The element and attribute lists come from the Candidate Recommendation's own
+  indexes, not from a reading of them; `elements.md` lists how each element and attribute is read.
+* **Properties are not typed here.** SVG 2 makes `x`, `y`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `transform`
+  and the rest properties, parsed as CSS; they are held as written. The `d` attribute of `path` is path data, which
+  SVG 2 defines as its own grammar, and is parsed here.
+* **Numbers** follow SVG 2's `<number>` and are converted with correct rounding. A value beyond the largest finite
+  `double` is invalid; one below the smallest subnormal is zero. Surrounding white space is allowed.
+* **Units** are the CSS unit identifiers, ASCII case-insensitively (SVG 2 follows CSS), kept as written.
+* **Lists**: `points` also accepts a negative coordinate directly after a number (SVG 2's coordinate pair), as
+  browsers do; other lists need a separator.
+* **Path data**: a path whose first command is not a moveto renders nothing; on an error the segments before it are
+  kept (SVG 2's error rule). Arc flags are single characters, so `A1 1 0 11 5 5` is valid.
+* **Conditional processing** follows section 5.7: language matching by equality or prefix and a hyphen,
+  `requiredExtensions` always false, `requiredFeatures` ignored; the candidates of a `switch` are the renderable
+  elements of its content model (not animation elements or unknown elements).
+* **Reference errors** (a missing target, a cycle, an expansion over the bound) do not fail the load: the document is
+  drawn without the offending edge, as SVG 2's error rule says to draw what is valid.
+* **Ids**: the first element with an id in document order wins; later ones are diagnosed.
+* **SVG 1.1 attributes removed from SVG 2** (`version`, `baseProfile`, `contentScriptType`, `contentStyleType`,
+  `externalResourcesRequired`, `requiredFeatures`, `xml:base`, `xml:lang`) are kept without a notice.

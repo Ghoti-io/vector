@@ -47,10 +47,13 @@ extern "C" {
 extern const GVEC_Codec gvec_svg_codec;
 
 /** What story 1's SVG document keeps: where its root element is. */
+struct GVEC_Svg_Document;
+
 typedef struct gvec_svg_doc {
   size_t root_line;
   size_t root_column;
   size_t root_offset;
+  struct GVEC_Svg_Document * document; ///< The typed document (svg_doc.h).
 } gvec_svg_doc;
 
 /**
@@ -82,8 +85,8 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_parse_failed(
     const GTEXT_XML_Error * error, GVEC_Transport transport, GVEC_Diagnostics * diagnostics);
 
 /** L8. */
-GVEC_INTERNAL_API GVEC_Result gvec_svg_load(
-    GVEC_Doc * doc, const unsigned char * data, size_t size, const GVEC_Limits * limits, GVEC_Diagnostics * diagnostics);
+GVEC_INTERNAL_API GVEC_Result gvec_svg_load(GVEC_Doc * doc, const unsigned char * data, size_t size,
+    const GVEC_Limits * limits, const GVEC_Load_Options * options, GVEC_Diagnostics * diagnostics);
 
 /** Free the SVG document. */
 GVEC_INTERNAL_API void gvec_svg_free(GVEC_Doc * doc);

@@ -232,7 +232,7 @@ GVEC_Result gvec_doc_load(
   doc->codec = codec;
   doc->transport = transport;
 
-  r = codec->load(doc, bytes, bytes_size, &resolved, diagnostics);
+  r = codec->load(doc, bytes, bytes_size, &resolved, options, diagnostics);
   gvec_transport_free(bytes, transport, allocator);
   gvec_stream_consume(stream, size);
   if (r != GVEC_OK) {

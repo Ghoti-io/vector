@@ -133,7 +133,12 @@ TEST(Load, EverySvgFixtureLoadsAsSvg) {
     EXPECT_STREQ(gvec_doc_format(out.doc), "svg");
     EXPECT_EQ(gvec_doc_codec(out.doc), gvec_codec_by_name("svg"));
     EXPECT_EQ(gvec_doc_transport(out.doc), GVEC_TRANSPORT_NONE);
-    EXPECT_EQ(out.diagnostics.count, (size_t) 0) << name;
+    // Nothing but a notice that an attribute name is not SVG 2's (the attributes-8 fixture uses invented names).
+    for (size_t i = 0; i < out.diagnostics.count; i++) {
+      EXPECT_EQ(out.diagnostics.items[i].code, GVEC_DIAG_UNKNOWN_ATTRIBUTE) << name;
+      EXPECT_EQ(out.diagnostics.items[i].severity, GVEC_DIAG_NOTICE) << name;
+    }
+    EXPECT_EQ(out.diagnostics.count, std::string(name) == "attributes-8.svg" ? (size_t) 7 : (size_t) 0) << name;
   }
 }
 
@@ -505,8 +510,16 @@ TEST(Dump, TheDumpIsFormatOneWithFormatAndTransport) {
   LoadFixture("minimal.svgz", nullptr, gz);
   ASSERT_EQ(plain.result, GVEC_OK);
   ASSERT_EQ(gz.result, GVEC_OK);
-  EXPECT_EQ(Dump(plain.doc), "vector-doc 1\nformat svg\ntransport none\n");
-  EXPECT_EQ(Dump(gz.doc), "vector-doc 1\nformat svg\ntransport gzip\n");
+  // The header lines, then the document: one element line (its key, kind, name, namespace, location, flags) and one
+  // line per attribute (here the two geometry presentation attributes, held as written for the cascade). The key is
+  // restated by the document tests with an independent hash.
+  const std::string body =
+      "svg elements 1 text-bytes 0\n"
+      "e 0 90bdf1c31c91abc1 svg \"svg\" \"http://www.w3.org/2000/svg\" 1:1 -\n"
+      "a \"width\" property none 1:41 presentation raw=\"10\" value=-\n"
+      "a \"height\" property none 1:52 presentation raw=\"10\" value=-\n";
+  EXPECT_EQ(Dump(plain.doc), "vector-doc 1\nformat svg\ntransport none\n" + body);
+  EXPECT_EQ(Dump(gz.doc), "vector-doc 1\nformat svg\ntransport gzip\n" + body);
   GVEC_Stream * reading = nullptr;
   ASSERT_EQ(gvec_stream_create_memory("x", 1, &reading), GVEC_OK);
   EXPECT_EQ(gvec_doc_dump(plain.doc, reading), GVEC_ERR_IO);
@@ -532,8 +545,8 @@ TEST(Dump, TheHashIsMurmur3OfTheDumpAndTheSameOnEveryTarget) {
   }
   EXPECT_EQ(a, restated);
   // Committed values, so that a target whose hash differs fails here.
-  EXPECT_EQ(a, UINT64_C(0xac7e4fde734705ee)) << std::hex << a;
-  EXPECT_EQ(b, UINT64_C(0xa034558b2cd384e7)) << std::hex << b;
+  EXPECT_EQ(a, UINT64_C(0x34f491cdb70fb8bb)) << std::hex << a;  // restated with an independent Murmur3
+  EXPECT_EQ(b, UINT64_C(0x7148021ac4a32feb)) << std::hex << b;
   EXPECT_EQ(gvec_doc_hash(nullptr, &a), GVEC_ERR_INVALID);
   EXPECT_EQ(gvec_doc_hash(plain.doc, nullptr), GVEC_ERR_INVALID);
 }

@@ -30,7 +30,7 @@ PROJECT := vector
 # The libraries this one depends on, by the end of the milestone: the fourth
 # field of its line in suite/libraries.txt, without the optional ones.
 # Each is found by pkg-config and is a hard error when it is not.
-DEPS := cutil compress text shape-scene
+DEPS := cutil compress text shape-scene math
 
 # The libraries whose headers this one may include and whose shared objects it
 # may link (check-edges), as a regular expression alternation. Itself is always
@@ -40,7 +40,7 @@ DEPS := cutil compress text shape-scene
 # shape-scene is a front end's only edge into the shape family; every sink
 # (shape-cpu and the rest) stays outside the list, which is how check-edges
 # enforces that this library never links or includes one.
-EDGES_ALLOWED := cutil|compress|text|shape-scene
+EDGES_ALLOWED := cutil|compress|text|shape-scene|math
 
 # no, for every library: nothing is exempt from check-libm; elementary
 # functions come from math. Anything else fails check-gates.
@@ -261,7 +261,7 @@ TESTFLAGS := `PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs --cfla
 
 # coverage clears this: --coverage links the gcov runtime, whose mangle_path
 # check-symbols is right to reject in a shipping library.
-TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted
+TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-tables check-doc-oracle
 
 VALGRIND_FLAGS := --leak-check=full --show-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=1 --suppressions=tests/valgrind.supp
 
@@ -431,6 +431,35 @@ $(CONF_RUNNER): $(CONF_SOURCES) tests/conformance/stubs.h $(APP_DIR)/$(STATIC_TA
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDE) $(conf_cflags) -Itests/conformance -o $@ $(CONF_SOURCES) $(LDFLAGS) $(SELF_LIBRARY) $(conf_libs)
 
+# The independent document oracle (story 5): the dump tool, then a Python reader of the same documents that shares no
+# code with the library (tools/doc-oracle/oracle.py). It needs the pinned element index for its list of elements.
+DOC_DUMP := $(APP_DIR)/tools/dump$(EXE_EXTENSION)
+
+$(DOC_DUMP): tools/doc-oracle/dump.c $(APP_DIR)/$(STATIC_TARGET) $(FLAGS_STAMP) | $(APP_DIR)/$(TARGET) $(LIBVER_GEN)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $< $(LDFLAGS) $(SELF_LIBRARY) $(DEP_LIBS)
+
+.PHONY: check-doc-oracle
+check-doc-oracle: $(DOC_DUMP) ## Fail unless the typed document agrees with an independent reader, and the comparison is seen to fail on planted differences
+	@if [ -f third_party/svg2/eltindex.html ]; then \
+		LD_LIBRARY_PATH="$(TEST_LD_PATH)" python3 tools/doc-oracle/oracle.py check --dump $(DOC_DUMP) --random 400 --seed 5 tests/data/svg/doc-*.svg && \
+		LD_LIBRARY_PATH="$(TEST_LD_PATH)" python3 tools/doc-oracle/oracle.py selftest --dump $(DOC_DUMP); \
+	elif [ "$$GHOTI_ORACLE_REQUIRED" = 1 ]; then \
+		printf 'check-doc-oracle: the pinned pages are missing (tools/svg2/fetch.sh) and GHOTI_ORACLE_REQUIRED=1\n' >&2; exit 1; \
+	else \
+		printf 'check-doc-oracle: SKIPPED (run tools/svg2/fetch.sh); nothing was checked\n'; \
+	fi
+
+.PHONY: check-tables
+check-tables: ## Fail unless the committed SVG tables are what tools/svg2 generates from the pinned pages, and the generator fails on its plants
+	@if [ -f third_party/svg2/attindex.html ]; then \
+		python3 tools/svg2/gen-tables.py --check && python3 tools/svg2/selftest.py; \
+	elif [ "$$GHOTI_ORACLE_REQUIRED" = 1 ]; then \
+		printf 'check-tables: the pinned pages are missing (tools/svg2/fetch.sh) and GHOTI_ORACLE_REQUIRED=1\n' >&2; exit 1; \
+	else \
+		printf 'check-tables: SKIPPED (run tools/svg2/fetch.sh); nothing was checked\n'; \
+	fi
+
 .PHONY: conformance check-conformance check-conformance-planted oracle-images oracle-tolerance
 
 conformance: $(CONF_RUNNER) ## Score the resvg test suite (fetches it first if it is not there); writes build/*/conformance/score
@@ -525,8 +554,10 @@ check-planted: $(LIBOBJECTS) $(TEST_OBJECTS) ## Fail unless each planted defect 
 	 PLANT_LDFLAGS='$(LDFLAGS) $(DEP_LIBS) $(GTEST_FLAGS)' PLANT_LD_PATH='$(TEST_LD_PATH)' \
 	 PLANT_WORK='$(BUILD_DIR)/planted' python3 tools/check-planted.py
 
-check-test-data: ## Fail unless the fixtures and the fuzz seeds are what tools/gen-test-data.py writes
+check-test-data: ## Fail unless the fixtures, the fuzz seeds and the grammar vectors are what the generators write
 	@python3 tools/gen-test-data.py --check
+	@python3 tools/gen-grammar-vectors.py --check
+	@python3 tools/gen-namespace.py --check
 
 check-front-end: $(APP_DIR)/$(STATIC_TARGET) ## Fail on a scene.h include or a symbol that reads the environment, locale or clock
 	@tools/check-front-end.sh --includes . --symbols $(APP_DIR)/$(STATIC_TARGET)
@@ -782,8 +813,8 @@ fuzz: | $(LIBVER_GEN) ## Build each libFuzzer target and run it for FUZZ_TIME se
 	fi
 	@for f in $(FUZZ_TARGETS); do \
 		mkdir -p $(BUILD_DIR)/fuzz $(BUILD_DIR)/fuzz-corpus/$$f || exit 1; \
-		$(FUZZ_CC) $(FUZZ_CFLAGS) $(INCLUDE) -Itests/fuzz -o $(BUILD_DIR)/fuzz/fuzz_$$f tests/fuzz/fuzz_$$f.c $(SOURCES) $(LDFLAGS) $(DEP_LIBS) || exit 1; \
-		LD_LIBRARY_PATH="$(TEST_LD_PATH)" $(BUILD_DIR)/fuzz/fuzz_$$f -max_total_time=$(FUZZ_TIME) -rss_limit_mb=2048 \
+		$(FUZZ_CC) $(FUZZ_CFLAGS) $(INCLUDE) -Itests/fuzz -o $(BUILD_DIR)/fuzz/fuzz_$$f tests/fuzz/fuzz_$$f.c $(wildcard tests/fuzz/mutator_*.c) $(SOURCES) $(LDFLAGS) $(DEP_LIBS) || exit 1; \
+		LD_LIBRARY_PATH="$(TEST_LD_PATH)" $(BUILD_DIR)/fuzz/fuzz_$$f -max_total_time=$(FUZZ_TIME) -rss_limit_mb=2048 $$(test -f tests/fuzz/$$f.dict && echo -dict=tests/fuzz/$$f.dict) \
 			$(BUILD_DIR)/fuzz-corpus/$$f tests/fuzz/corpus/$$f || exit 1; \
 	done
 
