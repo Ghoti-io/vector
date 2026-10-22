@@ -59,6 +59,7 @@ void gvec_svg_xml_options(const GVEC_Limits * limits, size_t input_bytes, const 
   out->max_expanded_bytes = limits->max_entity_expanded_bytes;
   out->max_entity_depth = limits->max_entity_depth;
   out->max_references = limits->max_entity_references;
+  out->max_amplification = limits->max_entity_amplification;
   /* D7: the internal subset is read, so files that declare their own entities
    * load; nothing outside the file is ever read. With no resolver and access
    * denied the parser has no way to fetch, and SKIP keeps a reference to an

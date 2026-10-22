@@ -42,14 +42,14 @@ TEST(Results, TheNumbersAreTheVocabularysOrder) {
 
 static size_t Field(const GVEC_Limits & l, int f) {
   const size_t v[] = {l.max_input_bytes, l.max_inflated_bytes, l.max_elements, l.max_depth, l.max_attributes,
-      l.max_entity_expanded_bytes, l.max_entity_depth, l.max_entity_references, l.max_path_segments, l.max_list_items,
+      l.max_entity_expanded_bytes, l.max_entity_depth, l.max_entity_references, l.max_entity_amplification, l.max_path_segments, l.max_list_items,
       l.max_reference_expansion, l.max_text_bytes, l.max_diagnostics};
   return v[f];
 }
 
 static void SetField(GVEC_Limits & l, int f, size_t value) {
   size_t * p[] = {&l.max_input_bytes, &l.max_inflated_bytes, &l.max_elements, &l.max_depth, &l.max_attributes,
-      &l.max_entity_expanded_bytes, &l.max_entity_depth, &l.max_entity_references, &l.max_path_segments, &l.max_list_items,
+      &l.max_entity_expanded_bytes, &l.max_entity_depth, &l.max_entity_references, &l.max_entity_amplification, &l.max_path_segments, &l.max_list_items,
       &l.max_reference_expansion, &l.max_text_bytes, &l.max_diagnostics};
   *p[f] = value;
 }
@@ -67,6 +67,7 @@ TEST(Limits, TheDefaultsAreTheXmlParsersOwnLimits) {
   EXPECT_EQ(l.max_entity_expanded_bytes, x.max_expanded_bytes);
   EXPECT_EQ(l.max_entity_depth, x.max_entity_depth);
   EXPECT_EQ(l.max_entity_references, x.max_references);
+  EXPECT_EQ(l.max_entity_amplification, (size_t) 100);
   EXPECT_EQ(l.max_path_segments, (size_t) 4194304);
   EXPECT_EQ(l.max_list_items, (size_t) 1048576);
   EXPECT_EQ(l.max_reference_expansion, (size_t) 1000000);
@@ -203,11 +204,12 @@ TEST(Diagnostics, TheCodesAndSeveritiesHaveTheirStableNumbers) {
   EXPECT_EQ(GVEC_DIAG_LIMIT, 6);
   EXPECT_EQ(GVEC_DIAG_LOWER_REFUSED, 7);
   EXPECT_EQ(GVEC_LIMIT_INPUT_BYTES, 0);
-  EXPECT_EQ(GVEC_LIMIT_PATH_SEGMENTS, 8);
-  EXPECT_EQ(GVEC_LIMIT_LIST_ITEMS, 9);
-  EXPECT_EQ(GVEC_LIMIT_REFERENCE_EXPANSION, 10);
-  EXPECT_EQ(GVEC_LIMIT_TEXT_BYTES, 11);
-  EXPECT_EQ(GVEC_LIMIT_DIAGNOSTICS, 12);
+  EXPECT_EQ(GVEC_LIMIT_ENTITY_AMPLIFICATION, 8);
+  EXPECT_EQ(GVEC_LIMIT_PATH_SEGMENTS, 9);
+  EXPECT_EQ(GVEC_LIMIT_LIST_ITEMS, 10);
+  EXPECT_EQ(GVEC_LIMIT_REFERENCE_EXPANSION, 11);
+  EXPECT_EQ(GVEC_LIMIT_TEXT_BYTES, 12);
+  EXPECT_EQ(GVEC_LIMIT_DIAGNOSTICS, 13);
   EXPECT_EQ(GVEC_DIAG_ATTRIBUTE_INVALID, 8);
   EXPECT_EQ(GVEC_DIAG_UNKNOWN_ELEMENT, 9);
   EXPECT_EQ(GVEC_DIAG_UNKNOWN_ATTRIBUTE, 10);

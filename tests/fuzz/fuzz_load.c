@@ -239,6 +239,9 @@ static void gvec_fuzz_set_limit(GVEC_Limits * limits, unsigned field, unsigned s
   case GVEC_LIMIT_ENTITY_REFERENCES:
     limits->max_entity_references = small;
     break;
+  case GVEC_LIMIT_ENTITY_AMPLIFICATION:
+    limits->max_entity_amplification = small;
+    break;
   case GVEC_LIMIT_PATH_SEGMENTS:
     limits->max_path_segments = small;
     break;

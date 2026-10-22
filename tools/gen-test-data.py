@@ -200,15 +200,13 @@ def corpus(fx):
     # Each seed is two option bytes and an input. 0x0f shrinks no limit; an
     # even second byte reads in one piece.
     c = {}
-    # The entity bombs carry a 256-byte expansion cap (field 5, high nibble
-    # 15): the XML parser's expansion is slow on them under its default caps
-    # for now, so a seed with the defaults would stall the replay.
-    bombs = {"billion-laughs.svg", "quadratic.svg", "deep-entities.svg"}
+    # The entity bombs run under the default caps now: the XML parser stops them quickly.
     for name, data in fx.items():
         if name == "big-subset.svg":
-            continue
-        options = b"\xf5\x00" if name in bombs else b"\x0f\x00"
-        c["plain-" + name] = options + data
+            continue  # a megabyte: the unit tests load it; a seed that size only slows the fuzzer
+        c["plain-" + name] = b"\x0f\x00" + data
+    c["capped-billion-laughs.svg"] = b"\xf5\x00" + fx["billion-laughs.svg"]
+    c["amplification-billion-laughs.svg"] = b"\x08\x00" + fx["billion-laughs.svg"]
     c["chunked-minimal.svg"] = b"\x0f\x05" + fx["minimal.svg"]
     c["chunked-minimal.svgz"] = b"\x0f\x0b" + fx["minimal.svgz"]
     # Each limit driven by the options byte, at its smallest value.
@@ -221,11 +219,12 @@ def corpus(fx):
         (5, "entities.svg"),
         (6, "deep-entities.svg"),
         (7, "references-8.svg"),
-        (8, "doc-paths.svg"),
-        (9, "doc-lists.svg"),
-        (10, "doc-pyramid.svg"),
-        (11, "doc-text.svg"),
-        (12, "external-ge.svg"),
+        (8, "billion-laughs.svg"),
+        (9, "doc-paths.svg"),
+        (10, "doc-lists.svg"),
+        (11, "doc-pyramid.svg"),
+        (12, "doc-text.svg"),
+        (13, "external-ge.svg"),
     ]:
         c["limit-%d-%s" % (field, name)] = bytes([field, 0x00]) + fx[name]
     return c

@@ -54,6 +54,9 @@ static bool gvec_svg_limit_field(GTEXT_XML_Status status, GVEC_Transport transpo
   case GTEXT_XML_E_LIMIT_REFERENCES:
     *out = GVEC_LIMIT_ENTITY_REFERENCES;
     return true;
+  case GTEXT_XML_E_LIMIT_AMPLIFICATION:
+    *out = GVEC_LIMIT_ENTITY_AMPLIFICATION;
+    return true;
   default:
     return false;
   }

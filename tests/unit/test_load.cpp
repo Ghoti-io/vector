@@ -205,15 +205,9 @@ TEST(Load, InternalEntitiesExpandInAttributesAndContent) {
 }
 
 TEST(Load, AnInternalSubsetBeforeTheRootIsReadAndTheRootFound) {
-  // L7: a doctype's internal subset of any size within the limits. The text
-  // parser's declaration processing is quadratic for now (reported to text),
-  // so this uses 2048 declarations, not the 1 MiB fixture.
-  std::string decls;
-  for (int i = 0; i < 2048; i++) {
-    decls += "<!ENTITY e" + std::to_string(i) + " \"value " + std::to_string(i) + "\">\n";
-  }
-  std::vector<unsigned char> bytes =
-      Bytes("<!DOCTYPE svg [\n" + decls + "]>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n");
+  // L7: a doctype's internal subset of any size within the limits: the 1 MiB fixture, declarations by the thousand.
+  std::vector<unsigned char> bytes = Fixture("big-subset.svg");
+  ASSERT_GT(bytes.size(), (size_t) 1000000);
   EXPECT_STREQ(Probe(bytes).format_name, "svg");
   Loaded out;
   Load(bytes, nullptr, out);
@@ -431,7 +425,8 @@ struct LimitCase {
 
 static void SetLimit(GVEC_Limits & l, GVEC_Limit_Field f, size_t v) {
   size_t * p[] = {&l.max_input_bytes, &l.max_inflated_bytes, &l.max_elements, &l.max_depth, &l.max_attributes,
-      &l.max_entity_expanded_bytes, &l.max_entity_depth, &l.max_entity_references, &l.max_diagnostics};
+      &l.max_entity_expanded_bytes, &l.max_entity_depth, &l.max_entity_references, &l.max_entity_amplification,
+      &l.max_path_segments, &l.max_list_items, &l.max_reference_expansion, &l.max_text_bytes, &l.max_diagnostics};
   *p[f] = v;
 }
 
@@ -466,18 +461,31 @@ TEST(Limits, EachLimitLoadsAtItsBoundAndRefusesOnePastNamingTheField) {
 }
 
 TEST(Limits, TheEntityBombsStopAtTheExpansionBound) {
-  // The text parser's expansion is slow on these for now (reported to text),
-  // so the bound is small: what is tested is that the bound stops them and is
-  // named.
+  // Under the default caps both stop, quickly, at a bound that is named. A bound set small enough to be the first
+  // reached is the one named.
   for (const char * name : {"billion-laughs.svg", "quadratic.svg"}) {
+    Loaded out;
+    LoadFixture(name, nullptr, out);
+    EXPECT_EQ(out.result, GVEC_ERR_LIMIT) << name;
+    ASSERT_NE(out.First(GVEC_DIAG_LIMIT), nullptr) << name;
+    uint32_t named = out.First(GVEC_DIAG_LIMIT)->detail;
+    EXPECT_TRUE(named == (uint32_t) GVEC_LIMIT_ENTITY_AMPLIFICATION || named == (uint32_t) GVEC_LIMIT_ENTITY_EXPANDED_BYTES ||
+        named == (uint32_t) GVEC_LIMIT_ENTITY_REFERENCES)
+        << name << " named field " << named;
     GVEC_Limits l;
     std::memset(&l, 0, sizeof(l));
     l.max_entity_expanded_bytes = 4096;
+    Loaded small;
+    LoadFixture(name, &l, small);
+    EXPECT_EQ(small.result, GVEC_ERR_LIMIT) << name;
+    ASSERT_NE(small.First(GVEC_DIAG_LIMIT), nullptr) << name;
+    EXPECT_EQ(small.First(GVEC_DIAG_LIMIT)->detail, (uint32_t) GVEC_LIMIT_ENTITY_EXPANDED_BYTES) << name;
+  }
+  {
+    // A billion laughs under the default caps names the amplification bound.
     Loaded out;
-    LoadFixture(name, &l, out);
-    EXPECT_EQ(out.result, GVEC_ERR_LIMIT) << name;
-    ASSERT_NE(out.First(GVEC_DIAG_LIMIT), nullptr) << name;
-    EXPECT_EQ(out.First(GVEC_DIAG_LIMIT)->detail, (uint32_t) GVEC_LIMIT_ENTITY_EXPANDED_BYTES) << name;
+    LoadFixture("billion-laughs.svg", nullptr, out);
+    EXPECT_EQ(out.First(GVEC_DIAG_LIMIT)->detail, (uint32_t) GVEC_LIMIT_ENTITY_AMPLIFICATION);
   }
   GVEC_Limits l;
   std::memset(&l, 0, sizeof(l));

@@ -99,6 +99,7 @@ GVEC_API const char * gvec_result_string(GVEC_Result result);
  * | max_entity_expanded_bytes | 64 MiB, the cumulative replacement text of every entity reference |
  * | max_entity_depth | 32 |
  * | max_entity_references | 1,000,000 |
+ * | max_entity_amplification | 100, the most the expanded entity text may be of the input, once it is past 8 MiB |
  * | max_path_segments | 4,194,304 segments in one path attribute |
  * | max_list_items | 1,048,576 numbers, lengths or points in one list attribute |
  * | max_reference_expansion | 1,000,000 elements a `use` (or all of them, in a document) instantiates |
@@ -117,6 +118,7 @@ typedef struct GVEC_Limits {
   size_t max_entity_expanded_bytes; ///< Total replacement text of entity references.
   size_t max_entity_depth;          ///< Entity references nested inside entity replacement text.
   size_t max_entity_references;     ///< Entity and character references in the document.
+  size_t max_entity_amplification;  ///< Most the expanded entity text may be of the input, past 8 MiB of it (a factor).
   size_t max_path_segments;         ///< Segments in one path attribute; the rest are diagnosed.
   size_t max_list_items;            ///< Items in one number, length or point list attribute.
   size_t max_reference_expansion;   ///< Elements one `use` instantiates, and elements all of them do in a document.
@@ -135,6 +137,7 @@ typedef enum GVEC_Limit_Field {
   GVEC_LIMIT_ENTITY_EXPANDED_BYTES,
   GVEC_LIMIT_ENTITY_DEPTH,
   GVEC_LIMIT_ENTITY_REFERENCES,
+  GVEC_LIMIT_ENTITY_AMPLIFICATION,
   GVEC_LIMIT_PATH_SEGMENTS,
   GVEC_LIMIT_LIST_ITEMS,
   GVEC_LIMIT_REFERENCE_EXPANSION,

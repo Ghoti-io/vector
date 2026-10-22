@@ -215,15 +215,13 @@ used on different threads at once.
 macro or an inline wrapper is seen. The decimal conversions come from `math` because a C-library
 reader depends on the locale.
 
-## Known limits of the XML parser
+## Entity bombs
 
-Two defects in `text`'s DTD processing were found while building the load, and are reported there:
-declaring entities in an internal subset is quadratic in their number (16,384 declarations, about
-400 KB, exhaust the parser's work budget), and entity expansion is super-linear (300 KB of expansion
-takes seconds), so under the default caps an entity bomb is bounded by time before it reaches
-`max_entity_expanded_bytes`. Until `text` fixes them, the tests run the bombs with a small expansion
-cap, the fuzz seeds that hold bombs carry one in their options byte, and the internal-subset test
-uses 2,048 declarations. Those three are widened to the default caps when the fix lands.
+A document that declares nested entities can ask for far more text than it contains. Four bounds stop it, each named
+in the diagnostic: `max_entity_expanded_bytes` (the total replacement text), `max_entity_depth`,
+`max_entity_references`, and `max_entity_amplification`, the factor by which the expanded text may exceed the input
+once it is past 8 MiB. A billion laughs under the defaults is refused at the amplification bound in a few
+milliseconds, and the tests run the bombs and a 1 MiB internal subset under the default caps.
 
 ## Coverage
 
