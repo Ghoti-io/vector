@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- Every path command, absolute and relative, with the reflected controls of S and T written out (P7). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <path d="M4 4 L20 4 L20 20 Z" fill="#c0392b"/>
+  <path d="M26 4 h14 v14 H26 z" fill="#2980b9"/>
+  <path d="M46 4 q8 0 8 8 t8 8 L46 20 Z" fill="#27ae60"/>
+  <path d="M4 28 C 4 40, 20 40, 20 28 S 36 16 36 28 Z" fill="#8e44ad"/>
+  <path d="M44 28 Q 54 24 60 36 T 44 44 Z" fill="#f39c12"/>
+  <path d="M4 50 l10 0 0 10 -10 0 z m20 0 l10 0 0 10 z" fill="#16a085"/>
+  <path d="M40 50 L60 50 L50 60 Z L44 54 L56 54" fill="#d35400"/>
+</svg>

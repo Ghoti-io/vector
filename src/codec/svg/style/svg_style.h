@@ -112,6 +112,7 @@ struct GVEC_Svg_Instance {
   double override_width, override_height; ///< The `width` and `height` a `use` gives the `svg` or `symbol` it instantiates, where `has_override_*`.
   bool has_override_width, has_override_height;
   GTEXT_CSS_Computed_Style * style;       ///< Memoised: owned by the context.
+  size_t style_slot;                      ///< One more than the index of `style` in the context's list, while it has one.
   uint32_t depth;                         ///< Inheritance ancestors above this instance.
   bool style_failed;                      ///< A computation that failed is not repeated.
   GVEC_Result style_result;

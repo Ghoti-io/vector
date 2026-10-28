@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- display removes a subtree; visibility removes only an element's own painting; switch draws its selected child (P6). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <path d="M4 4H20V20H4Z" fill="#c0392b" display="none"/>
+  <g display="none"><path d="M24 4H40V20H24Z" fill="#2980b9"/></g>
+  <g visibility="hidden">
+    <path d="M4 24H20V40H4Z" fill="#27ae60"/>
+    <path d="M24 24H40V40H24Z" fill="#8e44ad" visibility="visible"/>
+  </g>
+  <switch>
+    <path d="M44 4H60V20H44Z" fill="#000" systemLanguage="xx"/>
+    <path d="M44 24H60V40H44Z" fill="#f39c12"/>
+    <path d="M44 44H60V60H44Z" fill="#000"/>
+  </switch>
+  <defs><path d="M0 0H60V60H0Z" fill="#000"/></defs>
+  <path d="M4 44H20V60H4Z" fill="#16a085" visibility="collapse"/>
+  <path d="M24 44H40V60H24Z" fill="#d35400"/>
+</svg>

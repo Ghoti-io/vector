@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- A use is an instance of a picture of its referent drawn in the clone's context (P8); equal drawings share a picture. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64">
+  <defs>
+    <g id="tile"><path d="M0 0H10V10H0Z"/><path d="M10 10H20V20H10Z" fill="#fff"/></g>
+    <use id="pair" href="#tile" x="2"/>
+  </defs>
+  <use href="#tile" x="4" y="4" fill="#c0392b"/>
+  <use xlink:href="#tile" x="30" y="4" fill="#c0392b"/>
+  <use href="#tile" x="4" y="34" fill="#2980b9" transform="scale(.75)"/>
+  <use href="#pair" x="30" y="30" fill="#27ae60" opacity=".5"/>
+</svg>

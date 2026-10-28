@@ -93,3 +93,33 @@ line when the document is built.
   real font, and `filter` and `mask` beyond reading their references.
 
 `properties.md` states where the registry's definition of each property comes from.
+
+## Lowering
+
+* **The viewport.** The outermost `svg` has `x` and `y` of no effect, and a missing `width` or `height` is 100% of
+  `GVEC_Load_Options.viewport` (300 by 150 unless the caller gives one): nothing is read from the environment. A `viewBox`
+  with a zero width or height, or a viewport of no size, disables the rendering of its element (SVG 2, 8.2) and is
+  reported as a notice, `GVEC_DIAG_RENDERING_DISABLED`; a negative `viewBox` is an invalid attribute and is ignored.
+* **`preserveAspectRatio`** is the formula of SVG 2, 8.2, evaluated exactly: the scale is the correctly rounded quotient and
+  the translation is the exact value rounded once. `slice` is the larger scale and `meet` the smaller; `none` scales each
+  axis on its own and has no alignment; the SVG 1.1 `defer` is accepted and ignored.
+* **`overflow` of a viewport.** The user agent style sheet gives `hidden` to a nested `svg`, a `symbol` and the other
+  viewport elements and `visible` to the outermost; `visible` and `auto` do not clip and every other value clips to the
+  viewport rectangle in the parent's space.
+* **`use`.** The referent is drawn in the clone's context: it inherits from the `use`, the `use`'s `transform` and then
+  `translate(x, y)` place it, and the `width` and `height` of the `use` override those of an `svg` or `symbol` referent. A
+  `symbol` is drawn only through a `use`. A `use` of a `use` is a picture that holds an instance. A reference to an
+  element of another document, or to a `data:` URI, is refused (`external-reference`): nothing is fetched.
+* **Groups.** A group is made for `opacity` below 1 over painted content and for a viewport's clip. A group is drawn outside
+  the clip of the same element, which is the same picture as the other way round for a rectangle.
+* **Fills.** `fill-rule` is the item's rule. A subpath with no length, a path of one point, and a `polygon` of one point draw
+  nothing. A `line` has no area. A trailing odd coordinate of `points` ends the list (SVG 2, 9.8.1); a path that ends in an
+  error draws its valid prefix (SVG 2, 9.5.4) and the error is reported by the load.
+* **Refusals** are listed, with what lifts each, in `refusals.md`. `clip-path` naming a `clipPath` or a basic shape,
+  `mask`, `filter` and `mix-blend-mode` refuse the element that carries them, whole; `clip-path: url(#nothing)` is ignored, as
+  SVG 2 says (a reference that names nothing leaves the property unspecified), and a `mask` or `filter` that names nothing is
+  refused, because the specifications and the browsers disagree on what to draw.
+* **The scene's limits** (levels of nodes, open groups, nested pictures, items, expansion and nodes) hold the drawing to
+  what the scene will publish, in both forms; an element that does not fit is refused with `limit`.
+* **Not read here:** the `refX` and `refY` of a `symbol`, `transform-box` other than `view-box` on an element with a
+  percentage (refused), and the `d` property in CSS (the typed attribute is the path).

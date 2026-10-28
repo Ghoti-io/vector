@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- Degenerate geometry draws nothing and is no refusal (P7, SVG 2 section 9). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <path d="M10 10"/>
+  <path d="M10 10 L10 10"/>
+  <path d="M10 10 Z"/>
+  <polygon points="5 5"/>
+  <polyline points=""/>
+  <path d="M20 20 L40 20" fill="#c0392b"/>
+  <path d="M8 8 H24 V24 H8 Z" fill="#2980b9"/>
+  <path d="M30 30 H50 V50 H30 Z X" fill="#27ae60"/>
+</svg>

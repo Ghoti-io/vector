@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- opacity below 1 over painted content is one group; fill-opacity is the alpha of the paint and no group (P5, AD-13). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <g opacity=".5">
+    <path d="M4 4H36V36H4Z" fill="#c0392b"/>
+    <path d="M20 20H52V52H20Z" fill="#2980b9"/>
+  </g>
+  <path d="M40 4H60V24H40Z" fill="#27ae60" opacity=".25"/>
+  <path d="M40 28H60V48H40Z" fill="#8e44ad" fill-opacity=".25"/>
+  <g opacity=".5"><g opacity=".5"><path d="M4 40H24V60H4Z" fill="#000"/></g></g>
+  <g opacity=".5"></g>
+</svg>

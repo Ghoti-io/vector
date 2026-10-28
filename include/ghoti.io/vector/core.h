@@ -197,6 +197,7 @@ typedef enum GVEC_Diag_Code {
   GVEC_DIAG_EXPANSION_LIMIT,   ///< A `use` instantiates more elements than max_reference_expansion; it is not instantiated.
   GVEC_DIAG_STYLE_INVALID,     ///< A declaration of a `style` attribute or a presentation attribute is not a value of its property, or a style could not be computed; it was dropped. `detail` is the byte offset of the declaration in the attribute's value.
   GVEC_DIAG_UNSUPPORTED_COLOR_SPACE, ///< A colour the shape waist cannot carry (a space `text` parses and the waist has no gamut for, or a colour that needs conversion); the element using it is refused.
+  GVEC_DIAG_RENDERING_DISABLED, ///< An element's geometry disables its rendering (a viewport or viewBox of zero size, SVG 2 8.2): nothing is drawn for it, and that is the document's meaning, not a refusal.
   GVEC_DIAG_CODE_COUNT      ///< One past the last code; not a code.
 } GVEC_Diag_Code;
 

@@ -31,6 +31,7 @@
  *   off-by-one     the same rectangle one row taller
  *   exact-dropped  the same rectangle, and a diagnostic dropped past the cap
  *   minus1/minus2  the same rectangle with the red channel one or two levels low
+ *   sink-refused   the same rectangle in a knockout group, which the sink reports as refused
  *
  * They are compiled only into the runner, which is not installed.
  */

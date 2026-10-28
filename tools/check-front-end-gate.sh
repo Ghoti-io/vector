@@ -105,6 +105,29 @@ else
   expect_pass 'front-end/symbols control (my_getenv_like is not getenv)' "$G" --symbols "$work/p-near.a"
 fi
 
+# The lowering's objects reach neither the text library nor the loader.
+if [ -f "$work/clean.o" ]; then
+  mkdir -p "$work/low-ok" "$work/low-empty" "$work/low-bad1" "$work/low-bad2" "$work/low-bad3"
+  printf 'extern int gvec_svg_get_like(int);\nint lowering_part(int x) { return gvec_svg_get_like(x); }\n' > "$work/low.c"
+  $CC -std=c17 -c -O0 "$work/low.c" -o "$work/low-ok/low.o"
+  expect_pass 'front-end/lowering control (a style accessor is fine)' "$G" --lowering "$work/low-ok"
+  expect_fail 'front-end/lowering empty' 'measuring nothing' "$G" --lowering "$work/low-empty"
+  for plant in "gtext_xml_reader_create" "ghotiio_text_0_gtext_css_parse" "ghotiio_vector_0_gvec_svg_load" "gvec_svg_probe" "ghotiio_vector_0_gvec_svg_build"; do
+    d="$work/low-p-$plant"
+    mkdir -p "$d"
+    cp "$work/low-ok/low.o" "$d/low.o"
+    printf 'extern int %s(void);\nint planted(void) { return %s(); }\n' "$plant" "$plant" > "$work/lp.c"
+    $CC -std=c17 -c -O0 "$work/lp.c" -o "$d/planted.o"
+    expect_fail "front-end/lowering planted ($plant)" "$plant" "$G" --lowering "$d"
+  done
+  # A name that merely resembles them is not them.
+  d="$work/low-near"
+  mkdir -p "$d"
+  printf 'extern int gvec_svg_loaded_like(void);\nint near(void) { return gvec_svg_loaded_like(); }\n' > "$work/ln.c"
+  $CC -std=c17 -c -O0 "$work/ln.c" -o "$d/near.o"
+  expect_pass 'front-end/lowering control (gvec_svg_loaded_like is not the loader)' "$G" --lowering "$d"
+fi
+
 if [ "$failures" -ne 0 ]; then
   printf 'check-front-end-gate: %d of %d checks failed\n' "$failures" "$checks" >&2
   exit 1

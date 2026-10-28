@@ -193,7 +193,9 @@ void gvec_svg_style_context_free(GVEC_Svg_Style_Context * context) {
     return;
   }
   for (size_t i = 0; i < context->style_count; i++) {
-    gtext_css_computed_free(context->styles[i]);
+    if (context->styles[i]) {
+      gtext_css_computed_free(context->styles[i]);
+    }
   }
   gvec_free(context->allocator, context->styles);
   gvec_svg_engine_release(context->engine);
@@ -433,6 +435,24 @@ const GVEC_Svg_Instance * gvec_svg_instance_use_context(const GVEC_Svg_Instance 
   return instance ? instance->use : NULL;
 }
 
+void gvec_svg_instance_override(
+    const GVEC_Svg_Instance * instance, bool * has_width, double * out_width, bool * has_height, double * out_height) {
+  bool w = instance && instance->has_override_width;
+  bool h = instance && instance->has_override_height;
+  if (has_width) {
+    *has_width = w;
+  }
+  if (has_height) {
+    *has_height = h;
+  }
+  if (w && out_width) {
+    *out_width = instance->override_width;
+  }
+  if (h && out_height) {
+    *out_height = instance->override_height;
+  }
+}
+
 void gvec_svg_instance_viewport(const GVEC_Svg_Instance * instance, double * out_width, double * out_height) {
   if (!instance) {
     return;
@@ -584,7 +604,19 @@ static GVEC_Result compute_one(GVEC_Svg_Style_Context * context, GVEC_Svg_Instan
     return r;
   }
   instance->style = style;
+  instance->style_slot = context->style_count;
   return GVEC_OK;
+}
+
+void gvec_svg_instance_release(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance) {
+  GVEC_Svg_Instance * i = (GVEC_Svg_Instance *) instance;
+  if (!context || !i || !i->style) {
+    return;
+  }
+  gtext_css_computed_free(i->style);
+  context->styles[i->style_slot - 1] = NULL;
+  i->style = NULL;
+  i->style_slot = 0;
 }
 
 GVEC_Result gvec_svg_instance_style(

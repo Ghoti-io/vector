@@ -130,29 +130,3 @@ int gvec_svg_probe(const unsigned char * data, size_t size, const GVEC_Limits * 
   gtext_xml_reader_free(reader);
   return confidence;
 }
-
-static GVEC_Result gvec_svg_refuse_root(const GVEC_Doc * doc, const GVEC_Lower_Options * options,
-    GVEC_Diagnostics * diagnostics) {
-  const gvec_svg_doc * svg = doc->priv;
-  if (options) {
-    for (size_t i = 0; i < sizeof(options->_reserved); i++) {
-      if (options->_reserved[i] != 0) {
-        return GVEC_ERR_INVALID;
-      }
-    }
-  }
-  return gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED, GVEC_LOWER_NOT_YET_LOWERED,
-      svg->root_line, svg->root_column, svg->root_offset, "svg", "not lowered: this version lowers nothing yet");
-}
-
-GVEC_Result gvec_svg_lower_edit(const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_Edit * edit,
-    GVEC_Diagnostics * diagnostics) {
-  (void) edit;
-  return gvec_svg_refuse_root(doc, options, diagnostics);
-}
-
-GVEC_Result gvec_svg_lower_list(const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_List * list,
-    GVEC_Diagnostics * diagnostics) {
-  (void) list;
-  return gvec_svg_refuse_root(doc, options, diagnostics);
-}

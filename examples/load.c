@@ -105,20 +105,23 @@ int main(int argc, char ** argv) {
     status = 1;
   }
 
-  /* Lower into an immediate-mode list. Nothing is lowered yet, so the root is
-   * refused with its line. */
+  /* Lower into an immediate-mode list over a store. What cannot be drawn is
+   * reported, one refusal for each element, with its line. */
   gvec_diagnostics_clear(&diagnostics);
   if (gshscene_store_create(NULL, NULL, &store) != GSHSCENE_OK || gshscene_list_create(NULL, NULL, store, &list) != GSHSCENE_OK) {
     fprintf(stderr, "load: cannot create a shape-scene list\n");
     status = 1;
   }
   else {
-    r = gvec_doc_lower_list(doc, NULL, list, &diagnostics);
-    printf("lower: %s\n", gvec_result_string(r));
+    GVEC_Lower_Options options;
+    memset(&options, 0, sizeof options);
+    options.store = store;
+    r = gvec_doc_lower_list(doc, &options, list, &diagnostics);
+    printf("lower: %s, %zu items, %zu refused\n", gvec_result_string(r), gshscene_list_count(list),
+        gvec_diagnostics_count_code(&diagnostics, GVEC_DIAG_LOWER_REFUSED));
     print_diagnostics(&diagnostics);
-    if (r != GVEC_OK || gvec_diagnostics_count_code(&diagnostics, GVEC_DIAG_LOWER_REFUSED) != 1 ||
-        (argc == 1 && diagnostics.items[0].line != 5)) {
-      fprintf(stderr, "load: expected one refusal, at the root's line\n");
+    if (r != GVEC_OK || (argc == 1 && gvec_diagnostics_count_code(&diagnostics, GVEC_DIAG_LOWER_REFUSED) != 0)) {
+      fprintf(stderr, "load: expected the document to lower without a refusal\n");
       status = 1;
     }
   }

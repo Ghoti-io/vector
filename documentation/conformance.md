@@ -46,7 +46,8 @@ timestamp, and two runs of the same tree give the same bytes.
 The comparison gives two numbers: the largest per-channel difference over all pixels, and the number of pixels
 that differ by more than 1/255 in any channel. Two pixels that are both fully transparent are equal whatever
 their colour channels hold. A case passes when the first is at most `max-diff` and the second at most
-`max-bad-ppm` parts per million of the pixels (`tools/resvg-tests/TOLERANCE`).
+`max-bad-ppm` parts per million of the pixels (`tools/resvg-tests/TOLERANCE`), and when the sink reported nothing it
+refused or approximated.
 
 ## The tolerance is measured
 
@@ -82,27 +83,54 @@ population includes cases an oracle does not draw as the reference does, so the 
 typical error. The distance is a floor: no tolerance tighter than the distance two independent renderers keep from
 each other can separate a correct drawing from a wrong one. The pair for this library's own output is therefore
 set from its measured distance to the references over the cases it draws, and from this table, not before a
-lowering exists to measure.
+case that draws something can be compared with its reference.
 
 ## The score today
 
-The library lowers nothing yet: every loaded document is refused at its root, and the score is 0 over the
-whole corpus.
+The lowering draws structure and solid fills of `path`, `polygon` and `polyline`; it refuses what it cannot draw yet
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **4 of 1,679
+(0.24%)**, with the tolerance at zero.
 
 | directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
 | `masking` | 93 | 0 | 0 | 54 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 0 | 0 | 118 | 0 | 31 | 0 |
-| `painting` | 304 | 0 | 0 | 279 | 0 | 25 | 0 |
+| `painting` | 304 | 1 | 0 | 278 | 0 | 25 | 0 |
 | `shapes` | 133 | 0 | 0 | 133 | 0 | 0 | 0 |
-| `structure` | 247 | 0 | 0 | 181 | 1 | 65 | 0 |
+| `structure` | 247 | 3 | 0 | 178 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **0** | **0** | **765** | **1** | **913** | **0** |
+| **all** | **1679** | **4** | **0** | **761** | **1** | **913** | **0** |
+
+The four that pass are `painting/display/none-on-svg`, `structure/svg/no-children`, `structure/svg/zero-size` and
+`structure/systemLanguage/on-svg`: each is a document that draws nothing, and the library draws nothing for it. They
+are real passes (the document loaded, the lowering refused nothing, and the render equals the reference), and they are
+the whole of what this version can score.
+
+Almost nothing else can pass yet, for one reason that is easy to read off the report. The first element refused in each
+of the 761 refused cases is a `rect` in 474 of them (the corpus draws an "image frame", a `rect` with a stroke, in
+almost every file), a `path` in 172 (an arc or a stroke), a `circle` in 46, `text` in 22, a `line` in 16 and an `ellipse`
+in 12. The named shapes and the strokes are the next phases of the plan, and they decide how much of this table moves.
+No case has been seen to **fail**: every case that is drawn at all is one that draws nothing.
+
+The tolerance is therefore still zero, and that is the finding, not an omission. The only passing cases are blank, so
+their distance to the references and to both oracles is zero and says nothing about how shape-cpu's anti-aliasing
+differs from the references'; the table above (the oracles' distances) is measured over the cases the oracles draw, and
+no case that the library draws is among them. `TOLERANCE` stays at `max-diff 0`, `max-bad-ppm 0` and `evidence none`
+until a case that draws something passes or fails against a reference, which is the first evidence it can be set from.
 
 The one case that does not load is `structure/svg/not-UTF-8-encoding.svg`, whose declaration is
 `encoding="Windows-1251"`: the XML parser reads UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII, and not that
 encoding. It stays in the score as a failure rather than being excluded.
+
+### What the runner reads from a sink
+
+The runner loads each document with the reference's size as its viewport (the size a browser gives it, which matters
+for a document with no `width` and `height` of its own), lowers it with a `GVEC_Lower_Trace`, and renders it. A sink
+that reports an item it refused or approximated makes the case `REFUSED`, not `PASS`, even when the pixels agree, with
+the report entry mapped back through the trace to the element and line that drew it (`sink-report=N first=element:line`,
+or `first=unplaced` for an entry that is about no item). `check-conformance` plants a lowering whose sink refuses an
+item and requires `REFUSED`, and `check-conformance-planted` plants the runner ignoring the sink's report.
 
 ## Running it
 

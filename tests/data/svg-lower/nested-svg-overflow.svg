@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Nested svg elements establish a viewport at x, y, width, height; overflow decides the clip (P4, SVG 2 section 8). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <svg x="4" y="4" width="24" height="24">
+    <path d="M-6 -6H40V40H-6Z" fill="#c0392b"/>
+  </svg>
+  <svg x="36" y="4" width="24" height="24" overflow="visible">
+    <path d="M0 0H30V30H0Z" fill="#2980b9" fill-opacity=".5"/>
+  </svg>
+  <svg x="4" y="36" width="24" height="24" viewBox="0 0 12 12">
+    <path d="M0 0H12V12H0Z" fill="#27ae60"/>
+    <path d="M6 6H18V18H6Z" fill="#f1c40f"/>
+  </svg>
+  <svg x="36" y="36" width="24" height="24" viewBox="0 0 10 20" preserveAspectRatio="xMaxYMin slice" overflow="auto">
+    <path d="M0 0H10V20H0Z" fill="#8e44ad"/>
+  </svg>
+</svg>

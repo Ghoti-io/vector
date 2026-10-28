@@ -193,7 +193,7 @@ TEST(Diagnostics, ALoadSetsTheCapFromItsLimits) {
   ASSERT_EQ(out.result, GVEC_OK);
   EXPECT_EQ(out.diagnostics.cap, (size_t) 1);
   EXPECT_EQ(out.diagnostics.count, (size_t) 1);
-  GVEC_Result r = gvec_doc_lower_list(out.doc, nullptr, (GSHSCENE_List *) &l, &out.diagnostics);
+  GVEC_Result r = gvec_diag_add(&out.diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED, GVEC_LOWER_ARC, 1, 1, 0, "path", "refused");
   EXPECT_EQ(r, GVEC_OK);
   EXPECT_EQ(out.diagnostics.count, (size_t) 1);
   EXPECT_EQ(out.diagnostics.dropped, (size_t) 1);
@@ -226,7 +226,7 @@ TEST(Diagnostics, TheCodesAndSeveritiesHaveTheirStableNumbers) {
   EXPECT_EQ(GVEC_DIAG_REFERENCE_MISSING, 14);
   EXPECT_EQ(GVEC_DIAG_REFERENCE_CYCLE, 15);
   EXPECT_EQ(GVEC_DIAG_EXPANSION_LIMIT, 16);
-  EXPECT_EQ(GVEC_LOWER_NOT_YET_LOWERED, 1);
+  EXPECT_EQ(GVEC_LOWER_ARC, 1);
 }
 
 TEST(Version, TheVersionFunctionsReportTheBuild) {

@@ -39,8 +39,11 @@
  *
  * The final path is only the public API: gvec_doc_load on a file stream,
  * gvec_doc_lower_list into a list, shape-cpu to render it, image to decode the
- * reference. A lowering that reports any refusal is REFUSED and is not
- * rendered, so a drawing that left something out can never pass. The comparison
+ * reference. The document is loaded with the reference's size as its viewport (the
+ * size a browser gives it). A lowering that reports any refusal is REFUSED and is not
+ * rendered, so a drawing that left something out can never pass; a sink that
+ * reports an item it refused or approximated makes the case REFUSED too, with the
+ * report entry mapped back to the element it came from. The comparison
  * is on straight 8-bit RGBA; two pixels that are both fully transparent are
  * equal whatever their colour channels hold. The runner reads no environment
  * variable and no clock, so its output is a function of the case's bytes and
@@ -266,12 +269,17 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   GSHSCENE_Sink * sink = NULL;
   GSHSCENE_Report * report = NULL;
   GIMG_Raster * raster = NULL;
+  GVEC_Lower_Trace * trace = NULL;
 
   if (gvec_stream_create_file(svg, &stream) != GVEC_OK) {
     say(v, "ERROR", "case file unreadable");
     goto done;
   }
-  GVEC_Result r = gvec_doc_load(stream, NULL, &diag, &doc);
+  GVEC_Load_Options load;
+  memset(&load, 0, sizeof load);
+  load.viewport_width = (double) gimg_raster_width(reference);
+  load.viewport_height = (double) gimg_raster_height(reference);
+  GVEC_Result r = gvec_doc_load(stream, &load, &diag, &doc);
   if (r != GVEC_OK) {
     say(v, "NOT_LOADED", "%s code=%d line=%zu", gvec_result_string(r), diag.count ? (int) diag.items[0].code : 0,
         diag.count ? diag.items[0].line : (size_t) 0);
@@ -283,7 +291,15 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
     goto done;
   }
   conf_stub_set_store(store);
-  GVEC_Result lr = o->lower(doc, NULL, list, &diag);
+  if (gvec_lower_trace_create(NULL, &trace) != GVEC_OK) {
+    say(v, "ERROR", "scene allocation");
+    goto done;
+  }
+  GVEC_Lower_Options lower;
+  memset(&lower, 0, sizeof lower);
+  lower.store = store;
+  lower.trace = trace;
+  GVEC_Result lr = o->lower(doc, &lower, list, &diag);
   if (lr != GVEC_OK) {
     say(v, "ERROR", "lowering returned %s", gvec_result_string(lr));
     goto done;
@@ -317,12 +333,37 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
     say(v, "ERROR", "render %s", gshscene_result_string(sr));
     goto done;
   }
+  GSHSCENE_Report_Summary summary;
+  if (gshscene_report_summary(report, &summary) != GSHSCENE_OK) {
+    say(v, "ERROR", "render report");
+    goto done;
+  }
+  size_t unsound = summary.by_class[GSHSCENE_ENTRY_REFUSED] + summary.by_class[GSHSCENE_ENTRY_APPROXIMATED];
+  if (unsound > 0) {
+    /* The sink left something out or drew it otherwise than defined: the picture cannot be scored as the document's. */
+    char where[160] = "unplaced";
+    for (size_t i = 0; i < gshscene_report_count(report); i++) {
+      GSHSCENE_Report_Entry entry;
+      if (gshscene_report_entry(report, i, &entry) != GSHSCENE_OK ||
+          (entry.entry_class != GSHSCENE_ENTRY_REFUSED && entry.entry_class != GSHSCENE_ENTRY_APPROXIMATED)) {
+        continue;
+      }
+      GVEC_Lower_Site site;
+      if (gvec_lower_trace_element(trace, NULL, report, i, &site) == GVEC_OK && site.placed) {
+        snprintf(where, sizeof where, "%s:%zu", site.element, site.line);
+      }
+      break;
+    }
+    say(v, "REFUSED", "sink-report=%zu first=%s", unsound, where);
+    goto done;
+  }
   Diff d = compare_rasters(raster, reference);
   int pass = d.max_diff <= o->max_diff && d.bad * 1000000u <= o->max_bad_ppm * d.total;
   say(v, pass ? "PASS" : "FAIL", "maxdiff=%u bad=%llu/%llu", d.max_diff, (unsigned long long) d.bad,
       (unsigned long long) d.total);
 
 done:
+  gvec_lower_trace_free(trace);
   gshscene_report_destroy(report);
   gshscene_sink_destroy(sink);
   gimg_raster_destroy(raster);

@@ -102,11 +102,9 @@ and `transport` lines, then the codec's own lines (none yet). `gvec_doc_hash` is
 MurmurHash3 x64-128 (cutil's), seed 0, over the dump's bytes, read little-endian, so it is the same
 on every target. Before the first release the format stays 1 and is extended in place.
 
-**L11 The lowering entry points.** `gvec_doc_lower_edit` and `gvec_doc_lower_list` have their final
-signatures, so the conformance harness scores against the API it will keep. Nothing is lowered yet:
-each emits nothing, returns `GVEC_OK`, and appends one `GVEC_DIAG_LOWER_REFUSED` entry, reason
-`GVEC_LOWER_NOT_YET_LOWERED`, for the root `svg` with its line. A refusal per document is what an
-unsupported feature does, so this is a correct, if empty, lowering.
+**L11 The lowering entry points.** `gvec_doc_lower_edit` and `gvec_doc_lower_list` walk the document once and
+emit the same drawing into an edit of the retained scene or into an immediate-mode list (the lowering, P1 to P10, below).
+Neither publishes, renders or touches a sink.
 
 ## The typed document (T1 to T14)
 
@@ -291,6 +289,84 @@ loading an icon costs, and depends only on the viewport, the color scheme and th
 with the default allocator share engines kept for each environment (eight at most), which are immutable and safe on any
 thread; `gvec_svg_style_cache_clear()` releases them. A context with another allocator builds its own engine through it.
 
+## The lowering (P1 to P10)
+
+`lower.h` is the public face; `src/codec/svg/lower/` holds the walk and the two emitters. The lowering reads the typed
+document and the used values of the style layer and nothing else: no XML and no CSS text, and `check-front-end` fails if
+an object of the lowering references the `text` library or the loader.
+
+**P1 One walk, two emitters.** The walk (`lower_walk.c`) visits every element in the context it is drawn in and builds a
+drawing tree: fills, opacity groups, clips, and `use` nodes that hold a picture's content. It owns every decision: what is
+drawn, what is refused and why, the maps, the paints and the paths. The list emitter records the tree in a `GSHSCENE_List`;
+the edit emitter makes keyed nodes of it. An emitter decides nothing, so a decision cannot be made twice, once for each
+form. Every map is composed once and normalised (composed with the identity, which is what a retained scene does to the
+groups above an item), so the recorded list and the list a published version emits are equal in every bit.
+
+**P2 The equality gate.** For every document the list a published edit emits equals the list recorded directly
+(`gshscene_list_equal`, and the same hash), and the two render to the same raster. The unit tests check the first on every
+document they lower; `make check-lower-gate` checks both on the fixtures of `tests/data/svg-lower`, and against the golden
+file of each (`tests/golden/lower`: the hashes, the diagnostics and the list's dump, which `make update-lower-goldens`
+rewrites for review). The load fuzzer lowers every document it loads both ways and requires the same, and `fuzz_lower` does it
+under each structural limit of the scene shrunk by its input, then renders with a sink that refuses most fills and maps every
+entry of the report back through the trace.
+
+**P3 The root and the viewports.** The outermost `svg` is laid out in `GVEC_Load_Options.viewport`: a missing `width` or
+`height` is 100% of it. A `viewBox` and `preserveAspectRatio` make the map from the box to the viewport (all nineteen forms:
+nine alignments with `meet` and with `slice`, and `none`). The scale is the correctly rounded quotient of the viewport's size
+and the box's; the translation is the exact value of `a * size - scale * (origin + a * box)` (`a` being 0, 1/2 or 1) summed
+as a non-overlapping expansion and rounded once, so no fused multiply-add is needed and the result is the same on every target.
+`tools/gen-lower-vectors.py` computes the same entries in rational arithmetic from the decimal text of the numbers, and the
+test reads them: they are an independent reference. A viewport or a `viewBox` of zero size disables the rendering of its
+element (`GVEC_DIAG_RENDERING_DISABLED`, a notice, not a refusal); a negative `viewBox` is an invalid attribute and is ignored.
+
+**P4 Nested viewports.** A nested `svg`, and a `symbol` or `svg` drawn by a `use`, is a viewport at `x`, `y`, `width` and
+`height` (the `use`'s own size overrides the referent's). `overflow` decides the clip: `visible` and `auto` do not clip, any
+other value clips to the viewport rectangle, which is a four-line path (exact for an axis-aligned rectangle) placed in the
+parent's space, outside the viewBox map.
+
+**P5 Composition without groups.** `transform` composes into the map each item carries. A group exists for `opacity` below 1
+over painted content (it carries the opacity) and for a viewport's clip; a plain `g`, a `use` with only a transform and a
+nested `svg` with only a viewBox make none and cost no node. `fill-opacity` is the alpha of the paint and is no group.
+`opacity` over nothing painted makes no group, and `opacity: 0` draws nothing.
+
+**P6 What is drawn, and what is refused.** `display: none` removes an element and its subtree (a `use` of it draws
+nothing); `visibility: hidden` removes an element's own painting and not its descendants' that are `visible`; a `switch`
+draws the child the loader selected. Elements that are never rendered by definition (`defs`, descriptive elements, paint
+servers, markers, clip paths, masks and filters as definitions, `style`, `script`, animation, unknown and foreign elements)
+draw nothing and are no refusals. An element that is drawn and uses what is not lowered yet is **refused whole**: one
+`GVEC_DIAG_LOWER_REFUSED` with its name, line, column and a reason (`refusals.md`), and none of it drawn, so the report and
+the picture say the same thing. A rectangle, circle, ellipse or arc is refused, not approximated: they wait for the shape
+family's exact primitives.
+
+**P7 Solid fills.** `path`, `polygon` and `polyline` become a model path (move, line, quadratic and cubic, close), interned
+by content; a `line` has no area and draws nothing. A path whose segments have no length draws nothing. Path data that ends
+in an error draws its valid prefix. The paint is straight `double` components in their color space with the alpha multiplied
+by `fill-opacity`; `currentColor` is the waist's foreground until the document sets a `color` (`GVEC_Lower_Options` can set the
+foreground of the list or the edit); `fill: none` and an alpha of zero emit nothing. A stroke that could be seen (a paint
+other than `none`, a width and an opacity above zero) refuses the element.
+
+**P8 `use` and `symbol`.** A `use` draws its referent in the clone's context into a picture (a list of its own, interned by
+content, so equal drawings share one) and is one instance with the map `transform` then `translate(x, y)`. In an edit the
+picture is a hidden group beside the instance node that draws it. A `use` that is on a cycle, that expands past the limit or
+that names a document that is never fetched is refused with its own reason; one that names nothing draws nothing.
+
+**P9 Keys, and the trace.** An edit's nodes are keyed in one domain of this library, by the element's key, the chain of `use`
+elements above it and the node's role, so a lowering again finds its nodes: it sets each to the properties it has (which
+changes nothing), adds the new ones, moves the ones that are out of place and removes the ones the document no longer has.
+All of them are under one group of the library's, placed under `GVEC_Lower_Options.parent`, so that removing what is stale
+cannot reach a node of the caller's. A `GVEC_Lower_Trace` records which element every item came from, so an entry of a sink's
+report prints as `line 40, path: ...`: for a list through the chain of indexes (an instance and then an item of its picture),
+for an edit through the version, the node and its key. An entry it cannot place is returned as unplaced, not dropped.
+
+**P10 The scene's limits.** The walk holds the drawing to the structural limits of the scene it is told of
+(`GVEC_Lower_Options.scene_limits`, else the defaults): the levels of nodes, the clips and groups open in one list, the
+pictures nested in pictures, the items of a list, the items once every instance is expanded and the nodes of a version. An
+element that does not fit is refused whole with the reason `limit`, in both forms, so a hostile document cannot make the
+caller's publish fail. The walk's model of each is tested against the scene's own: the deepest drawing it accepts is the
+deepest the scene publishes. (A retained scene counts the occurrences of its nodes against `max_expansion`, a use being its
+instance and the target it draws, and a list counts items, a group being a push and a pop; the walk checks both.) The depth of the
+walk itself is bounded by `max_depth`.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
@@ -305,11 +381,12 @@ used on different threads at once.
 | `check-libm` | any reference to or definition of a libm function |
 | `check-no-x87` | an x87 instruction in the objects |
 | `check-edges` | an include or a linked library outside `cutil`, `compress`, `text`, `shape-scene`, `shape-geometry`, `color`, `math`; so no renderer |
-| `check-front-end` | an include of `shape-scene/scene.h`; a reference to `getenv`, `setlocale`, `localeconv`, a clock, or a C-library decimal reader |
+| `check-front-end` | an include of `shape-scene/scene.h`; a reference to `getenv`, `setlocale`, `localeconv`, a clock, or a C-library decimal reader; an object of the lowering that references the `text` library or the loader |
 | `check-gates` | runs each gate above on a control, a planted violation and an empty population |
-| `check-test-data` | a fixture, a fuzz seed, a grammar or style vector or a namespace list that is not what its generator writes |
-| `fuzz-replay` | a seed that crashes or breaks an invariant, and a corpus that leaves an outcome unreached |
-| `check-planted` | a planted defect in an L-rule, a T-rule or a C-rule that no test catches |
+| `check-test-data` | a fixture, a fuzz seed, a vector, a reason table or a namespace list that is not what its generator writes |
+| `fuzz-replay` | a seed that crashes or breaks an invariant (the load, style and lowering fuzzers), and a corpus that leaves an outcome unreached |
+| `check-planted` | a planted defect in an L-rule, a T-rule, a C-rule or a P-rule that no test catches |
+| `check-lower-gate` | a fixture whose recorded list and published edit's list differ or render differently, or that differs from its golden file |
 | `check-tables` | committed element and attribute tables that are not what the generator writes from the pinned pages; a generator that does not fail on its plants |
 | `check-doc-oracle` | a dump that disagrees with an independent reader of the same documents (values, references, cycles, expansion counts, conditions), or a comparison that does not fail on a planted difference |
 | `check-style-oracle` | a computed style that disagrees with Chromium and Firefox in a way `tools/doc-oracle/style_divergences.txt` does not classify (with the sentence that decides it), a classified difference that no longer occurs, or a comparison that does not fail on a planted difference; the browsers are a pinned image (`make oracle-images`), and without it the check is skipped, counted, and fails under `GHOTI_ORACLE_REQUIRED=1` |
@@ -330,7 +407,9 @@ milliseconds, and the tests run the bombs and a 1 MiB internal subset under the 
 
 ## Coverage
 
-`make coverage` measures line coverage of `src/` with the unit tests and the fuzz replay: 90.2% of 2,975 lines (GCC 16).
-The lines not reached are mostly allocation-failure arms that the failing-allocator sweep reaches only for the
-documents it uses, and the file-read error arms of the stream. A 600 s libFuzzer run with the grammar-level mutator
-(1,273,653 executions) found nothing.
+`make coverage` measures line coverage of `src/` with the unit tests and the fuzz replay: 88.5% of 6,178 lines (GCC 16). The
+lines not reached are mostly allocation-failure arms that the failing-allocator sweeps reach only for the documents they
+use (the lowering's are swept for every allocation of its own, and for a spread of the style engine's), and the file-read
+error arms of the stream. A 600 s libFuzzer run of each of the three targets (load, style, lowering; 9,324, 19,463 and
+9,334 executions, the load and lowering fuzzers holding `max_reference_expansion` to 3,000 because a style is computed for
+every element a `use` instantiates) found nothing.

@@ -1,0 +1,10 @@
+fixture use-symbol-svg
+list-hash 19f4a7f4d2da1afb
+raster-hash b834ab0bbf23782c
+diagnostics 0
+list
+gshscene.list 1 items=4 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=19f4a7f4d2da1afb
+I res=picture:6db2d670028c1f3e map=295fbf09950cea17 layer=0 depth=0000000000000000
+I res=picture:475688a61c15df81 map=e7725d253db4358e layer=0 depth=0000000000000000
+I res=picture:f5b6ed70e3e35f40 map=5358119bacc73e75 layer=0 depth=0000000000000000
+I res=picture:9ea47503865abcc3 map=cdfb0821b9b1e8d7 layer=0 depth=0000000000000000

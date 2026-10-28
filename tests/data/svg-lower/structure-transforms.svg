@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- Transforms compose into the map each item carries (P5): no group is made for a g, a use or a nested transform. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <g transform="translate(8 8)" fill="#c0392b">
+    <path d="M0 0H16V16H0Z"/>
+    <g transform="scale(1.5)" fill="#2980b9">
+      <path d="M16 0H24V8H16Z"/>
+      <g transform="rotate(30)" fill="#27ae60">
+        <path d="M8 8H14V14H8Z"/>
+      </g>
+    </g>
+    <path transform="skewX(20) translate(0 30)" d="M0 0H12V8H0Z" fill="#8e44ad"/>
+  </g>
+  <path transform="matrix(1 0 0 1 40 40)" d="M0 0H12V12H0Z" fill="#f39c12"/>
+</svg>

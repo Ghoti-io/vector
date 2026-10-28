@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- fill-rule: the item's rule, from the attribute, the style and inheritance (P7). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <path d="M4 4H28V28H4Z M10 10H22V22H10Z" fill="#c0392b"/>
+  <path d="M36 4H60V28H36Z M42 10H54V22H42Z" fill="#2980b9" fill-rule="evenodd"/>
+  <g fill-rule="evenodd" fill="#27ae60">
+    <path d="M4 36H28V60H4Z M10 42H22V54H10Z"/>
+    <path d="M36 36H60V60H36Z M42 42H54V54H42Z" style="fill-rule: nonzero"/>
+  </g>
+</svg>

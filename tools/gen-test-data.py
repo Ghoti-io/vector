@@ -23,6 +23,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "tests", "data", "svg")
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "load")
 CORPUS_STYLE = os.path.join(ROOT, "tests", "fuzz", "corpus", "style")
+CORPUS_LOWER = os.path.join(ROOT, "tests", "fuzz", "corpus", "lower")
+LOWER_FIXTURES = os.path.join(ROOT, "tests", "data", "svg-lower")
 
 SVG_NS = "http://www.w3.org/2000/svg"
 MINIMAL = ('<svg xmlns="%s" width="10" height="10"/>\n' % SVG_NS).encode()
@@ -310,18 +312,65 @@ def write_all(directory, files, check):
     return bad
 
 
+def lower_corpus():
+    """The lowering fuzzer's seeds: an options byte (the low nibble names the structural limit of the scene to shrink, the high
+    nibble how far), a flags byte (bit 0 a foreground, bits 1 and 2 the viewport), then the document. Every fixture of the
+    lowering with no limit shrunk, the structural ones with each limit shrunk, and documents that press on each limit."""
+    ns = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+    c = {}
+
+    def seed(doc, which=0x0f, value=0, flags=0):
+        if isinstance(doc, str):
+            doc = doc.encode()
+        return bytes([(value << 4) | which, flags]) + doc
+
+    fixtures = {}
+    for name in sorted(os.listdir(LOWER_FIXTURES)):
+        if name.endswith(".svg"):
+            with open(os.path.join(LOWER_FIXTURES, name), "rb") as h:
+                fixtures[name[:-4]] = h.read()
+    for name, doc in fixtures.items():
+        c["fixture-" + name] = seed(doc)
+    for name in ("use-pictures", "opacity-groups", "nested-svg-overflow", "use-symbol-svg", "partial-refusals", "structure-transforms"):
+        for which in range(1, 7):
+            for value in (0, 1, 3):
+                c["limit-%d-%d-%s" % (which, value, name)] = seed(fixtures[name], which, value)
+    c["foreground"] = seed(fixtures["paints"], flags=1)
+    c["viewport-small"] = seed('<svg %s viewBox="0 0 10 10"><path d="M0 0H4V4Z"/></svg>' % ns, flags=2)
+    c["viewport-wide"] = seed('<svg %s viewBox="0 0 10 10" preserveAspectRatio="xMaxYMin slice"><path d="M0 0H4V4Z"/></svg>' % ns, flags=6)
+    nested = "".join('<g opacity=".5">' for _ in range(30)) + '<path d="M0 0H4V4Z"/>' + "</g>" * 30
+    for which in (1, 2, 6):
+        for value in (0, 4, 15):
+            c["deep-opacity-%d-%d" % (which, value)] = seed('<svg %s>%s</svg>' % (ns, nested), which, value)
+    chain = '<defs><path id="u0" d="M0 0H5V5Z"/>' + "".join('<use id="u%d" href="#u%d"/>' % (i, i - 1) for i in range(1, 40)) + '</defs><use href="#u39"/>'
+    for which in (1, 3, 5):
+        for value in (0, 7):
+            c["use-chain-%d-%d" % (which, value)] = seed('<svg %s>%s</svg>' % (ns, chain), which, value)
+    pyramid = '<defs><path id="p0" d="M0 0H1V1Z"/>' + "".join('<g id="p%d"><use href="#p%d"/><use href="#p%d"/><use href="#p%d"/></g>' % (i, i - 1, i - 1, i - 1) for i in range(1, 8)) + '</defs><use href="#p7"/>'
+    c["use-pyramid"] = seed('<svg %s>%s</svg>' % (ns, pyramid))
+    c["use-pyramid-expansion"] = seed('<svg %s>%s</svg>' % (ns, pyramid), 5, 15)
+    c["many-shapes-list-items"] = seed('<svg %s>%s</svg>' % (ns, '<path d="M0 0H4V4Z"/>' * 40), 4, 3)
+    c["many-shapes-nodes"] = seed('<svg %s>%s</svg>' % (ns, '<path d="M0 0H4V4Z"/>' * 40), 6, 3)
+    c["huge-coordinates"] = seed('<svg %s><path d="M 1e308 0 l 1e308 0 l 0 1e308 z"/><svg x="1e308" width="1e308" height="10"><path d="M0 0H4V4Z"/></svg><g transform="scale(1e30)"><g transform="scale(1e30)"><g transform="scale(1e30)"><path d="M0 0H1V1Z"/></g></g></g></svg>' % ns)
+    c["refusals"] = seed('<svg %s><path d="M0 0A5 5 0 0 1 9 9"/><rect width="4" height="4"/><path d="M0 0H4V4Z" stroke="red"/><text>t</text><image/><foreignObject/><video/><use href="other.svg#x"/><use id="u" href="#u"/><path d="M0 0H4V4Z" filter="url(#f)" mask="url(#m)" clip-path="url(#c)" style="mix-blend-mode: multiply"/></svg>' % ns)
+    c["not-svg"] = seed(b"this is not xml")
+    c["short"] = bytes([0x0f])
+    return c
+
+
 def main():
     check = "--check" in sys.argv[1:]
     fx = fixtures()
-    bad = write_all(DATA, fx, check) + write_all(CORPUS, corpus(fx), check) + write_all(CORPUS_STYLE, style_corpus(), check)
+    bad = (write_all(DATA, fx, check) + write_all(CORPUS, corpus(fx), check) + write_all(CORPUS_STYLE, style_corpus(), check) +
+           write_all(CORPUS_LOWER, lower_corpus(), check))
     if check:
         if bad:
             for b in bad:
                 print("check-test-data: " + b, file=sys.stderr)
             print("check-test-data: run tools/gen-test-data.py and commit the result", file=sys.stderr)
             return 1
-        print("check-test-data: %d fixtures and %d + %d seeds are what the generator writes"
-              % (len(fx), len(corpus(fx)), len(style_corpus())))
+        print("check-test-data: %d fixtures and %d + %d + %d seeds are what the generator writes"
+              % (len(fx), len(corpus(fx)), len(style_corpus()), len(lower_corpus())))
     return 0
 
 

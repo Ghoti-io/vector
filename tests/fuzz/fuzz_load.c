@@ -36,8 +36,11 @@
  *   - every diagnostic has a code and severity in range and a message, and the
  *     list never holds more than the cap;
  *   - the probe agrees with the load: a load that succeeds was probed as svg;
- *   - a loaded document dumps and hashes the same twice, and both lowering
- *     entry points return GVEC_OK with exactly one refusal at the root.
+ *   - a loaded document dumps and hashes the same twice;
+ *   - both lowering entry points return GVEC_OK or a limit, refuse the same
+ *     elements in the same order, and the list the edit lowering publishes
+ *     equals the list the other one records (the equality gate); lowering the
+ *     document into the published scene again changes nothing.
  */
 
 #include <stdint.h>
@@ -45,14 +48,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ghoti.io/shape-scene/edit.h>
+#include <ghoti.io/shape-scene/list.h>
+#include <ghoti.io/shape-scene/scene.h>
+#include <ghoti.io/shape-scene/version.h>
 #include <ghoti.io/vector/vector.h>
 
 #include "../../src/stream/stream_internal.h"
 
 static unsigned gvec_fuzz_seen;
 
-/* What the load must leave in its output on failure, and what the lowering is
- * handed for an edit or a list: nothing is lowered yet, so neither is touched. */
+/* What the load must leave in its output on failure. */
 #define GVEC_FUZZ_SENTINEL ((uintptr_t) 64) /* a pointer value nothing allocates, never dereferenced */
 
 /* The outcomes the committed corpus must reach. */
@@ -89,6 +95,66 @@ static void gvec_fuzz_check_diagnostics(const GVEC_Diagnostics * d) {
     gvec_fuzz_check((unsigned) e->severity < GVEC_DIAG_SEVERITY_COUNT, "severity in range");
     gvec_fuzz_check(e->message != NULL, "diagnostic has a message");
   }
+}
+
+/* The refusals of a lowering: the reason and the line of each, in order. */
+static void gvec_fuzz_check_refusals(const GVEC_Diagnostics * a, const GVEC_Diagnostics * b) {
+  gvec_fuzz_check(a->count == b->count && a->dropped == b->dropped, "both lowerings report the same number of diagnostics");
+  for (size_t i = 0; i < a->count; i++) {
+    gvec_fuzz_check(a->items[i].code == b->items[i].code && a->items[i].detail == b->items[i].detail &&
+            a->items[i].line == b->items[i].line && a->items[i].column == b->items[i].column,
+        "both lowerings report the same diagnostic at the same place");
+  }
+}
+
+/* Lower the document both ways and require the two to agree (see the file comment). */
+static void gvec_fuzz_lowering(const GVEC_Doc * doc) {
+  GSHSCENE_Scene * scene = NULL;
+  GSHSCENE_List * list = NULL;
+  GSHSCENE_Edit * edit = NULL;
+  const GSHSCENE_Version * version = NULL;
+  const GSHSCENE_List * emitted = NULL;
+  GVEC_Diagnostics by_list, by_edit;
+  GVEC_Lower_Options options;
+  gvec_diagnostics_init(&by_list, NULL);
+  gvec_diagnostics_init(&by_edit, NULL);
+  gvec_fuzz_check(gshscene_scene_create(NULL, NULL, NULL, &scene) == GSHSCENE_OK, "a scene is made");
+  GSHSCENE_Store * store = gshscene_scene_store(scene);
+  gvec_fuzz_check(gshscene_list_create(NULL, NULL, store, &list) == GSHSCENE_OK, "a list is made");
+  memset(&options, 0, sizeof options);
+  options.store = store;
+  GVEC_Result lr = gvec_doc_lower_list(doc, &options, list, &by_list);
+  gvec_fuzz_check(lr == GVEC_OK, "lowering into a list is OK");
+  gvec_fuzz_check_diagnostics(&by_list);
+  gvec_fuzz_check(gshscene_list_close(list) == GSHSCENE_OK, "the list closes");
+  gvec_fuzz_check(gshscene_scene_open_edit(scene, NULL, &edit) == GSHSCENE_OK, "an edit is opened");
+  GVEC_Result er = gvec_doc_lower_edit(doc, NULL, edit, &by_edit);
+  gvec_fuzz_check(er == GVEC_OK, "lowering into an edit is OK");
+  gvec_fuzz_check_refusals(&by_list, &by_edit);
+  gvec_fuzz_check(gshscene_scene_publish(scene, edit, NULL, &version) == GSHSCENE_OK, "the lowered edit publishes");
+  gshscene_edit_destroy(edit);
+  edit = NULL;
+  gvec_fuzz_check(gshscene_version_list(version, &emitted) == GSHSCENE_OK, "the published version emits a list");
+  gvec_fuzz_check(gshscene_list_equal(list, emitted) && gshscene_list_hash(list) == gshscene_list_hash(emitted),
+      "the list the edit emits equals the list that was recorded");
+  /* Lowering again into the scene as it now is touches nothing. */
+  gvec_fuzz_check(gshscene_scene_open_edit(scene, NULL, &edit) == GSHSCENE_OK, "a second edit is opened");
+  GVEC_Diagnostics again;
+  gvec_diagnostics_init(&again, NULL);
+  gvec_fuzz_check(gvec_doc_lower_edit(doc, NULL, edit, &again) == GVEC_OK, "lowering again is OK");
+  const GSHSCENE_Version * second = NULL;
+  gvec_fuzz_check(gshscene_scene_publish(scene, edit, NULL, &second) == GSHSCENE_OK, "the second edit publishes");
+  gvec_fuzz_check(gshscene_version_serial(second) == gshscene_version_serial(version) &&
+          gshscene_version_hash(second) == gshscene_version_hash(version),
+      "lowering the same document again changes nothing");
+  gshscene_version_release(second);
+  gvec_diagnostics_destroy(&again);
+  gshscene_edit_destroy(edit);
+  gshscene_version_release(version);
+  gshscene_list_destroy(list);
+  gshscene_scene_destroy(scene);
+  gvec_diagnostics_destroy(&by_list);
+  gvec_diagnostics_destroy(&by_edit);
 }
 
 
@@ -212,6 +278,16 @@ static void gvec_fuzz_check_document(const GVEC_Svg_Document * svg, const GVEC_L
   free(keys);
 }
 
+/* The lowering of a document costs time for each element a `use` instantiates (a style is computed for each), so the fuzzer holds the
+ * expansion to what lets it run thousands of inputs a minute; the default of a million is for the callers who want it. */
+#define GVEC_FUZZ_EXPANSION 3000
+
+static void gvec_fuzz_cap_expansion(GVEC_Limits * limits) {
+  if (limits->max_reference_expansion == 0 || limits->max_reference_expansion > GVEC_FUZZ_EXPANSION) {
+    limits->max_reference_expansion = GVEC_FUZZ_EXPANSION;
+  }
+}
+
 static void gvec_fuzz_set_limit(GVEC_Limits * limits, unsigned field, unsigned scale) {
   size_t small = (size_t) scale + 1;
   switch (field) {
@@ -279,6 +355,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   memset(&limits, 0, sizeof(limits));
   unsigned data_options_field = data[0] & 0x0f, data_options_scale = data[0] >> 4;
   gvec_fuzz_set_limit(&limits, data_options_field, data_options_scale);
+  gvec_fuzz_cap_expansion(&limits);
   if (data[1] & 1) {
     chunk = (size_t) ((data[1] >> 1) % 7) + 1;
   }
@@ -320,17 +397,15 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
       gvec_limits_default(&resolved);
       /* The bounds the load ran under: the defaults, with the one field the options byte shrank. */
       gvec_fuzz_set_limit(&resolved, data_options_field, data_options_scale);
+      gvec_fuzz_cap_expansion(&resolved);
       gvec_fuzz_check(gvec_svg_document(doc) != NULL, "an SVG document has a typed document");
       gvec_fuzz_check_document(gvec_svg_document(doc), &resolved);
     }
     gvec_fuzz_check(gvec_doc_hash(doc, &h1) == GVEC_OK && gvec_doc_hash(doc, &h2) == GVEC_OK && h1 == h2,
         "the hash is the same twice");
     before = diagnostics.count + diagnostics.dropped;
-    gvec_fuzz_check(gvec_doc_lower_edit(doc, NULL, (GSHSCENE_Edit *) GVEC_FUZZ_SENTINEL, &diagnostics) == GVEC_OK,
-        "lowering into an edit is OK");
-    gvec_fuzz_check(gvec_doc_lower_list(doc, NULL, (GSHSCENE_List *) GVEC_FUZZ_SENTINEL, &diagnostics) == GVEC_OK,
-        "lowering into a list is OK");
-    gvec_fuzz_check(diagnostics.count + diagnostics.dropped == before + 2, "each lowering refuses once");
+    gvec_fuzz_lowering(doc);
+    gvec_fuzz_check(diagnostics.count + diagnostics.dropped == before, "the load's diagnostics are not changed by lowering");
     gvec_doc_free(doc);
   }
   else {

@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- polygon and polyline fill as the closed polygon; a line has no area and draws nothing (P7). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <polygon points="4,4 28,4 16,28" fill="#c0392b"/>
+  <polyline points="36 4 60 4 48 28" fill="#2980b9"/>
+  <polygon points="4 36 28 36 28 60 4 60 10 48" fill="#27ae60"/>
+  <line x1="36" y1="36" x2="60" y2="60"/>
+  <polyline points="36 60 48 36 60 60 52 52" fill="#8e44ad"/>
+</svg>

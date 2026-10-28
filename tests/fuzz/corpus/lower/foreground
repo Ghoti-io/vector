@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Solid paints are straight double components in their space; currentColor is the waist's foreground until color is set (P7, AD-23). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <path d="M2 2H14V14H2Z"/>
+  <path d="M18 2H30V14H18Z" fill="#c0392b"/>
+  <path d="M34 2H46V14H34Z" fill="rebeccapurple"/>
+  <path d="M50 2H62V14H50Z" fill="rgb(20% 60% 40% / .5)"/>
+  <path d="M2 18H14V30H2Z" fill="hsl(200 70% 50%)"/>
+  <path d="M18 18H30V30H18Z" fill="color(display-p3 1 .5 0)"/>
+  <path d="M34 18H46V30H34Z" fill="currentColor"/>
+  <g color="#2980b9"><path d="M50 18H62V30H50Z" fill="currentColor"/></g>
+  <path d="M2 34H14V46H2Z" fill="#c0392b" fill-opacity=".5"/>
+  <path d="M18 34H30V46H18Z" fill="currentColor" fill-opacity=".5"/>
+  <path d="M34 34H46V46H34Z" fill="none"/>
+  <path d="M50 34H62V46H50Z" fill="url(#nothing) #27ae60"/>
+  <path d="M2 50H14V62H2Z" fill="transparent"/>
+</svg>

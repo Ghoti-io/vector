@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- preserveAspectRatio="xMaxYMax meet" maps a 20 by 10 viewBox onto a 64 by 40 viewport (P3, SVG 2 section 8.2); written by tools/gen-lower-fixtures.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="2 3 20 10" preserveAspectRatio="xMaxYMax meet">
+  <path d="M2 3H22V13H2Z" fill="#ecf0f1"/>
+  <path d="M2 3H8V9H2Z" fill="#c0392b"/>
+  <path d="M16 7H22V13H16Z" fill="#2980b9"/>
+  <path d="M10 5H14V11H10Z" fill="#27ae60"/>
+</svg>

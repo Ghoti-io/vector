@@ -185,6 +185,15 @@ GVEC_API GVEC_Result gvec_svg_instance_child(GVEC_Svg_Style_Context * context, c
 GVEC_API GVEC_Result gvec_svg_instance_use(
     GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * use_instance, const GVEC_Svg_Instance ** out_instance);
 
+/**
+ * Give back the memory of an instance's computed style, which is the larger part of what an instance costs (tens of kilobytes
+ * for the properties of the engine). A style read again is computed again, from the style of the instance it inherits from
+ * (which is computed again too if it was given back), so this is for a walk that is done with an element and its subtree: the
+ * lowering calls it, so that what a document that instantiates a million elements holds at once is its depth and not its size.
+ * Values already read stay valid (they are in the context's own memory). Ignored for NULL.
+ */
+GVEC_API void gvec_svg_instance_release(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance);
+
 /** The element an instance is of. */
 GVEC_API const GVEC_Svg_Element * gvec_svg_instance_element(const GVEC_Svg_Instance * instance);
 
@@ -193,6 +202,17 @@ GVEC_API const GVEC_Svg_Instance * gvec_svg_instance_parent(const GVEC_Svg_Insta
 
 /** The nearest enclosing `use` instance, whose clone this instance is part of; NULL in the document's own context. */
 GVEC_API const GVEC_Svg_Instance * gvec_svg_instance_use_context(const GVEC_Svg_Instance * instance);
+
+/**
+ * The `width` and `height` a `use` gave the `svg` or `symbol` this instance is the clone of (they override the element's own).
+ *
+ * @param out_width Receives the used width; written only when the result is true.
+ * @param out_height Receives the used height; written only when the result is true.
+ * @param has_width Receives whether the `use` gave a width (not `auto`); may be NULL.
+ * @param has_height Receives whether the `use` gave a height; may be NULL.
+ */
+GVEC_API void gvec_svg_instance_override(
+    const GVEC_Svg_Instance * instance, bool * has_width, double * out_width, bool * has_height, double * out_height);
 
 /** The viewport this element's percentages are resolved against, in user units: the `viewBox` size when the nearest viewport has one. */
 GVEC_API void gvec_svg_instance_viewport(const GVEC_Svg_Instance * instance, double * out_width, double * out_height);

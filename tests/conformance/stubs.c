@@ -77,7 +77,7 @@ static GVEC_Result lower_exact_refused(const GVEC_Doc * doc, const GVEC_Lower_Op
     GSHSCENE_List * list, GVEC_Diagnostics * diagnostics) {
   GVEC_Result r = lower_exact(doc, options, list, diagnostics);
   if (r == GVEC_OK && diagnostics) {
-    r = gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED, GVEC_LOWER_NOT_YET_LOWERED, 1, 1, 0,
+    r = gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED, GVEC_LOWER_ARC, 1, 1, 0,
         "rect", "refused by the planted lowering");
   }
   return r;
@@ -116,6 +116,26 @@ static GVEC_Result lower_minus2(const GVEC_Doc * doc, const GVEC_Lower_Options *
   return draw_rect(list, 10.0, 253.0 / 255.0);
 }
 
+/* The rectangle inside a knockout group, which the sink refuses: a drawing the sink reports as not drawn. */
+static GVEC_Result lower_sink_refused(const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_List * list,
+    GVEC_Diagnostics * diagnostics) {
+  (void) doc;
+  (void) options;
+  (void) diagnostics;
+  GSHSCENE_Group group;
+  memset(&group, 0, sizeof group);
+  group.opacity = 1.0;
+  group.knockout = 1;
+  if (gshscene_list_group_push(list, &group, 0, 0.0) != GSHSCENE_OK) {
+    return GVEC_ERR_INTERNAL;
+  }
+  GVEC_Result r = draw_rect(list, 10.0, 1.0);
+  if (r != GVEC_OK || gshscene_list_group_pop(list) != GSHSCENE_OK) {
+    return GVEC_ERR_INTERNAL;
+  }
+  return GVEC_OK;
+}
+
 static const struct {
   const char * name;
   Conf_Lower_Fn fn;
@@ -126,6 +146,7 @@ static const struct {
   {"exact-dropped", lower_exact_dropped},
   {"minus1", lower_minus1},
   {"minus2", lower_minus2},
+  {"sink-refused", lower_sink_refused},
 };
 
 Conf_Lower_Fn conf_stub_find(const char * name) {

@@ -16,23 +16,30 @@
 # This is a symbol check over the compiled archive, so a call reached through
 # a macro or an inline wrapper is seen, which a source grep would miss.
 #
+# The lowering reads the typed document and its styles and nothing else (D-B):
+# it makes no parsing decision, so none of its objects may reference the `text`
+# library (the XML reader and the CSS engine are behind the document and the
+# style layer, which are other objects) or the loader's own functions.
+#
 # Usage:
 #   check-front-end.sh --includes <root>    scan <root>/src, include and examples
 #   check-front-end.sh --symbols <archive>  read the undefined symbols of an archive
-# Both may be given. Each mode fails on an empty population.
+#   check-front-end.sh --lowering <dir>     read the undefined symbols of every object under <dir>
+# Each may be given. Each mode fails on an empty population.
 
 set -eu
 
-usage='usage: check-front-end.sh [--includes <root>] [--symbols <archive>...]'
+usage='usage: check-front-end.sh [--includes <root>] [--lowering <dir>] [--symbols <archive>...]'
 
 FORBIDDEN='getenv secure_getenv setlocale localeconv newlocale uselocale duplocale nl_langinfo
 time clock clock_gettime gettimeofday ftime localtime localtime_r gmtime gmtime_r mktime strftime
 strtod strtof strtold atof sscanf vsscanf scanf fscanf vscanf vfscanf'
 
-roots="" archives="" mode=""
+roots="" archives="" mode="" lowering=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --includes) roots="$roots ${2:?$usage}"; shift 2 ;;
+    --lowering) lowering="$lowering ${2:?$usage}"; shift 2 ;;
     --symbols) mode=symbols; shift ;;
     -*) printf '%s\n' "$usage" >&2; exit 2 ;;
     *)
@@ -40,7 +47,7 @@ while [ $# -gt 0 ]; do
       else printf '%s\n' "$usage" >&2; exit 2; fi ;;
   esac
 done
-if [ -z "$roots" ] && [ -z "$archives" ]; then
+if [ -z "$roots" ] && [ -z "$archives" ] && [ -z "$lowering" ]; then
   printf '%s\n' "$usage" >&2
   exit 2
 fi
@@ -92,6 +99,29 @@ for a in $archives; do
     failed=1
   else
     printf 'check-front-end: %s: %d undefined symbols read, none reads the environment, locale or clock\n' "$a" "$n"
+  fi
+done
+
+for dir in $lowering; do
+  objects=$(find "$dir" -type f -name '*.o' 2>/dev/null | sort)
+  n=0
+  for o in $objects; do n=$((n + 1)); done
+  if [ "$n" -eq 0 ]; then
+    printf 'check-front-end: no objects under %s; this is measuring nothing\n' "$dir" >&2
+    exit 1
+  fi
+  bad=0
+  for o in $objects; do
+    undefined=$(nm -u "$o" 2>/dev/null | awk 'NF >= 2 && $(NF-1) == "U" { print $NF } NF == 1 && $1 !~ /:$/ { print $1 }' | sed 's/@.*//' | sort -u)
+    if hits=$(printf '%s\n' "$undefined" | grep -E 'gtext_|(^|_)gvec_svg_(load|probe|parse_failed|xml_options|build|resolve|conditional)$'); then
+      printf 'check-front-end: %s (a lowering object) references the parsing side:\n%s\n' "$o" "$hits" >&2
+      bad=1
+    fi
+  done
+  if [ "$bad" -ne 0 ]; then
+    failed=1
+  else
+    printf 'check-front-end: %d lowering objects reference no text or loader symbol\n' "$n"
   fi
 done
 

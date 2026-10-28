@@ -261,7 +261,7 @@ TESTFLAGS := `PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs --cfla
 
 # coverage clears this: --coverage links the gcov runtime, whose mangle_path
 # check-symbols is right to reject in a shipping library.
-TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-tables check-doc-oracle check-style-oracle
+TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-lower-gate check-tables check-doc-oracle check-style-oracle
 
 VALGRIND_FLAGS := --leak-check=full --show-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=1 --suppressions=tests/valgrind.supp
 
@@ -431,6 +431,24 @@ $(CONF_RUNNER): $(CONF_SOURCES) tests/conformance/stubs.h $(APP_DIR)/$(STATIC_TA
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDE) $(conf_cflags) -Itests/conformance -o $@ $(CONF_SOURCES) $(LDFLAGS) $(SELF_LIBRARY) $(conf_libs)
 
+# The lowering's equality gate (story 7): every fixture of tests/data/svg-lower is lowered into a list and into an edit that is
+# published; the two lists must be equal and render to the same raster through shape-cpu, and match the golden file. Test code,
+# like the runner: it links shape-cpu and image.
+LOWER_GATE := $(APP_DIR)/lower/lower_gate$(EXE_EXTENSION)
+LOWER_FIXTURES := $(sort $(wildcard tests/data/svg-lower/*.svg))
+
+$(LOWER_GATE): tests/lower/lower_gate.c $(APP_DIR)/$(STATIC_TARGET) $(FLAGS_STAMP) | $(APP_DIR)/$(TARGET) $(LIBVER_GEN)
+	@if [ -n "$(conf_pc_missing)" ]; then printf '%s was not found by pkg-config. The lowering gate links shape-cpu and image; build and install them into the prefix (install.sh in the suite repository builds every library in order).\n' "$(conf_pc_missing)" >&2; exit 1; fi
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDE) $(conf_cflags) -o $@ $< $(LDFLAGS) $(SELF_LIBRARY) $(conf_libs)
+
+.PHONY: check-lower-gate update-lower-goldens
+check-lower-gate: $(LOWER_GATE) ## Fail unless the recorded list and the published edit's list are equal and render alike, and match their goldens
+	@LD_LIBRARY_PATH="$(conf_ld_path)" $(LOWER_GATE) --golden tests/golden/lower $(LOWER_FIXTURES)
+
+update-lower-goldens: $(LOWER_GATE) ## Rewrite tests/golden/lower from the fixtures (review the diff before committing)
+	@LD_LIBRARY_PATH="$(conf_ld_path)" $(LOWER_GATE) --update --golden tests/golden/lower $(LOWER_FIXTURES)
+
 # The independent document oracle (story 5): the dump tool, then a Python reader of the same documents that shares no
 # code with the library (tools/doc-oracle/oracle.py). It needs the pinned element index for its list of elements.
 DOC_DUMP := $(APP_DIR)/tools/dump$(EXE_EXTENSION)
@@ -567,14 +585,17 @@ check-planted: $(LIBOBJECTS) $(TEST_OBJECTS) ## Fail unless each planted defect 
 	 PLANT_LDFLAGS='$(LDFLAGS) $(DEP_LIBS) $(GTEST_FLAGS)' PLANT_LD_PATH='$(TEST_LD_PATH)' \
 	 PLANT_WORK='$(BUILD_DIR)/planted' python3 tools/check-planted.py
 
-check-test-data: ## Fail unless the fixtures, the fuzz seeds and the grammar and style vectors are what the generators write
+check-test-data: ## Fail unless the fixtures, the fuzz seeds, the vectors and the reason tables are what the generators write
 	@python3 tools/gen-test-data.py --check
 	@python3 tools/gen-grammar-vectors.py --check
 	@python3 tools/gen-style-vectors.py --check
 	@python3 tools/gen-namespace.py --check
+	@python3 tools/gen-lower-vectors.py --check
+	@python3 tools/gen-lower-fixtures.py --check
+	@python3 tools/lower/gen-reasons.py --check
 
 check-front-end: $(APP_DIR)/$(STATIC_TARGET) ## Fail on a scene.h include or a symbol that reads the environment, locale or clock
-	@tools/check-front-end.sh --includes . --symbols $(APP_DIR)/$(STATIC_TARGET)
+	@tools/check-front-end.sh --includes . --lowering $(OBJ_DIR)/codec/svg/lower --symbols $(APP_DIR)/$(STATIC_TARGET)
 
 check-gates: ## Prove each gate fails on its planted violation and passes its control
 	@CC='$(CC)' GATE_PROJECT='$(PROJECT)' GATE_ALLOWED='$(EDGES_ALLOWED)' GATE_LIBM_EXEMPT='$(LIBM_EXEMPT)' tools/check-gates.sh
@@ -585,7 +606,7 @@ check-gates: ## Prove each gate fails on its planted violation and passes its co
 # point, in an ordinary build (no libFuzzer, no clang), in `make test`
 ####################################################################
 
-FUZZ_TARGETS := load style
+FUZZ_TARGETS := load style lower
 FUZZ_REPLAYS := $(foreach f,$(FUZZ_TARGETS),$(APP_DIR)/fuzz/replay_$(f)$(EXE_EXTENSION))
 
 $(APP_DIR)/fuzz/replay_%$(EXE_EXTENSION): tests/fuzz/fuzz_%.c tests/fuzz/replay_main.c $(APP_DIR)/$(STATIC_TARGET) \

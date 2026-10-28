@@ -14,7 +14,7 @@ GVEC_Doc * doc = NULL;
 gvec_stream_create_file("drawing.svg", &stream);
 gvec_diagnostics_init(&diagnostics, NULL);
 if (gvec_doc_load(stream, NULL, &diagnostics, &doc) == GVEC_OK) {
-  /* gvec_doc_lower_list(doc, NULL, list, &diagnostics) fills a shape-scene list */
+  /* gvec_doc_lower_list(doc, &options, list, &diagnostics) fills a shape-scene list; options.store is its store */
   gvec_doc_free(doc);
 }
 for (size_t i = 0; i < diagnostics.count; i++) {
@@ -24,7 +24,9 @@ gvec_diagnostics_destroy(&diagnostics);
 gvec_stream_destroy(stream);
 ```
 
-`examples/load.c` is the same program, complete, and `make run-examples` runs it.
+`examples/load.c` is the same program, complete, and `make run-examples` runs it. `examples/lower.c` lowers a document into
+a list, renders it, and prints what a sink's report says in terms of the document: the element and the line of each item the
+sink refused, and each element the lowering refused.
 
 ## What is implemented
 
@@ -48,9 +50,13 @@ This is the first milestone's first step: the library, and loading.
 * **Limits.** Input bytes, inflated bytes, elements, depth, attributes, entity expansion, entity
   nesting, references and diagnostics are each capped, with finite defaults equal to the XML
   parser's own limits. Zero selects the default; nothing is unlimited.
-* **Lowering.** `gvec_doc_lower_edit` and `gvec_doc_lower_list` have their final signatures. Nothing
-  is lowered yet: each refuses the document at its root, with its line, so that a renderer and a
-  conformance harness see a correct, if empty, drawing and the reason.
+* **Lowering.** `gvec_doc_lower_edit` and `gvec_doc_lower_list` walk the document once and emit the same drawing
+  into an edit of the retained scene (keyed, so lowering again changes only what changed) or into an
+  immediate-mode list: viewports and `preserveAspectRatio`, transforms, `use` and `symbol` as pictures and
+  instances, `display`, `visibility`, `switch`, `opacity` groups, and solid fills of paths, polygons and
+  polylines. What cannot be drawn yet is refused whole, one diagnostic with the element, its line and a
+  reason (`documentation/refusals.md`), and a `GVEC_Lower_Trace` maps an entry of a sink's report back to the
+  element it came from.
 * **The typed document.** An SVG file is read into a tree of elements, one kind for every element of SVG 2, with
   each attribute parsed by its own grammar (numbers, lengths, lists, points, `viewBox`, path data in the form it
   was written and in absolute form, references, `data:` URIs, conditional processing), its errors located, its
@@ -91,9 +97,12 @@ installed into a prefix (the suite repository's `install.sh` builds them all in 
 * `check-front-end`: no include of `shape-scene/scene.h` (publishing a scene is the application's),
   and no reference to a function that reads the environment, the locale or the clock.
 * `check-gates`: plants a violation for each gate above and requires it to fail.
-* `check-test-data`: the fixtures, the fuzz seeds and the reference vectors are exactly what
-  `tools/gen-test-data.py` and `tools/gen-style-vectors.py` write.
-* `fuzz-replay`: every seed through the load fuzzer and the style fuzzer, whose invariants abort on a violation.
+* `check-test-data`: the fixtures, the fuzz seeds, the reference vectors and the reason tables are exactly what the
+  generators in `tools/` write.
+* `check-lower-gate`: every fixture of `tests/data/svg-lower` lowered into a list and into a published edit gives two
+  equal lists that render to the same raster, and matches its golden file.
+* `fuzz-replay`: every seed through the load fuzzer (which also lowers each document both ways and requires the
+  equality gate) and the style fuzzer, whose invariants abort on a violation.
 * `check-tables`, `check-doc-oracle`: the element and attribute tables are what the pinned specification pages
   generate, and the typed document agrees with an independent reader of the same documents.
 * `check-style-oracle`: the computed style agrees with two pinned browsers, Chromium and Firefox, except where

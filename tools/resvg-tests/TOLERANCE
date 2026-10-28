@@ -8,9 +8,11 @@
 #
 # The tolerance is a finding, not a guess: shape-cpu's coverage is exact area and
 # each oracle anti-aliases differently, so the pair is set from what
-# `make oracle-tolerance` measures. Until a lowering exists to measure, it is
-# zero, which only an exact match meets, so nothing passes by being loosely
-# close. score.py fails on a nonzero pair whose evidence is "none".
+# `make oracle-tolerance` measures. Until a case that draws something can be
+# compared with its reference (the cases that pass today draw nothing, so their
+# distance is zero and says nothing about anti-aliasing), it is zero, which only
+# an exact match meets, so nothing passes by being loosely close. score.py fails
+# on a nonzero pair whose evidence is "none".
 max-diff	0
 max-bad-ppm	0
 evidence	none

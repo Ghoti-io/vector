@@ -22,6 +22,8 @@
 #   PLANT_LDFLAGS               link flags (dependencies, gtest)
 #   PLANT_LD_PATH               LD_LIBRARY_PATH for running
 #   PLANT_WORK                  a scratch directory
+#   PLANT_ONLY                  (optional) a rule prefix: only those plants
+#   PLANT_BUILD_ONLY            (optional) apply and compile each plant, run nothing: to write plants quickly
 
 import os
 import shutil
@@ -29,6 +31,9 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# The lowering's walk, which most of the lowering's rules live in.
+W = "src/codec/svg/lower/lower_walk.c"
 
 # (rule, source file, text, replacement, what the defect is)
 PLANTS = [
@@ -90,10 +95,78 @@ PLANTS = [
     ("L10", "src/codec/codec.c", '{"none", "gzip"}', '{"gzip", "none"}', "the dump names the wrong transport"),
     ("L10", "src/codec/codec.c", "  for (int i = 7; i >= 0; i--) {", "  for (int i = 0; i < 8; i++) {",
      "the hash is read big-endian"),
-    ("L11", "src/codec/svg/svg_codec.c", "      svg->root_line, svg->root_column, svg->root_offset,",
-     "      0, svg->root_column, svg->root_offset,", "the refusal has no line"),
-    ("L11", "src/codec/svg/svg_codec.c", "  return gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED,",
-     "  return gvec_diag_add(diagnostics ? NULL : NULL, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED,", "the root is not refused"),
+    # The lowering (story 7): the walk, the two emitters, the viewport maths, the trace.
+    ("P1", "src/codec/svg/lower/lower_emit_list.c", "      group.opacity = n->opacity;", "      group.opacity = n->opacity * 0.5;",
+     "the list emitter decides an opacity the edit emitter does not (the equality gate)"),
+    ("P1", "src/codec/svg/lower/lower_emit_edit.c", "      props.fill_rule = n->rule;\n", "",
+     "the edit emitter drops the fill rule the list emitter keeps"),
+    ("P1", "src/codec/svg/lower/lower_emit_edit.c", "  return trim(edit, group, position);", "  return GVEC_OK;",
+     "a node the document no longer has is left in the scene"),
+    ("P1", "src/codec/svg/lower/lower_emit_edit.c",
+     "  if (info.parent != parent || gshscene_edit_child(edit, parent, position, &at) != GSHSCENE_OK || at != id) {",
+     "  if ((at & 0) != 0) {", "a node found by its key is not moved to where the document now has it"),
+    ("P1", "src/codec/svg/lower/lower_entry.c",
+     "      gshscene_edit_set_foreground(edit, &options->foreground) != GSHSCENE_OK) {",
+     "      0) {", "the foreground option is not set on the edit"),
+    ("P2", "src/codec/svg/lower/lower_walk.c", "  uint64_t parts[3] = {element_key, chain, (uint64_t) role};",
+     "  uint64_t parts[3] = {element_key, chain & 0, (uint64_t) role};", "two uses of one referent have the same node keys"),
+    ("P3", "src/codec/svg/lower/lower_viewport.c", "    double s = par->slice ? (sx > sy ? sx : sy) : (sx < sy ? sx : sy);",
+     "    double s = (sx < sy ? sx : sy);", "slice is meet"),
+    ("P3", "src/codec/svg/lower/lower_viewport.c", "    double ax = (double) (index % 3) / 2.0;", "    double ax = (double) (index / 3) / 2.0;",
+     "the horizontal alignment is the vertical one"),
+    ("P3", "src/codec/svg/lower/lower_viewport.c", "  *out = round_expansion(&e);",
+     "  *out = align * extent - scale * (origin + align * size) + 0 * round_expansion(&e);",
+     "the translation is evaluated in plain double arithmetic, not exactly"),
+    ("P3", "src/codec/svg/lower/lower_viewport.c", "  if (!grow(&e, align * extent)) {", "  if (!grow(&e, align * extent * 0)) {",
+     "the alignment offset is left out of the translation"),
+    ("P3", W, "(has_box && (!(box.width > 0) || !(box.height > 0)))", "(0)",
+     "a viewBox with no width does not disable rendering"),
+    ("P4", W, '  bool clips = !(keyword_is(&overflow, "visible") || keyword_is(&overflow, "auto"));', "  bool clips = true;",
+     "a nested svg with visible overflow is clipped"),
+    ("P4", W, "    clip->map = c.local;\n", "",
+     "the viewport clip is not placed in the parent's space"),
+    ("P5", W, "  if (!(opacity < 1)) {\n    return GVEC_OK;\n  }\n  bool entered;", "  if (!(opacity <= 1)) {\n    return GVEC_OK;\n  }\n  bool entered;",
+     "a group is made for every element"),
+    ("P5", W, "  c->draw = c->opacity > 0; /* Opacity zero draws nothing, whatever is inside. */", "  c->draw = true;",
+     "an element with opacity zero is drawn"),
+    ("P5", W, "  if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {", "  if (!gvec_lw_compose(&v.transform.map, frame, &c->local)) {",
+     "a transform composes the wrong way round"),
+    ("P6", W, "  if (leaf && !c->visible) {", "  if (leaf && 0 && !c->visible) {",
+     "visibility: hidden does not remove a shape"),
+    ("P6", W, '  if (r != GVEC_OK || !usable || keyword_is(&v, "none")) {\n    return r;\n  }\n  r = read_property(ctx, inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);\n  if (r != GVEC_OK || !usable) {\n    return r;\n  }\n  c->visible',
+     '  if (r != GVEC_OK || !usable) {\n    return r;\n  }\n  r = read_property(ctx, inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);\n  if (r != GVEC_OK || !usable) {\n    return r;\n  }\n  c->visible',
+     "display: none does not remove an element"),
+    ("P6", W, "  const GVEC_Svg_Element * selected = gvec_svg_element_switch_selected(e);",
+     "  const GVEC_Svg_Element * selected = gvec_svg_element_first_child(e);", "a switch draws its first child"),
+    ("P7", "src/codec/svg/lower/lower_path.c", "    if (s->kind == GVEC_SVG_SEGMENT_ARC) {\n      *kind = GVEC_LW_GEOMETRY_ARC;\n      return GVEC_OK;\n    }",
+     "    if (0) {\n      return GVEC_OK;\n    }", "an arc is not refused"),
+    ("P7", W, '  *rule = keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;', "  *rule = GSHGEOM_FILL_NONZERO;",
+     "evenodd is nonzero"),
+    ("P7", W, "    double alpha = fill.color.color.rgba[3] * fill_opacity;", "    double alpha = fill.color.color.rgba[3] * (fill_opacity * 0 + 1);",
+     "fill-opacity is not applied"),
+    ("P7", W, "    if (fill.color.kind == GVEC_SVG_COLOR_FOREGROUND) {", "    if (0) {", "currentColor is not the foreground"),
+    ("P7", W, "    *stroked = width > 0 && opacity > 0;", "    *stroked = (width + opacity) < 0;", "a visible stroke is drawn as if it were not there"),
+    ("P7", "src/codec/svg/lower/lower_path.c", "      drawn = drawn || s->x != s->x0 || s->y != s->y0;\n      break;\n    case GVEC_SVG_SEGMENT_QUAD:",
+     "      drawn = true;\n      break;\n    case GVEC_SVG_SEGMENT_QUAD:", "a zero-length line is filled"),
+    ("P7", W, "GVEC_SVG_PROP_FILL, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);",
+     "GVEC_SVG_PROP_FILL, GVEC_LOWER_STYLE, &v, &usable);", "a colour the waist cannot carry is refused for another reason"),
+    ("P8", W, "  if (gshgeom_map_translate(2, x, y, 0, &shift) != GSHGEOM_OK || !gvec_lw_compose(&c.local, &shift, &placement)) {",
+     "  if (gshgeom_map_translate(2, 0, 0, 0, &shift) != GSHGEOM_OK || !gvec_lw_compose(&c.local, &shift, &placement)) {",
+     "a use is not moved by its x and y"),
+    ("P8", W, "  if (ctx->refused[element->order] & bit) {\n    return GVEC_OK;\n  }", "",
+     "an element drawn twice is refused twice"),
+    ("P8", W, "  ctx->levels += 2;\n  ctx->picture_depth++;", "  ctx->levels += 1;\n  ctx->picture_depth++;",
+     "an instance and its target count as one level"),
+    ("P8", "src/codec/svg/lower/lower_emit_list.c", "  return gvec_lw_table_add(ctx, table, use->site, ctx->tracing ? (uint32_t) (picture_table + 1) : 0);",
+     "  return gvec_lw_table_add(ctx, table, use->site, 0);", "the trace does not follow an instance into its picture"),
+    ("P9", "src/codec/svg/lower/lower_trace.c", "info.has_key && info.key.domain == GVEC_LOWER_KEY_DOMAIN", "info.has_key && 0",
+     "an entry of an edit's report is never placed"),
+    ("P9", "src/codec/svg/lower/lower_trace.c", "      if (table >= trace->table_count || entry.chain[i] >= trace->tables[table].count) {",
+     "      if (table >= trace->table_count) {", "an item the trace does not hold is read past its table"),
+    ("P10", W, "  bool fits = weight <= ctx->caps.expansion && occurrences <= ctx->caps.expansion && nodes <= ctx->caps.nodes;", "  bool fits = 1;",
+     "the drawing is not held to the scene's limits"),
+    ("P10", W, "  if (ctx->levels + 3 > ctx->caps.node_depth || ctx->picture_depth + 1 > ctx->caps.picture_depth) {",
+     "  if (ctx->levels + 3 > ctx->caps.node_depth) {", "pictures nest without a bound"),
 
     # The typed document (story 5): grammars, build, graph, conditional processing, keys, dump.
     ("T-number", "src/codec/svg/svg_number.c", "  if (flags & GMATH_DECIMAL_OVERFLOW) {", "  if (0) {",
@@ -265,7 +338,12 @@ def env(name):
 
 
 def run(cmd, **kw):
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kw)
+    try:
+        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kw)
+    except subprocess.TimeoutExpired as e:
+        # A planted defect that makes a test or a replay run away has been caught: it is a failure, not a crash of this script.
+        out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
+        return subprocess.CompletedProcess(cmd, 124, out + "\ntimed out", None)
 
 
 def build_and_test(work, edits):
@@ -308,6 +386,8 @@ def build_and_test(work, edits):
         if r.returncode != 0:
             return "broken", "compile failed:\n" + r.stdout
         swapped[os.path.normpath(os.path.join(obj_dir, rel[:-2] + ".o"))] = obj
+    if os.environ.get("PLANT_BUILD_ONLY"):
+        return "fail", "compiled"  # a dry run: do the plants apply and build, without the (long) tests
     objects = [swapped.get(os.path.normpath(o), o) for o in objects]
     archive = os.path.join(work, "libplanted.a")
     if os.path.exists(archive):
@@ -347,11 +427,12 @@ def build_and_test(work, edits):
 def main():
     work = env("PLANT_WORK")
     shutil.rmtree(work, ignore_errors=True)
-    status, log = build_and_test(os.path.join(work, "control"), [])
-    if status != "pass":
-        print("check-planted: the control (no plant) fails, so no plant can be judged:\n" + log, file=sys.stderr)
-        return 1
-    print("  ok   control: the unplanted library passes every test and the replay")
+    if not os.environ.get("PLANT_BUILD_ONLY"):
+        status, log = build_and_test(os.path.join(work, "control"), [])
+        if status != "pass":
+            print("check-planted: the control (no plant) fails, so no plant can be judged:\n" + log, file=sys.stderr)
+            return 1
+        print("  ok   control: the unplanted library passes every test and the replay")
     missed = 0
     cases = [(rule, [(path, old, new)], what) for rule, path, old, new, what in PLANTS] + PAIRED
     only = os.environ.get("PLANT_ONLY")  # a rule prefix, to rerun the plants of one rule while writing them

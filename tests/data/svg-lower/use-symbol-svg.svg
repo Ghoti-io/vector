@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- symbol and svg referents are viewports sized by the use's width and height (P3, P4, P8). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
+  <defs>
+    <symbol id="s" viewBox="0 0 10 10"><path d="M0 0H10V10H0Z" fill="#c0392b"/><path d="M5 5H15V15H5Z" fill="#f1c40f"/></symbol>
+    <svg id="v" width="8" height="8" viewBox="0 0 2 2" overflow="visible"><path d="M0 0H2V2H0Z" fill="#2980b9"/></svg>
+  </defs>
+  <use href="#s" x="2" y="2" width="28" height="28"/>
+  <use href="#s" x="34" y="2" width="28" height="14"/>
+  <use href="#v" x="4" y="36" width="20" height="20"/>
+  <use href="#v" x="36" y="36"/>
+</svg>

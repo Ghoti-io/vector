@@ -559,33 +559,7 @@ TEST(Dump, TheHashIsMurmur3OfTheDumpAndTheSameOnEveryTarget) {
   EXPECT_EQ(gvec_doc_hash(plain.doc, nullptr), GVEC_ERR_INVALID);
 }
 
-TEST(Lower, BothEntryPointsRefuseTheRootOnceAtItsLineAndEmitNothing) {
-  Loaded out;
-  LoadFixture("prolog.svg", nullptr, out);
-  ASSERT_EQ(out.result, GVEC_OK);
-  // Nothing is lowered yet, so neither the edit nor the list is touched; any
-  // non-NULL pointer stands in for one.
-  int edit_stand_in = 0;
-  int list_stand_in = 0;
-  for (int which = 0; which < 2; which++) {
-    gvec_diagnostics_clear(&out.diagnostics);
-    GVEC_Result r = which == 0
-        ? gvec_doc_lower_edit(out.doc, nullptr, (GSHSCENE_Edit *) &edit_stand_in, &out.diagnostics)
-        : gvec_doc_lower_list(out.doc, nullptr, (GSHSCENE_List *) &list_stand_in, &out.diagnostics);
-    EXPECT_EQ(r, GVEC_OK);
-    ASSERT_EQ(out.diagnostics.count, (size_t) 1);
-    const GVEC_Diagnostic & d = out.diagnostics.items[0];
-    EXPECT_EQ(d.code, GVEC_DIAG_LOWER_REFUSED);
-    EXPECT_EQ(d.severity, GVEC_DIAG_ERROR);
-    EXPECT_EQ(d.detail, (uint32_t) GVEC_LOWER_NOT_YET_LOWERED);
-    EXPECT_EQ(d.line, (size_t) 7);
-    EXPECT_STREQ(d.element, "svg");
-  }
-  EXPECT_EQ(edit_stand_in, 0);
-  EXPECT_EQ(list_stand_in, 0);
-}
-
-TEST(Lower, NullArgumentsAndReservedBytesAreInvalid) {
+TEST(Lower, NullArgumentsReservedBytesAndAMissingStoreAreInvalid) {
   Loaded out;
   LoadFixture("minimal.svg", nullptr, out);
   ASSERT_EQ(out.result, GVEC_OK);
@@ -598,8 +572,8 @@ TEST(Lower, NullArgumentsAndReservedBytesAreInvalid) {
   std::memset(&o, 0, sizeof(o));
   o._reserved[15] = 1;
   EXPECT_EQ(gvec_doc_lower_list(out.doc, &o, (GSHSCENE_List *) &stand_in, nullptr), GVEC_ERR_INVALID);
-  // With no diagnostics list the lowering still succeeds.
-  EXPECT_EQ(gvec_doc_lower_list(out.doc, nullptr, (GSHSCENE_List *) &stand_in, nullptr), GVEC_OK);
+  // A list lowering needs the store its list was made over.
+  EXPECT_EQ(gvec_doc_lower_list(out.doc, nullptr, (GSHSCENE_List *) &stand_in, nullptr), GVEC_ERR_INVALID);
 }
 
 //-----------------------------------------------------------------------------

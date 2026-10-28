@@ -19,7 +19,7 @@ with PNG references, 16 by 16) and checks, each by its outcome and its numbers:
   * the runner's outcomes, one case each: PASS (the planted lowering that draws
     the reference exactly), REFUSED (one that draws it exactly and also refuses
     an element), FAIL (one row too tall), NOT_LOADED, ERROR (a reference that
-    does not decode), EXCLUDED, and what the library itself gives today;
+    does not decode), EXCLUDED, and the sink's report, and what the library itself gives;
   * the tolerance: the same off-by-one drawing passes under a tolerance that
     admits it and fails under zero, and a tolerance that is nonzero with no
     evidence is refused;
@@ -50,7 +50,12 @@ sys.path.insert(0, HERE)
 import score  # noqa: E402
 
 ORACLE_EXEC = os.path.join(os.path.dirname(HERE), "oracle", "oracle-exec")
-SVG = (b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"/>\n')
+SVG = (b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
+       b'<path d="M2 2H10V10H2Z" fill="#ff0000"/></svg>\n')
+
+# No size of its own: it is laid out in the viewport the runner gives it, the size of the reference.
+SVG_SIZED_BY_VIEWPORT = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+                         b'<path d="M2 2H10V10H2Z" fill="#ff0000"/></svg>\n')
 
 passed = 0
 skipped = 0
@@ -104,7 +109,7 @@ def build_corpus(root):
     ref = rect_reference()
     for case, body, reference in (
             ("s/drawn.svg", SVG, ref),
-            ("s/transp.svg", SVG, rect_reference(True)),
+            ("s/transp.svg", SVG_SIZED_BY_VIEWPORT, rect_reference(True)),
             ("s/notsvg.svg", b"this is not xml\n", ref),
             ("s/badref.svg", SVG, b"not a png"),
             ("x/skipped.svg", SVG, ref)):
@@ -181,14 +186,23 @@ def main(argv):
     rows = table(out)
     check(rows["s/drawn.svg"] == ("FAIL", "maxdiff=255 bad=8/256"), "a drawing one row too tall is a FAIL with its numbers: %r" % (rows["s/drawn.svg"],))
 
+    out = os.path.join(work, "out-sink")
+    run_score(runner, corpus, out, cases_file, stub="sink-refused")
+    rows = table(out)
+    check(rows["s/drawn.svg"] == ("REFUSED", "sink-report=1 first=unplaced"),
+          "a drawing the sink reports it did not draw is REFUSED, not PASS, even when the pixels agree: %r" % (rows["s/drawn.svg"],))
+
     out = os.path.join(work, "out-real")
     run_score(runner, corpus, out, cases_file)
     rows = table(out)
-    check(rows["s/drawn.svg"][0] == "REFUSED", "the library's own lowering refuses the document today")
+    check(rows["s/drawn.svg"] == ("PASS", "maxdiff=0 bad=0/256"),
+          "the library's own lowering draws the planted document exactly: %r" % (rows["s/drawn.svg"],))
+    check(rows["s/transp.svg"][0] == "PASS",
+          "and the document with no size, which is laid out in the reference's size, whose reference has a transparent pixel with colour")
     with open(os.path.join(out, "score"), encoding="utf-8") as handle:
         text = handle.read()
-    check("score (PASS over all cases) 0/5 0.00%" in text, "the headline is PASS over every case: 0/4")
-    check("not the score: PASS over all cases but the excluded 0/4" in text, "the second ratio is printed, labelled")
+    check("score (PASS over all cases) 2/5 40.00%" in text, "the headline is PASS over every case: 2/5")
+    check("not the score: PASS over all cases but the excluded 2/4" in text, "the second ratio is printed, labelled")
 
     # --- the tolerance ----------------------------------------------------------
     loose = os.path.join(work, "TOLERANCE-loose")
