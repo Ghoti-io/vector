@@ -78,7 +78,7 @@ stroke	PAINT	-		O	yes	none	none | <color> | <url> [ none | <color> ]? | context-
 stroke-dasharray	DASHARRAY	D		G				
 stroke-dashoffset	LENGTH	D		G				
 stroke-linecap	KEYWORD	-		G				
-stroke-linejoin	KEYWORD	-		G				
+stroke-linejoin	KEYWORD	-		O	yes	miter	miter | miter-clip | round | bevel | arcs	SVG 2 CR section 13.5.3: `stroke-linejoin: miter | miter-clip | round | bevel | arcs`, initial `miter`, inherited. CSS Fill and Stroke 3 (the pin) spells the clipped miter `crop`, so `miter-clip` is invalid by the pin.
 stroke-miterlimit	NUMBER	-		G				
 stroke-opacity	NUMBER	-		G				
 stroke-width	LENGTH	D		O	yes	1px	<length-percentage [0,∞]> | <number [0,∞]>	CSS Fill and Stroke 3 makes it a comma separated list, one width for each stroke layer, and adds the <line-width> keywords; SVG 2 section 13.3 and the browsers take one <length-percentage> or <number>, and a list is invalid.

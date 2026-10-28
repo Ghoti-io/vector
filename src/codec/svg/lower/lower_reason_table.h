@@ -33,7 +33,6 @@ static const struct {
   {NULL}, /* 0 is no reason */
   {"arc"}, /* ARC */
   {"rect"}, /* RECT */
-  {"stroke"}, /* STROKE */
   {"marker"}, /* MARKER */
   {"gradient"}, /* GRADIENT */
   {"pattern"}, /* PATTERN */
@@ -53,6 +52,7 @@ static const struct {
   {"style"}, /* STYLE */
   {"transform-box"}, /* TRANSFORM_BOX */
   {"embedded-content"}, /* EMBEDDED_CONTENT */
+  {"vector-effect"}, /* VECTOR_EFFECT */
 };
 
 #endif // GHOTI_IO_GVEC_LOWER_REASON_TABLE_H

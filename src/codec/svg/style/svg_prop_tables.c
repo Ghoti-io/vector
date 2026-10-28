@@ -87,7 +87,7 @@ const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {
   {"stroke-dasharray", GVEC_SVG_PT_DASHARRAY, GVEC_SVG_BASIS_DIAGONAL, GVEC_SVG_SOURCE_GENERATED, false, "stroke-dasharray", NULL, NULL, NULL},
   {"stroke-dashoffset", GVEC_SVG_PT_LENGTH, GVEC_SVG_BASIS_DIAGONAL, GVEC_SVG_SOURCE_GENERATED, false, "stroke-dashoffset", NULL, NULL, NULL},
   {"stroke-linecap", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "stroke-linecap", NULL, NULL, NULL},
-  {"stroke-linejoin", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "stroke-linejoin", NULL, NULL, NULL},
+  {"stroke-linejoin", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_OVERRIDDEN, true, "stroke-linejoin", "miter", "miter | miter-clip | round | bevel | arcs", "SVG 2 CR section 13.5.3: `stroke-linejoin: miter | miter-clip | round | bevel | arcs`, initial `miter`, inherited. CSS Fill and Stroke 3 (the pin) spells the clipped miter `crop`, so `miter-clip` is invalid by the pin."},
   {"stroke-miterlimit", GVEC_SVG_PT_NUMBER, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "stroke-miterlimit", NULL, NULL, NULL},
   {"stroke-opacity", GVEC_SVG_PT_NUMBER, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "stroke-opacity", NULL, NULL, NULL},
   {"stroke-width", GVEC_SVG_PT_LENGTH, GVEC_SVG_BASIS_DIAGONAL, GVEC_SVG_SOURCE_OVERRIDDEN, true, "stroke-width", "1px", "<length-percentage [0,∞]> | <number [0,∞]>", "CSS Fill and Stroke 3 makes it a comma separated list, one width for each stroke layer, and adds the <line-width> keywords; SVG 2 section 13.3 and the browsers take one <length-percentage> or <number>, and a list is invalid."},

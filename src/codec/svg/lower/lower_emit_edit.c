@@ -139,6 +139,17 @@ static GVEC_Result edit_children(gvec_lw_ctx * ctx, GSHSCENE_Edit * edit, uint64
         position++;
       }
       break;
+    case GVEC_LW_STROKE:
+      gshscene_node_init(GSHSCENE_NODE_STROKE, &props);
+      props.map = n->map;
+      props.resource = n->resource;
+      props.style = n->style;
+      props.paint = n->paint;
+      r = put(ctx, edit, group, position, n->key, n->site, &props, &id, &skipped);
+      if (r == GVEC_OK && !skipped) {
+        position++;
+      }
+      break;
     case GVEC_LW_GROUP:
     case GVEC_LW_CLIP:
       gshscene_node_init(GSHSCENE_NODE_GROUP, &props);

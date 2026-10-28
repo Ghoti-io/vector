@@ -79,6 +79,7 @@ gvec_lw_node * gvec_lw_new_node(gvec_lw_ctx * ctx, gvec_lw_kind kind) {
   node->site = GVEC_LW_NO_SITE;
   switch (kind) {
   case GVEC_LW_FILL:
+  case GVEC_LW_STROKE:
     node->items = node->weight = node->nodes = node->occurrences = 1;
     break;
   case GVEC_LW_GROUP:
@@ -104,22 +105,22 @@ static size_t saturating_add(size_t a, size_t b) {
   return a > SIZE_MAX - b ? SIZE_MAX : a + b;
 }
 
-GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * child) {
-  size_t weight = saturating_add(parent->weight, child->weight);
-  size_t occurrences = saturating_add(parent->occurrences, child->occurrences);
-  size_t nodes = saturating_add(parent->nodes, child->nodes);
-  bool fits = weight <= ctx->caps.expansion && occurrences <= ctx->caps.expansion && nodes <= ctx->caps.nodes;
+/* Whether `parent` can take `count` more children of the given totals without the tree leaving the scene's limits. */
+static bool room(const gvec_lw_ctx * ctx, const gvec_lw_node * parent, size_t weight, size_t occurrences, size_t nodes, size_t items) {
+  bool fits = saturating_add(parent->weight, weight) <= ctx->caps.expansion &&
+              saturating_add(parent->occurrences, occurrences) <= ctx->caps.expansion &&
+              saturating_add(parent->nodes, nodes) <= ctx->caps.nodes;
   /* The items of a list are known where the list begins: at the root, and in a picture. */
   if (parent == &ctx->root) {
-    fits = fits && saturating_add(parent->items, child->items) <= ctx->caps.list_items;
+    fits = fits && saturating_add(parent->items, items) <= ctx->caps.list_items;
   }
   else if (parent->kind == GVEC_LW_USE) {
-    fits = fits && saturating_add(parent->inner_items, child->items) <= ctx->caps.list_items;
+    fits = fits && saturating_add(parent->inner_items, items) <= ctx->caps.list_items;
   }
-  if (!fits) {
-    const GVEC_Svg_Element * element = child->site != GVEC_LW_NO_SITE ? ctx->sites[child->site].element : NULL;
-    return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
-  }
+  return fits;
+}
+
+static void link_child(gvec_lw_node * parent, gvec_lw_node * child) {
   if (parent->last) {
     parent->last->next = child;
   }
@@ -127,9 +128,9 @@ GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_nod
     parent->first = child;
   }
   parent->last = child;
-  parent->weight = weight;
-  parent->occurrences = occurrences;
-  parent->nodes = nodes;
+  parent->weight = saturating_add(parent->weight, child->weight);
+  parent->occurrences = saturating_add(parent->occurrences, child->occurrences);
+  parent->nodes = saturating_add(parent->nodes, child->nodes);
   if (parent->kind == GVEC_LW_USE) {
     parent->inner_items = saturating_add(parent->inner_items, child->items);
   }
@@ -137,6 +138,25 @@ GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_nod
     parent->items = saturating_add(parent->items, child->items);
   }
   parent->content = parent->content || child->content;
+}
+
+GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * child) {
+  if (!room(ctx, parent, child->weight, child->occurrences, child->nodes, child->items)) {
+    const GVEC_Svg_Element * element = child->site != GVEC_LW_NO_SITE ? ctx->sites[child->site].element : NULL;
+    return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
+  }
+  link_child(parent, child);
+  return GVEC_OK;
+}
+
+GVEC_Result gvec_lw_append_pair(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * first, gvec_lw_node * second) {
+  if (!room(ctx, parent, saturating_add(first->weight, second->weight), saturating_add(first->occurrences, second->occurrences),
+          saturating_add(first->nodes, second->nodes), saturating_add(first->items, second->items))) {
+    const GVEC_Svg_Element * element = first->site != GVEC_LW_NO_SITE ? ctx->sites[first->site].element : NULL;
+    return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
+  }
+  link_child(parent, first);
+  link_child(parent, second);
   return GVEC_OK;
 }
 
@@ -272,7 +292,7 @@ GVEC_Result gvec_lw_refuse(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, 
 // Reading values
 //-----------------------------------------------------------------------------
 
-static bool keyword_is(const GVEC_Svg_Style_Value * v, const char * word) {
+bool gvec_lw_keyword_is(const GVEC_Svg_Style_Value * v, const char * word) {
   if (v->kind != GVEC_SVG_STYLE_KEYWORD || !v->keyword) {
     return false;
   }
@@ -296,7 +316,7 @@ static bool keyword_is(const GVEC_Svg_Style_Value * v, const char * word) {
  *
  * @param usable Receives whether the value can be used.
  */
-static GVEC_Result read_property(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property,
+GVEC_Result gvec_lw_read_property(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property,
     GVEC_Lower_Reason unusable, GVEC_Svg_Style_Value * v, bool * usable) {
   GVEC_Result r = gvec_svg_get(ctx->style, inst, property, v);
   *usable = r == GVEC_OK;
@@ -328,7 +348,7 @@ typedef struct common {
 static GVEC_Result references_refuse(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property,
     bool dangling_counts, bool * refuse, bool * usable) {
   GVEC_Svg_Style_Value v;
-  GVEC_Result r = read_property(ctx, inst, property, GVEC_LOWER_STYLE, &v, usable);
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, property, GVEC_LOWER_STYLE, &v, usable);
   if (r != GVEC_OK || !*usable) {
     return r;
   }
@@ -362,15 +382,15 @@ static GVEC_Result prepare(
   if (gvec_svg_element_conditional_false(e)) {
     return GVEC_OK;
   }
-  r = read_property(ctx, inst, GVEC_SVG_PROP_DISPLAY, GVEC_LOWER_STYLE, &v, &usable);
-  if (r != GVEC_OK || !usable || keyword_is(&v, "none")) {
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_DISPLAY, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable || gvec_lw_keyword_is(&v, "none")) {
     return r;
   }
-  r = read_property(ctx, inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
-  c->visible = !(keyword_is(&v, "hidden") || keyword_is(&v, "collapse"));
+  c->visible = !(gvec_lw_keyword_is(&v, "hidden") || gvec_lw_keyword_is(&v, "collapse"));
   if (leaf && !c->visible) {
     return GVEC_OK;
   }
@@ -397,11 +417,11 @@ static GVEC_Result prepare(
   if (refuse) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "filter is not lowered yet");
   }
-  r = read_property(ctx, inst, GVEC_SVG_PROP_MIX_BLEND_MODE, GVEC_LOWER_STYLE, &v, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_MIX_BLEND_MODE, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
-  if (!keyword_is(&v, "normal")) {
+  if (!gvec_lw_keyword_is(&v, "normal")) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_BLEND, "mix-blend-mode is not lowered yet");
   }
   if (markers) {
@@ -417,7 +437,7 @@ static GVEC_Result prepare(
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_MARKER, "markers are not lowered yet");
     }
   }
-  r = read_property(ctx, inst, GVEC_SVG_PROP_TRANSFORM, GVEC_LOWER_STYLE, &v, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TRANSFORM, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
@@ -427,7 +447,7 @@ static GVEC_Result prepare(
   if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
-  r = read_property(ctx, inst, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
@@ -577,90 +597,94 @@ static GVEC_Result lw_switch(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
   return r;
 }
 
-/* The solid paint of a fill, or the reason it is not drawn. */
-typedef enum fill_decision {
-  FILL_NONE = 0, ///< Nothing is painted.
-  FILL_PAINT,    ///< `paint` is what to paint.
-  FILL_REFUSED   ///< The element was refused.
-} fill_decision;
-
+/* The paint of a fill and its rule, or the reason there is none. */
 static GVEC_Result fill_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHSCENE_Paint * paint, GSHGEOM_Fill_Rule * rule,
-    fill_decision * decision, bool * stroked) {
+    gvec_lw_paint_decision * decision) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
-  GVEC_Svg_Style_Value v;
+  GVEC_Svg_Style_Value v, n;
   bool usable;
-  GVEC_Result r;
-  *decision = FILL_REFUSED;
-  *stroked = false;
-  r = read_property(ctx, inst, GVEC_SVG_PROP_STROKE, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);
-  if (r != GVEC_OK || !usable) {
-    return r;
-  }
-  if (v.paint.kind != GVEC_SVG_PAINT_NONE) {
-    double width = 1, opacity = 1;
-    GVEC_Svg_Style_Value w;
-    r = read_property(ctx, inst, GVEC_SVG_PROP_STROKE_WIDTH, GVEC_LOWER_STYLE, &w, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
-    width = w.number;
-    r = read_property(ctx, inst, GVEC_SVG_PROP_STROKE_OPACITY, GVEC_LOWER_STYLE, &w, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
-    opacity = w.number;
-    /* A stroke that is invisible (no width, no opacity) draws nothing, exactly. */
-    *stroked = width > 0 && opacity > 0;
-  }
-  r = read_property(ctx, inst, GVEC_SVG_PROP_FILL, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);
+  *decision = GVEC_LW_PAINT_REFUSED;
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_FILL, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
   GVEC_Svg_Paint fill = v.paint;
-  GVEC_Svg_Style_Value n;
-  r = read_property(ctx, inst, GVEC_SVG_PROP_FILL_OPACITY, GVEC_LOWER_STYLE, &n, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_FILL_OPACITY, GVEC_LOWER_STYLE, &n, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
   double fill_opacity = n.kind == GVEC_SVG_STYLE_NUMBER ? n.number : 1;
-  r = read_property(ctx, inst, GVEC_SVG_PROP_FILL_RULE, GVEC_LOWER_STYLE, &n, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_FILL_RULE, GVEC_LOWER_STYLE, &n, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
-  *rule = keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
-  *decision = FILL_NONE;
-  switch (fill.kind) {
-  case GVEC_SVG_PAINT_NONE:
+  *rule = gvec_lw_keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
+  return gvec_lw_paint_of(ctx, e, &fill, fill_opacity, paint, decision);
+}
+
+/* The length of an attribute of a `line` in user units; `usable` is false when the unit needs the cascade (the element is refused). */
+static GVEC_Result line_coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const char * name, bool horizontal, double * out,
+    bool * usable) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, name);
+  GVEC_Svg_Length length;
+  *out = 0;
+  *usable = true;
+  if (!attribute || !gvec_svg_attribute_length(attribute, &length)) {
+    return GVEC_OK; /* Absent, or invalid (reported when the document was loaded): 0. */
+  }
+  switch (length.unit) {
+  case GVEC_SVG_UNIT_NONE:
+  case GVEC_SVG_UNIT_PX:
+    *out = length.value;
     return GVEC_OK;
-  case GVEC_SVG_PAINT_COLOR: {
-    memset(paint, 0, sizeof *paint);
-    double alpha = fill.color.color.rgba[3] * fill_opacity;
-    if (fill.color.kind == GVEC_SVG_COLOR_FOREGROUND) {
-      paint->kind = GSHSCENE_PAINT_FOREGROUND;
-      paint->rgba[3] = alpha;
-    }
-    else {
-      paint->kind = GSHSCENE_PAINT_SOLID;
-      paint->rgba[0] = fill.color.color.rgba[0];
-      paint->rgba[1] = fill.color.color.rgba[1];
-      paint->rgba[2] = fill.color.color.rgba[2];
-      paint->rgba[3] = alpha;
-      paint->space = fill.color.color.space;
-    }
-    *decision = alpha > 0 ? FILL_PAINT : FILL_NONE;
+  case GVEC_SVG_UNIT_PERCENT: {
+    double w, h;
+    gvec_svg_instance_viewport(inst, &w, &h);
+    *out = length.value * (horizontal ? w : h) / 100.0;
     return GVEC_OK;
   }
-  case GVEC_SVG_PAINT_SERVER: {
-    GVEC_Lower_Reason reason = gvec_svg_element_kind(fill.server) == GVEC_SVG_KIND_PATTERN ? GVEC_LOWER_PATTERN : GVEC_LOWER_GRADIENT;
-    *decision = FILL_REFUSED;
-    return gvec_lw_refuse(ctx, e, reason, reason == GVEC_LOWER_PATTERN ? "a pattern paint is not lowered yet" : "a gradient paint is not lowered yet");
-  }
-  case GVEC_SVG_PAINT_CONTEXT_FILL:
-  case GVEC_SVG_PAINT_CONTEXT_STROKE:
+  case GVEC_SVG_UNIT_IN:
+    *out = length.value * 96.0;
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_CM:
+    *out = length.value * 96.0 / 2.54;
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_MM:
+    *out = length.value * 96.0 / 25.4;
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_Q:
+    *out = length.value * 96.0 / 101.6;
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_PT:
+    *out = length.value * 96.0 / 72.0;
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_PC:
+    *out = length.value * 16.0;
+    return GVEC_OK;
   default:
-    *decision = FILL_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CONTEXT_PAINT, "context-fill and context-stroke are not lowered yet");
+    *usable = false;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a length of the line needs the font or the window, which the lowering does not read");
   }
+}
+
+/* The node of a path painted under the element's map: a fill, or a stroke when `style` is given. */
+static GVEC_Result shape_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHGEOM_Map * map, const GSHSCENE_Resource * path,
+    const GSHSCENE_Paint * paint, GSHGEOM_Fill_Rule rule, const GSHSCENE_Resource * style, gvec_lw_node ** out) {
+  gvec_lw_node * node = gvec_lw_new_node(ctx, style ? GVEC_LW_STROKE : GVEC_LW_FILL);
+  *out = node;
+  if (!node) {
+    return GVEC_ERR_OOM;
+  }
+  node->map = *map;
+  node->resource = path;
+  node->style = style;
+  node->rule = rule;
+  node->paint = *paint;
+  node->content = true;
+  node->key = gvec_lw_key(e->key, ctx->chain, style ? GVEC_LW_ROLE_STROKE : GVEC_LW_ROLE_SHAPE);
+  node->site = gvec_lw_new_site(ctx, e, node->key);
+  return node->site == GVEC_LW_NO_SITE ? GVEC_ERR_OOM : GVEC_OK;
 }
 
 static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
@@ -674,16 +698,19 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   GSHSCENE_Paint paint;
   GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
-  fill_decision decision;
-  bool stroked;
-  r = fill_of(ctx, inst, &paint, &rule, &decision, &stroked);
-  if (r != GVEC_OK || decision == FILL_REFUSED) {
+  gvec_lw_paint_decision fill_decision;
+  r = fill_of(ctx, inst, &paint, &rule, &fill_decision);
+  if (r != GVEC_OK || fill_decision == GVEC_LW_PAINT_REFUSED) {
     return r;
   }
-  if (stroked) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_STROKE, "strokes are not lowered yet");
+  gvec_lw_stroke stroke;
+  r = gvec_lw_stroke_of(ctx, inst, &stroke);
+  if (r != GVEC_OK || stroke.decision == GVEC_LW_PAINT_REFUSED) {
+    return r;
   }
-  if (decision == FILL_NONE) {
+  bool filled = fill_decision == GVEC_LW_PAINT_DRAW; /* A line has no area: its fill path is empty. */
+  bool stroked = stroke.decision == GVEC_LW_PAINT_DRAW;
+  if (!filled && !stroked) {
     return GVEC_OK;
   }
   switch (kind) {
@@ -691,40 +718,83 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   case GVEC_SVG_KIND_CIRCLE:
   case GVEC_SVG_KIND_ELLIPSE:
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_RECT, "rect, circle and ellipse wait for the shape family's exact primitives");
-  case GVEC_SVG_KIND_LINE:
-    return GVEC_OK; /* A line has no area. */
   default:
     break;
   }
+  bool stroke_first = false;
+  if (filled && stroked) {
+    bool usable;
+    r = gvec_lw_stroke_first(ctx, inst, &stroke_first, &usable);
+    if (r != GVEC_OK || !usable) {
+      return r;
+    }
+  }
+  gvec_lw_node * fill_node = NULL;
+  gvec_lw_node * stroke_node = NULL;
   gvec_lw_geometry geometry;
   const GSHSCENE_Resource * path = NULL;
-  r = gvec_lw_path_of(ctx, e, &geometry, &path);
-  if (r != GVEC_OK) {
-    return r;
+  if (filled) {
+    r = gvec_lw_path_of(ctx, e, false, &geometry, &path);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (geometry == GVEC_LW_GEOMETRY_ARC) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_ARC, "an elliptical arc waits for the shape family's exact primitive");
+    }
+    if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+    }
+    if (geometry == GVEC_LW_GEOMETRY_PATH) {
+      r = shape_node(ctx, e, &c.local, path, &paint, rule, NULL, &fill_node);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
   }
-  if (geometry == GVEC_LW_GEOMETRY_ARC) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_ARC, "an elliptical arc waits for the shape family's exact primitive");
+  if (stroked) {
+    path = NULL;
+    if (kind == GVEC_SVG_KIND_LINE) {
+      double x1, y1, x2, y2;
+      bool usable;
+      r = line_coordinate(ctx, inst, "x1", true, &x1, &usable);
+      if (r == GVEC_OK && usable) {
+        r = line_coordinate(ctx, inst, "y1", false, &y1, &usable);
+      }
+      if (r == GVEC_OK && usable) {
+        r = line_coordinate(ctx, inst, "x2", true, &x2, &usable);
+      }
+      if (r == GVEC_OK && usable) {
+        r = line_coordinate(ctx, inst, "y2", false, &y2, &usable);
+      }
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+      r = gvec_lw_line_path(ctx, x1, y1, x2, y2, &geometry, &path);
+    }
+    else {
+      r = gvec_lw_path_of(ctx, e, true, &geometry, &path);
+    }
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (geometry == GVEC_LW_GEOMETRY_ARC) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_ARC, "an elliptical arc waits for the shape family's exact primitive");
+    }
+    if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+    }
+    if (geometry == GVEC_LW_GEOMETRY_PATH) {
+      r = shape_node(ctx, e, &c.local, path, &stroke.paint, GSHGEOM_FILL_NONZERO, stroke.style, &stroke_node);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
   }
-  if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
-  }
-  if (geometry == GVEC_LW_GEOMETRY_EMPTY) {
+  if (!fill_node && !stroke_node) {
     return GVEC_OK;
   }
-  gvec_lw_node * fill = gvec_lw_new_node(ctx, GVEC_LW_FILL);
-  if (!fill) {
-    return GVEC_ERR_OOM;
-  }
-  fill->map = c.local;
-  fill->resource = path;
-  fill->rule = rule;
-  fill->paint = paint;
-  fill->content = true;
-  fill->key = gvec_lw_key(e->key, ctx->chain, GVEC_LW_ROLE_SHAPE);
-  fill->site = gvec_lw_new_site(ctx, e, fill->key);
-  if (fill->site == GVEC_LW_NO_SITE) {
-    return GVEC_ERR_OOM;
-  }
+  gvec_lw_node * first = stroke_first && stroke_node ? stroke_node : (fill_node ? fill_node : stroke_node);
+  gvec_lw_node * second = first == stroke_node ? fill_node : stroke_node;
   gvec_lw_node * group;
   bool skip;
   r = opacity_group(ctx, e, c.opacity, &group, &skip);
@@ -734,8 +804,11 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (ctx->levels + 1 > ctx->caps.node_depth) {
     r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the drawing nests deeper than the scene's limits allow");
   }
+  else if (second) {
+    r = gvec_lw_append_pair(ctx, TARGET(group, parent), first, second);
+  }
   else {
-    r = gvec_lw_append(ctx, TARGET(group, parent), fill);
+    r = gvec_lw_append(ctx, TARGET(group, parent), first);
   }
   if (group) {
     wrap_leave(ctx);
@@ -753,7 +826,7 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
 static GVEC_Result read_length(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property, double fallback,
     double * out, bool * usable) {
   GVEC_Svg_Style_Value v;
-  GVEC_Result r = read_property(ctx, inst, property, GVEC_LOWER_STYLE, &v, usable);
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, property, GVEC_LOWER_STYLE, &v, usable);
   if (r != GVEC_OK || !*usable) {
     return r;
   }
@@ -830,11 +903,11 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewport is past the range the waist can carry");
   }
   GVEC_Svg_Style_Value overflow;
-  r = read_property(ctx, inst, GVEC_SVG_PROP_OVERFLOW, GVEC_LOWER_STYLE, &overflow, &usable);
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OVERFLOW, GVEC_LOWER_STYLE, &overflow, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
   }
-  bool clips = !(keyword_is(&overflow, "visible") || keyword_is(&overflow, "auto"));
+  bool clips = !(gvec_lw_keyword_is(&overflow, "visible") || gvec_lw_keyword_is(&overflow, "auto"));
   gvec_lw_node * clip = NULL;
   if (clips) {
     gvec_lw_geometry geometry;
@@ -1039,13 +1112,13 @@ static GVEC_Result lw_refused_kind(
   if (gvec_svg_element_conditional_false(e)) {
     return GVEC_OK;
   }
-  GVEC_Result r = read_property(ctx, inst, GVEC_SVG_PROP_DISPLAY, GVEC_LOWER_STYLE, &v, &usable);
-  if (r != GVEC_OK || !usable || keyword_is(&v, "none")) {
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_DISPLAY, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable || gvec_lw_keyword_is(&v, "none")) {
     return r;
   }
   if (leaf) {
-    r = read_property(ctx, inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);
-    if (r != GVEC_OK || !usable || keyword_is(&v, "hidden") || keyword_is(&v, "collapse")) {
+    r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);
+    if (r != GVEC_OK || !usable || gvec_lw_keyword_is(&v, "hidden") || gvec_lw_keyword_is(&v, "collapse")) {
       return r;
     }
   }

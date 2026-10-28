@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- Strokes are items of the waist beside the fill, in the order paint-order gives; every stroke-* property reaches the style (K1 to K6). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="72" viewBox="0 0 96 72">
+  <path d="M4 14L20 4L36 14" fill="none" stroke="#073642" stroke-width="5" stroke-linejoin="miter"/>
+  <path d="M44 14L60 4L76 14" fill="none" stroke="#073642" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M4 26H44" stroke="#dc322f" stroke-width="4" stroke-dasharray="6 3"/>
+  <path d="M52 26H92" stroke="#268bd2" stroke-width="4" stroke-dasharray="0 6" stroke-linecap="round" stroke-dashoffset="2"/>
+  <polygon points="12,36 36,36 24,58" fill="#b58900" stroke="#6c71c4" stroke-width="4" stroke-linejoin="bevel"/>
+  <polyline points="48,58 60,38 72,58 84,38 96,58" fill="none" stroke="#2aa198" stroke-width="3" opacity=".6"/>
+  <line x1="44" y1="34" x2="48" y2="66" stroke="#000" stroke-width="3" stroke-linecap="square"/>
+  <path d="M28 46Q46 30 64 46" fill="#cb4b16" fill-opacity=".4" stroke="#cb4b16" stroke-width="3" paint-order="stroke"/>
+  <path d="M8 66H28" stroke="#859900" stroke-width="2" style="vector-effect: non-scaling-stroke" transform="scale(2 1)"/>
+  <path d="M80 66L80 66" stroke="#d33682" stroke-width="6" stroke-linecap="round"/>
+</svg>

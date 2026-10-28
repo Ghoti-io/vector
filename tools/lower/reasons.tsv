@@ -3,7 +3,6 @@
 # tools/lower/gen-reasons.py reads this and writes documentation/refusals.md and src/codec/svg/lower/lower_reason_table.h; `make check-test-data` fails if either is stale.
 ARC	arc	G1	An elliptical arc (`A`, `a`) in path data.	The arc is the shape family's exact primitive. Converting it to Bézier curves would approximate it, so the element is refused until the primitive is lowered.
 RECT	rect	G2	`rect`, `circle` or `ellipse` that would be painted.	These are the shape family's exact named shapes. Drawing them as polygons or curves would approximate them.
-STROKE	stroke	G3 (V3)	A stroke that would be visible: a `stroke` paint other than `none`, a width above zero, an opacity above zero.	Strokes are lowered in V3.
 MARKER	marker	V3	`marker-start`, `marker-mid` or `marker-end` naming a marker, or a marker function, on a `path`, `line`, `polyline` or `polygon`.	Markers are lowered with strokes, in V3.
 GRADIENT	gradient	V4	A `linearGradient` or `radialGradient` paint.	Gradients are lowered in V4.
 PATTERN	pattern	G7 (V6)	A `pattern` paint.	Patterns are lowered in V6.
@@ -23,3 +22,4 @@ LIMIT	limit	never	A limit of the document, the lowering or `shape-scene` was rea
 STYLE	style	never	A property of the element has no value that can be used (the style layer reports it where it was read).	The element cannot be drawn without its value.
 TRANSFORM_BOX	transform-box	V4	A `transform` whose percentages are of a bounding box (`transform-box: fill-box` or `stroke-box`) on an element that has a percentage.	The bounding box is computed with the exact primitives.
 EMBEDDED_CONTENT	embedded-content	never	`audio`, `video`, `canvas` or `iframe` that would be seen.	This library renders none of them.
+VECTOR_EFFECT	vector-effect	never	A `vector-effect` other than `none` and `non-scaling-stroke` on an element that would be stroked.	The other values (`fixed-position`, `non-scaling-size`, `non-rotation`, `screen`) are not part of SVG 2's rendering model for a static document.

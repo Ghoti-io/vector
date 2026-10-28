@@ -80,8 +80,8 @@ static GVEC_Result finish(gvec_lw_ctx * ctx, GSHGEOM_Path * path, gvec_lw_geomet
   return GVEC_OK;
 }
 
-static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment * segments, size_t count, gvec_lw_geometry * kind,
-    const GSHSCENE_Resource ** out) {
+static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment * segments, size_t count, bool for_stroke,
+    gvec_lw_geometry * kind, const GSHSCENE_Resource ** out) {
   /* What is drawn: a segment with length. One move, or a move and a close, fills nothing (SVG 2, 9.3.4). */
   bool drawn = false;
   for (size_t i = 0; i < count; i++) {
@@ -94,6 +94,10 @@ static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment 
         !finite(s->y)) {
       *kind = GVEC_LW_GEOMETRY_LIMIT;
       return GVEC_OK;
+    }
+    if (for_stroke && s->kind != GVEC_SVG_SEGMENT_MOVE) {
+      /* A stroke draws a subpath of no length (its cap does), so any segment after a move is drawn. */
+      drawn = true;
     }
     switch (s->kind) {
     case GVEC_SVG_SEGMENT_LINE:
@@ -152,8 +156,8 @@ static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment 
   return finish(ctx, path, kind, out);
 }
 
-static GVEC_Result polygon_points(
-    gvec_lw_ctx * ctx, const double * numbers, size_t count, gvec_lw_geometry * kind, const GSHSCENE_Resource ** out) {
+static GVEC_Result polygon_points(gvec_lw_ctx * ctx, const double * numbers, size_t count, bool closed, bool for_stroke,
+    gvec_lw_geometry * kind, const GSHSCENE_Resource ** out) {
   size_t points = count / 2; /* An odd trailing number is an error that ends the list (SVG 2, 9.8.1): the points before it are kept. */
   if (points < 2) {
     *kind = GVEC_LW_GEOMETRY_EMPTY;
@@ -165,7 +169,7 @@ static GVEC_Result polygon_points(
       return GVEC_OK;
     }
   }
-  bool distinct = false;
+  bool distinct = for_stroke; /* A stroke draws the caps of points that coincide. */
   for (size_t i = 1; i < points && !distinct; i++) {
     distinct = numbers[2 * i] != numbers[0] || numbers[2 * i + 1] != numbers[1];
   }
@@ -182,7 +186,7 @@ static GVEC_Result polygon_points(
   for (size_t i = 1; i < points && g == GSHGEOM_OK; i++) {
     g = gshgeom_path_line_to(path, point(numbers[2 * i], numbers[2 * i + 1]));
   }
-  if (g == GSHGEOM_OK) {
+  if (g == GSHGEOM_OK && closed) {
     g = gshgeom_path_close(path);
   }
   if (g != GSHGEOM_OK) {
@@ -192,8 +196,32 @@ static GVEC_Result polygon_points(
   return finish(ctx, path, kind, out);
 }
 
-GVEC_Result gvec_lw_path_of(
-    gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource) {
+GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, double y1, double x2, double y2, gvec_lw_geometry * out_kind,
+    const GSHSCENE_Resource ** out_resource) {
+  *out_kind = GVEC_LW_GEOMETRY_EMPTY;
+  *out_resource = NULL;
+  if (!finite(x1) || !finite(y1) || !finite(x2) || !finite(y2)) {
+    *out_kind = GVEC_LW_GEOMETRY_LIMIT;
+    return GVEC_OK;
+  }
+  GSHGEOM_Path * path = NULL;
+  GVEC_Result r = translate(gshgeom_path_create(NULL, NULL, 2, &path), out_kind);
+  if (r != GVEC_OK || *out_kind == GVEC_LW_GEOMETRY_LIMIT) {
+    return r;
+  }
+  GSHGEOM_Result g = gshgeom_path_move_to(path, point(x1, y1));
+  if (g == GSHGEOM_OK) {
+    g = gshgeom_path_line_to(path, point(x2, y2));
+  }
+  if (g != GSHGEOM_OK) {
+    gshgeom_path_destroy(path);
+    return g == GSHGEOM_ERR_INVALID ? GVEC_ERR_INTERNAL : translate(g, out_kind);
+  }
+  return finish(ctx, path, out_kind, out_resource);
+}
+
+GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, bool for_stroke, gvec_lw_geometry * out_kind,
+    const GSHSCENE_Resource ** out_resource) {
   *out_kind = GVEC_LW_GEOMETRY_EMPTY;
   *out_resource = NULL;
   switch (gvec_svg_element_kind(element)) {
@@ -205,7 +233,7 @@ GVEC_Result gvec_lw_path_of(
     if (!d || !gvec_svg_attribute_path(d, &commands, &command_count, &segments, &segment_count)) {
       return GVEC_OK;
     }
-    return path_segments(ctx, segments, segment_count, out_kind, out_resource);
+    return path_segments(ctx, segments, segment_count, for_stroke, out_kind, out_resource);
   }
   case GVEC_SVG_KIND_POLYGON:
   case GVEC_SVG_KIND_POLYLINE: {
@@ -215,7 +243,9 @@ GVEC_Result gvec_lw_path_of(
     if (!points || !gvec_svg_attribute_numbers(points, &numbers, &count)) {
       return GVEC_OK;
     }
-    return polygon_points(ctx, numbers, count, out_kind, out_resource);
+    /* A polyline fills as its closed polygon (it is implicitly closed); it is stroked open. */
+    bool closed = gvec_svg_element_kind(element) == GVEC_SVG_KIND_POLYGON || !for_stroke;
+    return polygon_points(ctx, numbers, count, closed, for_stroke, out_kind, out_resource);
   }
   default:
     return GVEC_OK;

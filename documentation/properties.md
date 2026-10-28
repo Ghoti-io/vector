@@ -66,7 +66,7 @@ Types: **keyword** is the computed value as text; **length** is in user units; a
 | `stroke-dasharray` | generated | dasharray | diagonal |  |
 | `stroke-dashoffset` | generated | length | diagonal |  |
 | `stroke-linecap` | generated | keyword |  |  |
-| `stroke-linejoin` | generated | keyword |  |  |
+| `stroke-linejoin` | overridden | keyword |  |  |
 | `stroke-miterlimit` | generated | number |  |  |
 | `stroke-opacity` | generated | number |  |  |
 | `stroke-width` | overridden | length | diagonal |  |
@@ -137,6 +137,13 @@ Types: **keyword** is the computed value as text; **length** is in user units; a
 - initial value: `none`
 - value: `none | <color> | <url> [ none | <color> ]? | context-fill | context-stroke`
 - why: As fill.
+
+### `stroke-linejoin` (overridden)
+
+- inherited: yes
+- initial value: `miter`
+- value: `miter | miter-clip | round | bevel | arcs`
+- why: SVG 2 CR section 13.5.3: `stroke-linejoin: miter | miter-clip | round | bevel | arcs`, initial `miter`, inherited. CSS Fill and Stroke 3 (the pin) spells the clipped miter `crop`, so `miter-clip` is invalid by the pin.
 
 ### `stroke-width` (overridden)
 

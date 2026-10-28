@@ -34,7 +34,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"rect", GVEC_LOWER_RECT, "\n<rect width=\"4\" height=\"4\"/>", "rect", 2, 0},
       {"circle", GVEC_LOWER_RECT, "\n<circle r=\"4\"/>", "circle", 2, 0},
       {"ellipse", GVEC_LOWER_RECT, "\n<ellipse rx=\"4\" ry=\"2\"/>", "ellipse", 2, 0},
-      {"stroke", GVEC_LOWER_STROKE, "\n<path d=\"M0 0H4V4H0Z\" stroke=\"red\"/>", "path", 2, 0},
+      {"vector-effect", GVEC_LOWER_VECTOR_EFFECT, "\n<path d=\"M0 0H4V4H0Z\" stroke=\"red\" style=\"vector-effect: non-scaling-size\"/>", "path", 2, 0},
       {"marker", GVEC_LOWER_MARKER, "\n<defs><marker id=\"m\"/></defs><path d=\"M0 0H4V4H0Z\" marker-start=\"url(#m)\"/>", "path", 2, 0},
       {"gradient", GVEC_LOWER_GRADIENT, "<defs><linearGradient id=\"g\"/></defs>\n<path d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/>", "path", 2, 0},
       {"pattern", GVEC_LOWER_PATTERN, "<defs><pattern id=\"p\"/></defs>\n<path d=\"M0 0H4V4H0Z\" fill=\"url(#p)\"/>", "path", 2, 0},
@@ -126,7 +126,7 @@ TEST(LowerRefusals, ADanglingClipPathIsIgnoredAndADanglingMaskOrFilterIsNot) {
 TEST(LowerRefusals, EachReasonHasANameAndTheNumbersAreStable) {
   EXPECT_EQ(GVEC_LOWER_ARC, 1);
   EXPECT_EQ(GVEC_LOWER_RECT, 2);
-  EXPECT_EQ(GVEC_LOWER_STROKE, 3);
+  EXPECT_EQ(GVEC_LOWER_MARKER, 3);
   EXPECT_STREQ(gvec_lower_reason_string(GVEC_LOWER_ARC), "arc");
   EXPECT_STREQ(gvec_lower_reason_string(GVEC_LOWER_CLIP_PATH), "clip-path");
   EXPECT_STREQ(gvec_lower_reason_string((GVEC_Lower_Reason) 0), "unknown");

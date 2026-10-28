@@ -60,6 +60,7 @@ extern "C" {
 /** What a node of the drawing tree is. */
 typedef enum gvec_lw_kind {
   GVEC_LW_FILL = 0, ///< A path filled under a map with a paint.
+  GVEC_LW_STROKE,   ///< A centerline stroked under a map with a style and a paint.
   GVEC_LW_GROUP,    ///< An opacity group.
   GVEC_LW_CLIP,     ///< The content, clipped to a path.
   GVEC_LW_USE       ///< An instance of a picture: its children are the picture's content.
@@ -72,7 +73,8 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_CLIP,
   GVEC_LW_ROLE_CONTAINER, ///< The hidden group that holds a picture's content in an edit.
   GVEC_LW_ROLE_INSTANCE,
-  GVEC_LW_ROLE_DRAWING    ///< The group all the drawing is under.
+  GVEC_LW_ROLE_DRAWING,   ///< The group all the drawing is under.
+  GVEC_LW_ROLE_STROKE     ///< The stroke of a shape (its fill is the SHAPE role).
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;
@@ -87,8 +89,9 @@ struct gvec_lw_node {
   uint64_t container_key;            ///< USE: the key of the hidden container the instance's target is.
   uint32_t site;                     ///< The site (element and chain) of the node, for the trace.
   uint32_t container_site;           ///< USE: the site of the container.
-  GSHGEOM_Map map;                   ///< FILL: the item's map. CLIP: the clip's map. USE: the instance's map. GROUP: the identity.
-  const GSHSCENE_Resource * resource; ///< FILL, CLIP: the path (held by the context).
+  GSHGEOM_Map map;                   ///< FILL, STROKE: the item's map. CLIP: the clip's map. USE: the instance's map. GROUP: the identity.
+  const GSHSCENE_Resource * resource; ///< FILL, STROKE, CLIP: the path (held by the context).
+  const GSHSCENE_Resource * style;   ///< STROKE: the stroke style (held by the context).
   GSHGEOM_Fill_Rule rule;
   GSHSCENE_Paint paint;
   double opacity;                    ///< GROUP.
@@ -192,11 +195,54 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_hold(gvec_lw_ctx * ctx, const GSHSCENE_Res
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * child);
 
+/** Link `first` then `second` last under `parent`, both or (when they would not fit the scene's limits) neither, refusing the element. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_append_pair(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * first, gvec_lw_node * second);
+
 /** `outer . inner`, normalised so that no entry is negative zero (see lower_emit.c); false when an entry leaves the waist's range. */
 GVEC_INTERNAL_API bool gvec_lw_compose(const GSHGEOM_Map * outer, const GSHGEOM_Map * inner, GSHGEOM_Map * out);
 
 /** The normal form of a map (composed with the identity). */
 GVEC_INTERNAL_API bool gvec_lw_normal(const GSHGEOM_Map * map, GSHGEOM_Map * out);
+
+//-----------------------------------------------------------------------------
+// Reading values and paint (lower_walk.c, lower_paint.c, lower_stroke.c)
+//-----------------------------------------------------------------------------
+
+/** Whether a keyword value is `word` (ASCII case-insensitively; `word` is lower case). */
+GVEC_INTERNAL_API bool gvec_lw_keyword_is(const GVEC_Svg_Style_Value * v, const char * word);
+
+/**
+ * Read a property. A value the style layer could not use refuses the element (`unusable` is its reason); any other failure
+ * (except running out of memory) is a limit.
+ *
+ * @param usable Receives whether the value can be used.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_read_property(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property,
+    GVEC_Lower_Reason unusable, GVEC_Svg_Style_Value * v, bool * usable);
+
+/** What a paint of a fill or a stroke amounts to. */
+typedef enum gvec_lw_paint_decision {
+  GVEC_LW_PAINT_NONE = 0, ///< Nothing is drawn (`none`, or no alpha).
+  GVEC_LW_PAINT_DRAW,     ///< `*out` is the paint.
+  GVEC_LW_PAINT_REFUSED   ///< The element is refused (already reported).
+} gvec_lw_paint_decision;
+
+/** The paint of `paint` with its alpha multiplied by `opacity` (AD-23); a server or a context paint refuses the element. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Paint * paint,
+    double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
+/** What the stroke of an element amounts to. */
+typedef struct gvec_lw_stroke {
+  gvec_lw_paint_decision decision;
+  const GSHSCENE_Resource * style; ///< DRAW: the stroke style (held by the context).
+  GSHSCENE_Paint paint;            ///< DRAW.
+} gvec_lw_stroke;
+
+/** Read the stroke properties of an instance and make the style and the paint; refuses the element whole when it cannot. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_stroke * out);
+
+/** Whether the stroke of an element is painted before its fill (`paint-order`). */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_first(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * out, bool * usable);
 
 //-----------------------------------------------------------------------------
 // Viewports (lower_viewport.c)
@@ -224,9 +270,18 @@ typedef enum gvec_lw_geometry {
   GVEC_LW_GEOMETRY_LIMIT      ///< A coordinate or a count the waist cannot carry: refuse the element.
 } gvec_lw_geometry;
 
-/** The path of a `path`, `polygon`, `polyline` element, interned in the store. */
-GVEC_INTERNAL_API GVEC_Result gvec_lw_path_of(
-    gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
+/**
+ * The path of a `path`, `polygon`, `polyline` or `line` element, interned in the store.
+ *
+ * @param for_stroke The path is a centerline: a `polyline` stays open, a `line` is a path, and a subpath of no length is kept
+ *   (a cap draws it). Else the path is what a fill covers, and a path with no extent is empty.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, bool for_stroke,
+    gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
+
+/** The centerline from (`x1`, `y1`) to (`x2`, `y2`), interned in the store. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, double y1, double x2, double y2,
+    gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
 
 /** The path of the rectangle `x`, `y`, `width`, `height` as four lines (a viewport's clip); interned in the store. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_rect_path(

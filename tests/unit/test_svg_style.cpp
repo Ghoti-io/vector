@@ -111,7 +111,7 @@ TEST(SvgStyleProperties, TheRegistryHasEveryPropertyAndTheOverridesAreReported) 
   ASSERT_NE(s.context, nullptr);
   /* The context could be made, so every generated row exists in the pin and every registered one does not. */
   size_t overrides = gvec_svg_style_context_override_count(s.context);
-  EXPECT_EQ(overrides, 6u);
+  EXPECT_EQ(overrides, 7u);
   std::vector<std::string> names;
   for (size_t i = 0; i < overrides; i++) {
     GVEC_Svg_Property p;
@@ -122,7 +122,7 @@ TEST(SvgStyleProperties, TheRegistryHasEveryPropertyAndTheOverridesAreReported) 
     EXPECT_EQ(gvec_svg_property_source(p), GVEC_SVG_PROPERTY_OVERRIDDEN);
   }
   EXPECT_FALSE(gvec_svg_style_context_override_at(s.context, overrides, nullptr, nullptr));
-  EXPECT_EQ(names, (std::vector<std::string>{"fill", "glyph-orientation-vertical", "stop-color", "stop-opacity", "stroke", "stroke-width"}));
+  EXPECT_EQ(names, (std::vector<std::string>{"fill", "glyph-orientation-vertical", "stop-color", "stop-opacity", "stroke", "stroke-linejoin", "stroke-width"}));
   EXPECT_EQ(gvec_svg_property_source(GVEC_SVG_PROP_COLOR_RENDERING), GVEC_SVG_PROPERTY_REGISTERED);
   EXPECT_EQ(gvec_svg_property_source(GVEC_SVG_PROP_OPACITY), GVEC_SVG_PROPERTY_GENERATED);
 }

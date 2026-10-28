@@ -100,6 +100,12 @@ static GVEC_Result emit_nodes(gvec_lw_ctx * ctx, GSHSCENE_List * list, size_t ta
         r = gvec_lw_table_add(ctx, table, n->site, 0);
       }
       break;
+    case GVEC_LW_STROKE:
+      r = scene_failure(ctx, n, gshscene_list_stroke(list, n->resource, n->style, &n->map, &n->paint, 0, 0.0), &skipped);
+      if (r == GVEC_OK && !skipped) {
+        r = gvec_lw_table_add(ctx, table, n->site, 0);
+      }
+      break;
     case GVEC_LW_GROUP: {
       GSHSCENE_Group group;
       memset(&group, 0, sizeof group);

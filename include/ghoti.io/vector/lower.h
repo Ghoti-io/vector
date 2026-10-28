@@ -91,7 +91,6 @@ extern "C" {
 typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_ARC = 1,                  ///< An elliptical arc in path data (the shape family's G1).
   GVEC_LOWER_RECT,                     ///< `rect`, `circle` or `ellipse` (G2: the named shapes).
-  GVEC_LOWER_STROKE,                   ///< A stroke (G3).
   GVEC_LOWER_MARKER,                   ///< Markers on a path, line, polyline or polygon.
   GVEC_LOWER_GRADIENT,                 ///< A gradient paint.
   GVEC_LOWER_PATTERN,                  ///< A pattern paint (G7).
@@ -111,6 +110,7 @@ typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_STYLE,                    ///< A property of the element has no usable value (reported where it was read).
   GVEC_LOWER_TRANSFORM_BOX,            ///< A `transform` whose percentages are of a bounding box.
   GVEC_LOWER_EMBEDDED_CONTENT,         ///< `audio`, `video`, `canvas` or `iframe`.
+  GVEC_LOWER_VECTOR_EFFECT,            ///< A `vector-effect` the static rendering model does not have.
   GVEC_LOWER_REASON_COUNT              ///< One past the last reason; not a reason.
 } GVEC_Lower_Reason;
 

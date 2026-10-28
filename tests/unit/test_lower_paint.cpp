@@ -168,7 +168,7 @@ TEST(LowerPaint, ContextPaintIsRefused) {
   EXPECT_NE(l.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
 }
 
-TEST(LowerPaint, AStrokeThatCouldBeSeenRefusesTheElementAndOneThatCannotDoesNot) {
+TEST(LowerPaint, AStrokeThatCannotBeSeenDrawsNothingAndOneThatCanIsAnItem) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
                "<path d=\"M0 0H4V4H0Z\" stroke=\"red\"/>"
@@ -177,9 +177,9 @@ TEST(LowerPaint, AStrokeThatCouldBeSeenRefusesTheElementAndOneThatCannotDoesNot)
                "<path d=\"M0 0H4V4H0Z\" stroke=\"red\" stroke-opacity=\"0\"/>"
                "<path d=\"M0 0H4V4H0Z\" stroke=\"none\"/>"),
       l);
-  EXPECT_EQ(l.Refusals(), (size_t) 2);
-  EXPECT_EQ(l.Items(), (size_t) 3);  // the three without a visible stroke are drawn
-  EXPECT_NE(l.Refusal(GVEC_LOWER_STROKE), nullptr);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(l.Count(GSHSCENE_ITEM_STROKE), (size_t) 2);  // the first path's and the line's
+  EXPECT_EQ(l.Count(GSHSCENE_ITEM_FILL), (size_t) 4);    // the four paths, filled black; the line has no area
 }
 
 int main(int argc, char ** argv) {
