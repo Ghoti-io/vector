@@ -625,6 +625,10 @@ GVEC_Result gvec_svg_build(const void * markup_root, size_t element_count, const
   }
   memset(doc, 0, sizeof *doc);
   doc->allocator = allocator;
+  doc->viewport_width = options->viewport_width > 0 ? options->viewport_width : GVEC_DEFAULT_VIEWPORT_WIDTH;
+  doc->viewport_height = options->viewport_height > 0 ? options->viewport_height : GVEC_DEFAULT_VIEWPORT_HEIGHT;
+  doc->color_scheme = options->color_scheme;
+  doc->limits = *options->limits;
   gvec_arena_init(&doc->arena, allocator);
   build_ctx ctx;
   memset(&ctx, 0, sizeof ctx);

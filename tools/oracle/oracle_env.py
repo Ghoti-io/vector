@@ -34,7 +34,7 @@ IMAGES = os.environ.get("GHOTI_ORACLE_IMAGES") or os.path.join(HERE, "containers
 ENGINE = os.environ.get("GHOTI_CONTAINER_ENGINE", "podman")
 
 # What each image's probe script prints. The IMAGES version must be inside it.
-PROBE = {"resvg": ["resvg-version"], "inkscape": ["inkscape-version"]}
+PROBE = {"resvg": ["resvg-version"], "inkscape": ["inkscape-version"], "browser": ["browser-version"]}
 
 
 class OracleUnavailable(Exception):

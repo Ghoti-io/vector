@@ -175,6 +175,14 @@ GVEC_Result gvec_doc_load(
       }
     }
   }
+  if (options) {
+    /* Written to reject NaN too: a comparison with NaN is false. */
+    if (!(options->viewport_width >= 0 && options->viewport_width <= 1e9) ||
+        !(options->viewport_height >= 0 && options->viewport_height <= 1e9) ||
+        (unsigned) options->color_scheme >= GVEC_COLOR_SCHEME_COUNT) {
+      return GVEC_ERR_INVALID;
+    }
+  }
   r = gvec_limits_resolve(options ? options->limits : NULL, &resolved, &field);
   if (r != GVEC_OK) {
     gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LIMIT, field, 0, 0, 0, NULL,

@@ -213,6 +213,9 @@ GVEC_Result gvec_svg_load(GVEC_Doc * doc, const unsigned char * data, size_t siz
   if (!build.language_count) {
     build.languages = NULL;
   }
+  build.viewport_width = load_options ? load_options->viewport_width : 0;
+  build.viewport_height = load_options ? load_options->viewport_height : 0;
+  build.color_scheme = load_options ? load_options->color_scheme : GVEC_COLOR_SCHEME_LIGHT;
   GVEC_Result built = gvec_svg_build(root, elements, &build, doc->allocator, diagnostics, &svg->document);
   gtext_markup_document_free(tree);
   if (built == GVEC_OK) {

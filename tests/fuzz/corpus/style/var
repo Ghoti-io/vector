@@ -1,0 +1,6 @@
+
+
+
+--c: red; --w: 3; fill: var(--c); stroke-width: var(--w); stroke: var(--none, blue)
+
+

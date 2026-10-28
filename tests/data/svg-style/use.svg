@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" fill="black">
+  <defs>
+    <g id="blue" fill="blue" stroke-width="2"><rect id="shape" width="10" height="10"/><rect id="own" fill="orange"/></g>
+    <rect id="bare" width="10" height="10"/>
+    <symbol id="sym" stroke="green"><circle id="dot" r="5"/><rect id="symrect" fill="inherit"/></symbol>
+    <g id="nest"><use id="inner" href="#bare" stroke="purple"/></g>
+  </defs>
+  <g fill="red" stroke="red" opacity="0.5">
+    <use id="u1" href="#bare"/>
+    <use id="u2" href="#blue" fill="yellow" opacity="0.25"/>
+    <use id="u3" href="#sym" color="teal"/>
+    <use id="u4" href="#nest" stroke-width="7" style="fill: pink"/>
+    <use id="u5" xlink:href="#bare" visibility="hidden" stroke-dasharray="1 2"/>
+  </g>
+</svg>

@@ -1,0 +1,6 @@
+
+
+
+fill: lab(50% 10 10); stroke: color-mix(in srgb, red, blue)
+
+

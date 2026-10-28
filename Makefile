@@ -30,7 +30,7 @@ PROJECT := vector
 # The libraries this one depends on, by the end of the milestone: the fourth
 # field of its line in suite/libraries.txt, without the optional ones.
 # Each is found by pkg-config and is a hard error when it is not.
-DEPS := cutil compress text shape-scene math
+DEPS := cutil compress text shape-scene shape-geometry color math
 
 # The libraries whose headers this one may include and whose shared objects it
 # may link (check-edges), as a regular expression alternation. Itself is always
@@ -40,7 +40,7 @@ DEPS := cutil compress text shape-scene math
 # shape-scene is a front end's only edge into the shape family; every sink
 # (shape-cpu and the rest) stays outside the list, which is how check-edges
 # enforces that this library never links or includes one.
-EDGES_ALLOWED := cutil|compress|text|shape-scene|math
+EDGES_ALLOWED := cutil|compress|text|shape-scene|shape-geometry|color|math
 
 # no, for every library: nothing is exempt from check-libm; elementary
 # functions come from math. Anything else fails check-gates.
@@ -261,7 +261,7 @@ TESTFLAGS := `PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs --cfla
 
 # coverage clears this: --coverage links the gcov runtime, whose mangle_path
 # check-symbols is right to reject in a shipping library.
-TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-tables check-doc-oracle
+TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-tables check-doc-oracle check-style-oracle
 
 VALGRIND_FLAGS := --leak-check=full --show-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=1 --suppressions=tests/valgrind.supp
 
@@ -450,6 +450,19 @@ check-doc-oracle: $(DOC_DUMP) ## Fail unless the typed document agrees with an i
 		printf 'check-doc-oracle: SKIPPED (run tools/svg2/fetch.sh); nothing was checked\n'; \
 	fi
 
+# The style oracle: the dump tool for the style of the typed document, then the comparison of its computed values with a pinned
+# Chromium and Firefox (tools/doc-oracle/style_oracle.py), through the oracle wrapper like the pixel oracles.
+STYLE_DUMP := $(APP_DIR)/tools/style_dump$(EXE_EXTENSION)
+
+$(STYLE_DUMP): tools/doc-oracle/style_dump.c $(APP_DIR)/$(STATIC_TARGET) $(FLAGS_STAMP) | $(APP_DIR)/$(TARGET) $(LIBVER_GEN)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $< $(LDFLAGS) $(SELF_LIBRARY) $(DEP_LIBS)
+
+.PHONY: check-style-oracle
+check-style-oracle: $(STYLE_DUMP) ## Fail unless the computed style agrees with two browsers (or is classified), and the comparison is seen to fail on planted differences
+	@LD_LIBRARY_PATH="$(TEST_LD_PATH)" python3 tools/doc-oracle/style_oracle.py selftest --dump $(STYLE_DUMP) && \
+		LD_LIBRARY_PATH="$(TEST_LD_PATH)" python3 tools/doc-oracle/style_oracle.py check --dump $(STYLE_DUMP) tests/data/svg-style/*.svg
+
 .PHONY: check-tables
 check-tables: ## Fail unless the committed SVG tables are what tools/svg2 generates from the pinned pages, and the generator fails on its plants
 	@if [ -f third_party/svg2/attindex.html ]; then \
@@ -554,9 +567,10 @@ check-planted: $(LIBOBJECTS) $(TEST_OBJECTS) ## Fail unless each planted defect 
 	 PLANT_LDFLAGS='$(LDFLAGS) $(DEP_LIBS) $(GTEST_FLAGS)' PLANT_LD_PATH='$(TEST_LD_PATH)' \
 	 PLANT_WORK='$(BUILD_DIR)/planted' python3 tools/check-planted.py
 
-check-test-data: ## Fail unless the fixtures, the fuzz seeds and the grammar vectors are what the generators write
+check-test-data: ## Fail unless the fixtures, the fuzz seeds and the grammar and style vectors are what the generators write
 	@python3 tools/gen-test-data.py --check
 	@python3 tools/gen-grammar-vectors.py --check
+	@python3 tools/gen-style-vectors.py --check
 	@python3 tools/gen-namespace.py --check
 
 check-front-end: $(APP_DIR)/$(STATIC_TARGET) ## Fail on a scene.h include or a symbol that reads the environment, locale or clock
@@ -571,7 +585,7 @@ check-gates: ## Prove each gate fails on its planted violation and passes its co
 # point, in an ordinary build (no libFuzzer, no clang), in `make test`
 ####################################################################
 
-FUZZ_TARGETS := load
+FUZZ_TARGETS := load style
 FUZZ_REPLAYS := $(foreach f,$(FUZZ_TARGETS),$(APP_DIR)/fuzz/replay_$(f)$(EXE_EXTENSION))
 
 $(APP_DIR)/fuzz/replay_%$(EXE_EXTENSION): tests/fuzz/fuzz_%.c tests/fuzz/replay_main.c $(APP_DIR)/$(STATIC_TARGET) \

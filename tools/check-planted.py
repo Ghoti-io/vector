@@ -172,6 +172,67 @@ PLANTS = [
      "the dump does not escape a quote or a backslash"),
     ("T-dump", "src/codec/svg/svg_dump.c", "  if (d.negative) {\n    put(w, \"-\", 1);\n  }", "",
      "the dump drops the sign of a number"),
+    # The style of the document (C1 to C14, documentation/design.md).
+    ("C3", "src/codec/svg/style/svg_instance.c", "context, target, use_instance, use_instance, use_instance->viewport_width,",
+     "context, target, use_instance->parent, use_instance, use_instance->viewport_width,",
+     "a use clone inherits from where it is written, not from the use"),
+    ("C4", "src/codec/svg/style/svg_instance.c", "  context->style_options.presentation.table = &context->engine->reg.table;\n",
+     "  context->style_options.presentation.table = &context->engine->reg.table;\n  context->style_options.presentation.unitless_lengths = false;\n",
+     "a unitless number is not a length in an attribute"),
+    ("C4", "src/codec/svg/style/svg_instance.c", "  context->style_options.presentation.table = &context->engine->reg.table;\n",
+     "  context->style_options.presentation.table = &context->engine->reg.table;\n  context->style_options.sources = GTEXT_CSS_STYLE_STYLE_ATTRIBUTE;\n",
+     "presentation attributes are not read"),
+    ("C4", "src/codec/svg/style/svg_instance.c", "  bool was = (context->once[kind][bit >> 3] & mask) != 0;", "  bool was = false;",
+     "what is dropped is reported every time the style is read"),
+    ("C6", "src/codec/svg/style/svg_get.c", "    return w;\n", "    return h;\n", "a percentage of a width is of the height"),
+    ("C6", "src/codec/svg/style/svg_get.c", "(w * w + h * h) / 2.0", "(w * w + h * h) / 1.0", "the normalised diagonal is not halved"),
+    ("C6", "src/codec/svg/style/svg_instance.c", "  if (usable_view_box(e, &box)) {", "  if (0 && usable_view_box(e, &box)) {",
+     "the viewBox is not the basis of percentages"),
+    ("C6", "src/codec/svg/style/svg_instance.c", "    if (instance->has_override_width) {", "    if (0) {",
+     "a use's width does not size a symbol's viewport"),
+    ("C6", "src/codec/svg/style/svg_instance.c", "  if (e->kind == GVEC_SVG_KIND_MARKER) {", "  if (0) {",
+     "a marker does not establish a viewport"),
+    ("C7", "src/codec/svg/style/svg_color.c",
+     "        return refuse(context, where, 0, \"currentColor has no color to be the value of\");\n      }\n",
+     "        return refuse(context, where, 0, \"currentColor has no color to be the value of\");\n      }\n      foreground(out, 1.0);\n      return GVEC_OK;\n",
+     "currentColor is always the foreground"),
+    ("C7", "src/codec/svg/style/svg_color.c", "  return dark && (!light || context->color_scheme == GVEC_COLOR_SCHEME_DARK);",
+     "  return context->color_scheme == GVEC_COLOR_SCHEME_DARK;", "the preference decides the color scheme of a document that does not support dark"),
+    ("C8", "src/codec/svg/style/svg_color.c", "gmath_pow((a + alpha - 1.0) / alpha, 1.0 / 0.45)", "gmath_pow((a + alpha - 1.0) / alpha, 1.0 / 0.5)",
+     "the Rec. 2020 transfer function is wrong"),
+    ("C9", "src/codec/svg/style/svg_transform.c", "        ops[i].v[0] *= instance->viewport_width;", "        ops[i].v[0] *= instance->viewport_height;",
+     "a percentage translation is of the wrong side of the viewport"),
+    ("C9", "src/codec/svg/style/svg_transform.c", "    if (r != GVEC_OK || gshgeom_map_compose(&result, &step, &result) != GSHGEOM_OK) {",
+     "    if (r != GVEC_OK || gshgeom_map_compose(&step, &result, &result) != GSHGEOM_OK) {", "a transform list is composed in the wrong order"),
+    ("C13", "src/codec/svg/style/svg_ua.c", "    out[n++] = \"transform-origin:0 0\";", "    ;",
+     "an SVG element transforms about the center of its box and not about the origin"),
+    ("C13", "src/codec/svg/style/svg_ua.c", "  case GVEC_SVG_KIND_DEFS:\n", "  case GVEC_SVG_KIND_IMAGE:\n",
+     "a defs element is displayed"),
+    ("C13", "src/codec/svg/style/svg_ua.c", "instance->use && instance->parent == instance->use ?", "0 ?",
+     "a symbol is not drawn when a use instantiates it"),
+    ("C13", "src/codec/svg/style/svg_ua.c", "    out[n++] = \"overflow:hidden\";", "    ;", "a nested svg, a marker and a symbol do not clip"),
+    ("C9", "src/codec/svg/style/svg_dash.c", "  if (n % 2 == 1) {", "  if (0) {", "an odd dash array is not repeated"),
+    ("C9", "src/codec/svg/style/svg_paint.c",
+     "     * the browsers draw none. */\n    if (has_fallback) {", "     * the browsers draw none. */\n    if (0) {",
+     "a missing paint server does not take the fallback"),
+    ("C10", "src/codec/svg/style/svg_refs.c", "  return c != 0 && c == context->component[to->order];", "  return c == UINT32_MAX && c == context->component[to->order];",
+     "the reference that closes a cycle is not cut"),
+    ("C11", "src/codec/svg/style/svg_instance.c", "  context->style_options.parse.max_input_bytes = context->limits.max_style_bytes;\n", "",
+     "the bound of a style attribute is not applied"),
+    ("C11", "src/codec/svg/style/svg_instance.c", "  context->style_options.parse.max_declarations = context->limits.max_declarations;\n", "",
+     "the bound of declarations is not applied"),
+    ("C3", "src/codec/svg/style/svg_instance.c", "      context->instances >= bound) {", "      context->instances > bound) {",
+     "one instance past the bound is made"),
+    ("C14", "src/codec/svg/style/svg_engine.c", "    if (e->viewport_width == w && e->viewport_height == h && e->color_scheme == scheme &&",
+     "    if ((e->viewport_width == w || 1) && e->viewport_height == h && e->color_scheme == scheme &&", "an engine is shared by environments that differ in width"),
+    ("C2", "src/codec/svg/style/svg_prop_tables.c",
+     "{\"opacity\", GVEC_SVG_PT_NUMBER, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, \"opacity\", NULL, NULL, NULL},",
+     "{\"opacity\", GVEC_SVG_PT_NUMBER, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_REGISTERED, true, \"opacity\", \"1\", \"<number>\", \"planted\"},",
+     "a property the pin has is registered again"),
+    ("C2", "src/codec/svg/style/svg_prop_tables.c", "GVEC_SVG_SOURCE_REGISTERED, true, \"color-rendering\", \"auto\",",
+     "GVEC_SVG_SOURCE_GENERATED, true, \"color-rendering\", \"auto\",", "a property the pin lacks is taken to be the pin's"),
+    ("C12", "src/codec/svg/style/svg_get.c", "    out_specified->important = entry.important;", "    out_specified->important = false;",
+     "an important declaration is not said to be"),
 ]
 
 # The root check of L8 is unreachable while the probe is correct (the probe
@@ -268,16 +329,18 @@ def build_and_test(work, edits):
         log.append("%s: exit %d\n%s" % (os.path.basename(exe), r.returncode, r.stdout[-3000:]))
         if r.returncode != 0:
             failed = True
-    replay = os.path.join(work, "replay_load")
-    r = run("%s %s -Itests/fuzz -o %s tests/fuzz/fuzz_load.c tests/fuzz/replay_main.c %s %s"
-            % (env("PLANT_CC"), env("PLANT_CCFLAGS"), replay, archive, ldflags), cwd=ROOT)
-    if r.returncode != 0:
-        return "broken", "replay link failed:\n" + r.stdout
-    corpus = sorted(os.path.join("tests/fuzz/corpus/load", f) for f in os.listdir(os.path.join(ROOT, "tests/fuzz/corpus/load")))
-    r = run("LD_LIBRARY_PATH='%s' %s %s" % (ld_path, replay, " ".join(corpus)), cwd=ROOT, timeout=600)
-    log.append("replay: exit %d\n%s" % (r.returncode, r.stdout[-2000:]))
-    if r.returncode != 0:
-        failed = True
+    for target in ("load", "style"):
+        replay = os.path.join(work, "replay_" + target)
+        r = run("%s %s -Itests/fuzz -o %s tests/fuzz/fuzz_%s.c tests/fuzz/replay_main.c %s %s"
+                % (env("PLANT_CC"), env("PLANT_CCFLAGS"), replay, target, archive, ldflags), cwd=ROOT)
+        if r.returncode != 0:
+            return "broken", "replay link failed:\n" + r.stdout
+        directory = os.path.join("tests/fuzz/corpus", target)
+        corpus = sorted(os.path.join(directory, f) for f in os.listdir(os.path.join(ROOT, directory)))
+        r = run("LD_LIBRARY_PATH='%s' %s %s" % (ld_path, replay, " ".join(corpus)), cwd=ROOT, timeout=600)
+        log.append("replay %s: exit %d\n%s" % (target, r.returncode, r.stdout[-2000:]))
+        if r.returncode != 0:
+            failed = True
     return ("fail" if failed else "pass"), "\n".join(log)
 
 
@@ -291,6 +354,9 @@ def main():
     print("  ok   control: the unplanted library passes every test and the replay")
     missed = 0
     cases = [(rule, [(path, old, new)], what) for rule, path, old, new, what in PLANTS] + PAIRED
+    only = os.environ.get("PLANT_ONLY")  # a rule prefix, to rerun the plants of one rule while writing them
+    if only:
+        cases = [c for c in cases if c[0].startswith(only)]
     for n, (rule, edits, what) in enumerate(cases):
         status, log = build_and_test(os.path.join(work, "plant-%02d" % n), edits)
         if status == "broken":

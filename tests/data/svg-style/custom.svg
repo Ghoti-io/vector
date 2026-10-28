@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <g id="g" style="--c: red; --w: 3; --n: 0.5">
+    <rect id="var" style="fill: var(--c); stroke-width: var(--w); opacity: var(--n)"/>
+    <rect id="fallback" style="fill: var(--missing, blue)"/>
+    <rect id="missing" style="fill: var(--missing)"/>
+    <rect id="override" style="--c: green; fill: var(--c)"/>
+  </g>
+  <rect id="chain" style="--a: var(--b); --b: 7px; stroke-width: var(--a)"/>
+  <rect id="cycle" style="--a: var(--b); --b: var(--a); fill: var(--a, green)"/>
+  <rect id="calcvar" style="--w: 2; stroke-width: calc(var(--w) * 1px)"/>
+  <rect id="partial" style="--c: 1; stroke-width: var(--c)px"/>
+</svg>

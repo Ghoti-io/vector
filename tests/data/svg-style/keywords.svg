@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" fill-rule="evenodd" clip-rule="evenodd">
+  <g id="g" stroke-linejoin="bevel" stroke-linecap="round" shape-rendering="crispEdges" text-rendering="optimizeLegibility" image-rendering="optimizeSpeed" color-interpolation="linearRGB" color-interpolation-filters="sRGB" color-rendering="optimizeQuality" pointer-events="none" cursor="pointer" direction="rtl" text-anchor="end" writing-mode="vertical-rl" unicode-bidi="embed">
+    <rect id="inherits"/>
+    <rect id="resets" fill-rule="nonzero" clip-rule="nonzero" stroke-linejoin="miter" pointer-events="all"/>
+  </g>
+  <rect id="display" display="none"/>
+  <rect id="displayblock" display="block"/>
+  <rect id="visibility" visibility="collapse"/>
+  <rect id="overflow" overflow="hidden"/>
+  <svg id="nested" overflow="scroll"/>
+  <rect id="blend" mix-blend-mode="multiply" isolation="isolate"/>
+  <rect id="vector" vector-effect="non-scaling-stroke"/>
+  <rect id="mask" mask-type="alpha"/>
+  <rect id="paintorder" paint-order="stroke fill"/>
+  <rect id="textdecoration" text-decoration="underline"/>
+  <rect id="invalidkw" fill-rule="sideways" stroke-linecap="wavy"/>
+  <rect id="baseline" alignment-baseline="middle" dominant-baseline="central" baseline-shift="super"/>
+  <rect id="glyph" glyph-orientation-vertical="90"/>
+  <rect id="whitespace" white-space="pre"/>
+  <rect id="whitespace2" style="white-space: pre-wrap"/>
+</svg>

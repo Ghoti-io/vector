@@ -1,0 +1,10 @@
+{
+  "name": "ghoti-vector-oracle-browser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The pinned WebSocket client of the browser driver for the style oracle; see Containerfile.",
+  "dependencies": {
+    "ws": "8.22.0"
+  }
+}

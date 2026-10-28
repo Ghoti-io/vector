@@ -55,7 +55,14 @@ This is the first milestone's first step: the library, and loading.
   each attribute parsed by its own grammar (numbers, lengths, lists, points, `viewBox`, path data in the form it
   was written and in absolute form, references, `data:` URIs, conditional processing), its errors located, its
   references and cycles resolved, and a key for every element that is stable across loads (`svg.h`). CSS
-  properties and presentation attributes are held as written for the cascade, which comes next.
+  properties and presentation attributes are held as written for the cascade, which reads them.
+* **Style.** The cascade is the `text` library's. `style.h` gives each element its specified, computed and used
+  values *as it is drawn*: an element drawn by a `use` inherits from the `use`, so the handle is an instance. A
+  presentation attribute and the `style` attribute are cascaded with SVG 2's user agent style sheet and `var()`; a
+  declaration that is not valid is dropped and reported; and `gvec_svg_get` reads a property as a typed value:
+  lengths in user units with percentages resolved against the nearest viewport, colors that are never 8 bits,
+  paints with their fallbacks, dash arrays, transforms, and references with cycles cut. `properties.md` says where
+  the definition of each of the 78 properties comes from.
 * **The dump.** `gvec_doc_dump` writes a line-oriented text that is the same on every target,
   and `gvec_doc_hash` is a hash of it.
 
@@ -67,7 +74,8 @@ make test PREFIX=/your/prefix     # the tests and every gate
 make install PREFIX=/your/prefix
 ```
 
-Dependencies are found by pkg-config only: `cutil`, `compress`, `text` and `shape-scene`, each
+Dependencies are found by pkg-config only: `cutil`, `compress`, `text`, `shape-scene`, `shape-geometry`,
+`color` and `math`, each
 installed into a prefix (the suite repository's `install.sh` builds them all in order).
 `make help` lists every target.
 
@@ -77,16 +85,19 @@ installed into a prefix (the suite repository's `install.sh` builds them all in 
 
 * `check-fp-contract`, `check-libm`, `check-no-x87`: no fused multiply-add, no libm, no x87, so a
   result is the same bits on every target.
-* `check-edges`: this library includes and links only `cutil`, `compress`, `text` and `shape-scene`.
+* `check-edges`: this library includes and links only `cutil`, `compress`, `text`, `shape-scene`, `shape-geometry`,
+  `color` and `math`.
   No renderer is reachable from it; its tests and examples may link one.
 * `check-front-end`: no include of `shape-scene/scene.h` (publishing a scene is the application's),
   and no reference to a function that reads the environment, the locale or the clock.
 * `check-gates`: plants a violation for each gate above and requires it to fail.
-* `check-test-data`: the fixtures and the fuzz seeds are exactly what `tools/gen-test-data.py`
-  writes.
-* `fuzz-replay`: every seed through the load fuzzer, whose invariants abort on a violation.
+* `check-test-data`: the fixtures, the fuzz seeds and the reference vectors are exactly what
+  `tools/gen-test-data.py` and `tools/gen-style-vectors.py` write.
+* `fuzz-replay`: every seed through the load fuzzer and the style fuzzer, whose invariants abort on a violation.
 * `check-tables`, `check-doc-oracle`: the element and attribute tables are what the pinned specification pages
   generate, and the typed document agrees with an independent reader of the same documents.
+* `check-style-oracle`: the computed style agrees with two pinned browsers, Chromium and Firefox, except where
+  `tools/doc-oracle/style_divergences.txt` classifies a difference and quotes the text that decides it.
 * `check-conformance`, `check-conformance-planted`: the conformance harness is shown to produce each outcome
   and to reject a malformed case table, and a defect planted in it is caught.
 * `run-examples`: every example, each checking what it shows.

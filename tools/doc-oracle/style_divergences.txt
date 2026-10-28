@@ -1,0 +1,42 @@
+# The differences between this library's computed style and two browsers' (tools/doc-oracle/style_oracle.py), each classified.
+#
+# One line each, tab-separated: key, class, why, count.
+#
+#   key     <property>:<the difference with its numbers replaced by #>
+#   class   reference-old     a browser implements an older text than the one this library follows
+#           standard-newer    this library follows a newer text than the browsers
+#           reference-wrong   a browser is wrong about the text it implements
+#           legacy-compat     the browsers keep a legacy behaviour of SVG 1.1 or CSS 2 that the texts have dropped
+#           unspecified       the texts leave it to the user agent, or the browser reports the resolved value and this library the computed
+#           ours              a defect of this library (none may be listed)
+#   count   how many (element, property, browser) triples have it, over all the fixtures
+#
+# The check fails on a difference that is not listed, on a listed one that does not occur or occurs another number of times, and on any
+# line of class `ours`.
+alignment-baseline:keyword: ours 'baseline' browser 'auto'	reference-old	Chromium returns SVG 1.1's initial value `auto`; the CR's property index and CSS Inline Layout 3 give `baseline`	225
+alignment-baseline:keyword: ours 'middle' browser 'baseline'	reference-old	Firefox does not apply `alignment-baseline` to an element that is no text content element	1
+display:keyword: ours 'inline' browser 'block'	legacy-compat	the browsers' own style sheet makes a foreignObject a block; the CR's sheet (6.8) says nothing of its display	8
+display:keyword: ours 'inline' browser 'inline-block'	unspecified	Chromium blockifies an element whose writing mode differs from its parent's; an SVG element has no box here to blockify	3
+display:keyword: ours 'none' browser 'inline'	reference-old	Chromium keeps `display` of defs, markers, patterns, gradients and the other never-rendered elements out of its style sheet; the CR's (6.8) sets `display: none !important` and Firefox does the same	22
+fill:paint: ours none browser 'url("#cp")'	unspecified	the computed value of a paint is the url as written; the used paint, which this library reads, is none when the url names no paint server (SVG 2, 13.2)	2
+fill:paint: ours none browser 'url("#nothing")'	unspecified	the computed value of a paint is the url as written; the used paint is none when the url names nothing (SVG 2, 13.2)	2
+font-family:keyword: ours 'serif' browser '"times new roman"'	unspecified	the initial value of `font-family` depends on the user agent (CSS Fonts 4); this library's is `serif`, Chromium's is its default font	218
+font-size:length: ours # browser #px	legacy-compat	`large` is 1.2 times `medium` in CSS Fonts 4; both browsers keep the table of CSS 2, 18px	2
+font-size-adjust:keyword: ours 'ex-height #' browser '#'	standard-newer	CSS Fonts 5 writes a bare number as `ex-height` and the number; Firefox writes the number	1
+font-size-adjust:keyword: ours 'ex-height #' browser 'none'	reference-old	Chromium does not support `font-size-adjust` as a presentation attribute	1
+height:length: ours # browser auto	reference-old	Chromium and Firefox have no `height` property on a use element (SVG 2 adds it)	4
+height:length: ours auto browser #px	unspecified	the resolved value of `height` is the used height of the box; this library reads the computed value, `auto`, and resolves a percentage and not `auto`	132
+image-rendering:keyword: ours 'auto' browser 'optimizespeed'	legacy-compat	Firefox keeps the SVG 1.1 keyword `optimizeSpeed`; the registry's grammar (CSS Images 3) does not have it, and Chromium ignores it	3
+overflow:keyword: ours 'visible' browser 'hidden'	legacy-compat	the SVG 1.1 style sheet clips a foreignObject and the browsers keep that; the CR's (6.8) does not list it	2
+paint-order:keyword: ours 'markers fill' browser 'markers'	unspecified	Chromium writes the shortest form of `paint-order`; this library writes the keywords as specified	2
+paint-order:keyword: ours 'stroke fill' browser 'stroke'	unspecified	Chromium writes the shortest form of `paint-order`; this library writes the keywords as specified	2
+rx:length: ours auto browser #px	unspecified	the resolved value of `rx` is the used radius; this library reads the computed `auto`	1
+ry:length: ours auto browser #px	unspecified	the resolved value of `ry` is the used radius; this library reads the computed `auto`	1
+stroke-miterlimit:number: ours # browser #	standard-newer	Fill and Stroke 3 restricts `stroke-miterlimit` to numbers of at least 1, as the registry does; the CR says non-negative and the browsers accept 0.5	2
+text-overflow:keyword: ours 'ellipsis' browser 'clip'	reference-old	Chromium does not read `text-overflow` as a presentation attribute (the served SVG 2 lists it)	2
+transform-origin:keyword: ours '#% #%' browser '#px #px'	unspecified	the resolved value of `transform-origin` is the used pair in px against the box; this library reads the computed percentages	34
+width:length: ours # browser auto	reference-old	Chromium and Firefox have no `width` property on a use element (SVG 2 adds it)	4
+width:length: ours auto browser #px	unspecified	the resolved value of `width` is the used width of the box; this library reads the computed value, `auto`	132
+writing-mode:keyword: ours 'horizontal-tb' browser 'vertical-rl'	legacy-compat	`tb` is an SVG 1.1 value of `writing-mode` that the browsers map to `vertical-rl`; the registry's grammar (CSS Writing Modes 4) does not have it	2
+x:length: ours # browser #px	reference-old	Chromium and Firefox have no `x` property on a use element (SVG 2 adds it)	3
+y:length: ours # browser #px	reference-old	Chromium and Firefox have no `y` property on a use element (SVG 2 adds it)	3

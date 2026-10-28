@@ -187,6 +187,110 @@ with every byte outside printable ASCII, the quote and the backslash escaped. Th
 past the last is a failed load (a structural bound); the others are located errors on the attribute or the `use`, so
 one hostile attribute does not erase the rest of a drawing.
 
+## The style of the document (C1 to C14)
+
+`style.h` is the public face; `src/codec/svg/style/` holds the parts. The engine is the `text` library's: its registry of
+properties, its cascade, `var()` and the computed value of every type. This library does not tokenise, parse or cascade
+CSS; it supplies the SVG view of the engine, runs it over the document, and resolves the used values only an SVG
+renderer can.
+
+**C1 The property set.** `tools/svg2/properties.tsv` names every property of the Candidate Recommendation's property
+index and presentation attribute list, and the properties the chapters take from other modules (`transform`, `mask`,
+`filter`, `mix-blend-mode`, `isolation`, `paint-order`, `vector-effect`, the geometry properties, the font and text
+properties). The generator fails when a property of either page is not in the file, writes `svg_prop.h` (one enumerator
+for each) and `documentation/properties.md`, and `check-tables` fails when they differ.
+
+**C2 Registration and overrides.** Each property is `generated` (the pin the registry of `text` is made from defines it
+and the definition stands), `registered` (the pin lacks it: `color-rendering`, `glyph-orientation-horizontal`) or
+`overridden` (the pin defines it differently from the CR or cannot decide a value for it: `fill` and `stroke`, whose
+`<paint>` has no `<color>` in Fill and Stroke 3; `stroke-width`, which that module makes a list; `stop-color` and
+`stop-opacity`, which have no initial value; `glyph-orientation-vertical`). An override is never silent:
+`gvec_svg_style_context_override_at()` lists them with the sentence they rest on, and building the registry fails if a
+`generated` property is not in the pin or a `registered` one is.
+
+**C3 Instances.** An element is drawn once for each place it is drawn, and a style is a property of the element *as
+drawn*. The handle is an instance: an element and the instance it inherits from. The root, a child of an instance, and
+the referent of a `use` are made by the caller as it walks; the referent's inheritance parent is the `use`, its tree
+parent the element it is written in, and every descendant has the clone's root as an inheritance ancestor. A style is
+computed the first time an instance is read, from its parent's style, iteratively (a chain of `use` is bounded by memory
+and not by the stack), and kept. Nothing expands `use`: the cost is what is drawn.
+
+**C4 Feeding the cascade.** A presentation attribute enters at the engine's presentation-attribute origin (author level,
+specificity 0, ahead of every rule) with SVG's attribute-only spellings as options of the engine (a unitless number is a
+length in `px`, `transform` in SVG's list syntax); `style` enters as the element's declaration block, with `!important`.
+A declaration that is not a value of its property is dropped, as CSS says, and reported
+(`GVEC_DIAG_STYLE_INVALID`) once for the element, at the attribute that holds it, with the declaration's byte offset in
+the attribute's value in `detail`. The registry's table of presentation attributes is the engine's SVG 2 table with the two
+attributes of the CR's list that the served draft dropped.
+
+**C5 Computed values** are the engine's: `em`, `ex`, `ch` and `rem` are absolute, a color is the declared color, `calc()`
+is simplified. A document has no fonts, so the metrics a font would give are the fallbacks CSS names (`ex` and `ch` are half
+the font size, `cap` seven tenths, `ic` one `em`, a `normal` line height 1.2 `em`).
+
+**C6 Lengths and viewports.** A length is read as a used value in user units: absolute units by CSS's fixed ratios, `vw`
+`vh` `vmin` `vmax` against the viewport of the load options (300 by 150 by default), and a percentage against the basis
+the property names: the width of the nearest viewport (`x`, `width`, `cx`, `rx`), its height (`y`, `height`, `cy`, `ry`) or
+the normalised diagonal `sqrt((w^2 + h^2) / 2)` (`r`, `stroke-width`, `stroke-dasharray` and `stroke-dashoffset`). The
+viewport an instance is resolved against is the one its parent establishes: the outermost `svg` is the load options'
+viewport sized by its own `width` and `height`; a nested `svg`, a `symbol` drawn by a `use` (which overrides its `width`
+and `height`) and a `marker` (`markerWidth` by `markerHeight`) establish their own; and when the element that establishes
+one has a usable `viewBox` the basis is the `viewBox` size in user units.
+
+**C7 `currentColor`** is the element's computed `color`, not the host's foreground. When `color` is `CanvasText`, its
+initial value, the used value is the waist's foreground, so that a host (an icon, a font's glyph) can supply it; a `color`
+that is specified is a concrete color even when it is black. Keyword `currentcolor` is inherited as a keyword, so it is
+resolved against the element that uses it.
+
+**C8 Colors** are straight `double` components and the color space of the waist, never 8 bits. sRGB, linear sRGB, Display P3,
+linear Display P3 and Adobe RGB (1998) are carried as they are; Rec. 2020 and ProPhoto RGB, which the waist cannot carry as
+written, are converted with the `color` library's matrices to linear Rec. 2020; `hsl()` and `hwb()` are converted in
+`double`. `lab()`, `lch()`, `oklab()`, `oklch()`, `color(xyz ...)`, `color-mix()`, relative colors and system colors other
+than `Canvas` and `CanvasText` are kept by the engine and refused here: reading one is `GVEC_ERR_UNSUPPORTED` and a
+`GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's location, because converting them would approximate a color the
+waist cannot yet carry. `Canvas`, `CanvasText` and `light-dark()` follow the element's used color scheme: `color-scheme:
+normal` is light, and the preference of the load options decides only for an element that supports both.
+
+**C9 Other used values.** `transform` is the list of its functions, the origin and the box; with the initial
+`transform-box: view-box` every percentage is of the nearest viewport and the map is final, with another box a percentage
+depends on a bounding box that only the lowering has and `gvec_svg_transform_resolve()` makes the map from it. The maps
+come from the shape family's constructors (a quarter turn is exact). An undeclared `transform-origin` is `0 0`, the used
+value of the initial value of an SVG element without a layout box. A dash array has an even number of entries (an odd
+list is repeated) and is `none` when its entries sum to zero. A paint is `none`, a color, a paint server with its
+fallback, `context-fill` or `context-stroke`; a `url()` with no target, or whose target is no paint server, is the
+fallback and otherwise `none`, and is reported. `clip-path`, `mask`, `marker-*` and `filter` are read as lists of
+references.
+
+**C10 Reference cycles through properties.** `gvec_svg_style_resolve_references()` adds the references of properties
+to the typed document's graph (`href`, containment and the properties) and finds its strongly connected components with
+Tarjan's algorithm, without recursion. A component that holds a reference of a property is a cycle: every element in it
+is reported once, and the reference that closes it is read as cut. A cycle that exists only inside a `use` clone is the
+lowering's, which holds the stack of the elements it is instantiating.
+
+**C11 Limits.** `max_style_bytes` (a longer `style` attribute is dropped and reported), `max_declarations` (a list with
+more is dropped and reported), `max_custom_expansion` (a value that expands past it is invalid at computed-value time,
+and reported). The engine's other bounds are its defaults.
+
+**C12 The accessor.** `gvec_svg_get()` is one generic read of a typed value over the generated enumeration, and
+`gvec_svg_get_specified()` the computed value as text with where the cascade got it. A value is owned by the context.
+
+**C13 The dump** of an instance's style is the engine's canonical text; the hash covers every element of the document in
+its own context. The document's dump is independent of styles and does not change when the cascade does.
+
+**The oracle of style.** Two browsers are the independent readers. `tools/doc-oracle/style_dump.c` writes the used value and
+the computed value of every property of every element with an id of a fixture (`tests/data/svg-style/`), and the same
+properties are asked of a pinned Chromium and a pinned Firefox (`tools/oracle/containers/browser`) for the same document,
+compared as typed values. A browser does not expose the style of the clone a `use` makes, so the fixture is first rewritten
+with every `use` replaced by a group that carries its attributes and holds a copy of its referent, which is what SVG 2
+defines a `use` to be; the rewriting shares no code with the library. Every difference is classified with the sentence of the
+text that decides it, and a difference of class `ours` is refused. The lengths, percentages, colors and rotations are also
+checked against vectors computed outside the library in exact arithmetic (`tools/gen-style-vectors.py`): a length is within
+one unit in the last place of the exact conversion, a percentage of an axis within one, of the diagonal within two.
+
+**C14 The engine is shared.** Building the registry and the initial values costs milliseconds, about forty times what
+loading an icon costs, and depends only on the viewport, the color scheme and the bound of `var()` expansion. Contexts made
+with the default allocator share engines kept for each environment (eight at most), which are immutable and safe on any
+thread; `gvec_svg_style_cache_clear()` releases them. A context with another allocator builds its own engine through it.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
@@ -200,14 +304,15 @@ used on different threads at once.
 | `check-fp-contract` | a compile-flag set without `-ffp-contract=off`, or with fast math |
 | `check-libm` | any reference to or definition of a libm function |
 | `check-no-x87` | an x87 instruction in the objects |
-| `check-edges` | an include or a linked library outside `cutil`, `compress`, `text`, `shape-scene`; so no renderer |
+| `check-edges` | an include or a linked library outside `cutil`, `compress`, `text`, `shape-scene`, `shape-geometry`, `color`, `math`; so no renderer |
 | `check-front-end` | an include of `shape-scene/scene.h`; a reference to `getenv`, `setlocale`, `localeconv`, a clock, or a C-library decimal reader |
 | `check-gates` | runs each gate above on a control, a planted violation and an empty population |
-| `check-test-data` | a fixture, a fuzz seed, a grammar vector or a namespace list that is not what its generator writes |
+| `check-test-data` | a fixture, a fuzz seed, a grammar or style vector or a namespace list that is not what its generator writes |
 | `fuzz-replay` | a seed that crashes or breaks an invariant, and a corpus that leaves an outcome unreached |
-| `check-planted` | a planted defect in an L-rule or a T-rule that no test catches |
+| `check-planted` | a planted defect in an L-rule, a T-rule or a C-rule that no test catches |
 | `check-tables` | committed element and attribute tables that are not what the generator writes from the pinned pages; a generator that does not fail on its plants |
 | `check-doc-oracle` | a dump that disagrees with an independent reader of the same documents (values, references, cycles, expansion counts, conditions), or a comparison that does not fail on a planted difference |
+| `check-style-oracle` | a computed style that disagrees with Chromium and Firefox in a way `tools/doc-oracle/style_divergences.txt` does not classify (with the sentence that decides it), a classified difference that no longer occurs, or a comparison that does not fail on a planted difference; the browsers are a pinned image (`make oracle-images`), and without it the check is skipped, counted, and fails under `GHOTI_ORACLE_REQUIRED=1` |
 | `check-conformance` | a scorer, runner or oracle wrapper that gives a wrong outcome on a synthetic corpus (see `conformance.md`) |
 | `check-conformance-planted` | a defect planted in the runner, the scorer or the oracle wrapper that the check above does not catch |
 

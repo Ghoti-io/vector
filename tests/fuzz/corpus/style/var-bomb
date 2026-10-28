@@ -1,0 +1,6 @@
+
+
+
+--a: 1 1 1 1 1 1 1 1; --b: var(--a) var(--a) var(--a) var(--a); --c: var(--b) var(--b) var(--b) var(--b); stroke-width: calc(1px * 2); stroke-dasharray: var(--c)
+
+

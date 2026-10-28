@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <defs>
+    <clipPath id="c"><rect/></clipPath>
+    <mask id="m"/>
+    <marker id="k"/>
+    <filter id="f"/>
+  </defs>
+  <path id="all" clip-path="url(#c)" mask="url(#m)" marker-start="url(#k)" marker-mid="url(#k)" marker-end="url(#k)" filter="url(#f)"/>
+  <path id="none" clip-path="none" mask="none" marker-start="none" filter="none"/>
+  <path id="missing" clip-path="url(#nothere)" marker-end="url(#nothere)"/>
+  <path id="quoted" clip-path="url('#c')"/>
+  <path id="shorthand" style="marker: url(#k)"/>
+  <path id="shorthandnone" style="marker: none"/>
+  <path id="filterlist" style="filter: url(#f) blur(2px)"/>
+  <path id="inherit"><path id="child"/></path>
+  <path id="markerinherit" marker-start="url(#k)"><path id="markerchild"/></path>
+</svg>

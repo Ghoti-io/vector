@@ -20,6 +20,9 @@ chapter. Writes
     src/codec/svg/svg_tables.h              the grammars and the lookups (internal)
     src/codec/svg/svg_tables.c              the tables
     documentation/elements.md               the coverage of the indexes, by element and attribute
+    include/ghoti.io/vector/svg_prop.h      the properties the style layer knows by name (public)
+    src/codec/svg/style/svg_prop_tables.[ch] their types, bases and the definitions vector registers
+    documentation/properties.md             where each property's definition comes from
 
 The tables are committed so that a stranger can build without the network.
 --check regenerates them and fails when a committed file differs, which is how
@@ -30,7 +33,9 @@ The generator fails (exit 1, the pair named) on:
     grammars.tsv maps, or that maps to a grammar the library does not have;
   - a rule that maps no pair of the index (a stale rule);
   - an element of the element index that gets no kind;
-  - a presentation attribute row it cannot parse.
+  - a presentation attribute row it cannot parse;
+  - a property of the property index or the presentation attribute list that tools/svg2/properties.tsv lacks,
+    or a row of it that is malformed.
 """
 
 import argparse
@@ -128,6 +133,10 @@ def presentation(styling_html, kinds):
 
 
 RULES_PATH = os.path.join(HERE, "grammars.tsv")
+PROPERTIES_PATH = os.path.join(HERE, "properties.tsv")
+PROPERTY_TYPES = ["KEYWORD", "NUMBER", "LENGTH", "COLOR", "PAINT", "DASHARRAY", "TRANSFORM", "REFS", "SHORTHAND"]
+PROPERTY_BASES = ["-", "W", "H", "D"]
+PROPERTY_SOURCES = ["G", "R", "O"]
 LEGACY_PATH = os.path.join(HERE, "legacy.txt")
 
 
@@ -147,6 +156,59 @@ def load_rules(path):
             rules.append({"name": name, "elements": None if elements == "*" else set(elements.split(",")),
                           "grammar": grammar, "note": note, "line": number, "used": False})
     return rules
+
+
+def page_properties(propidx_html, styling_html):
+    """The property names of the CR's property index and of its presentation attribute list."""
+    index = set(re.findall(r'class="property"[^>]*>(?:<span[^>]*>)?([\w-]+)', propidx_html))
+    start = styling_html.find('id="PresentationAttributes"')
+    end = styling_html.find('id="RequiredProperties"')
+    if start < 0 or end < start:
+        fail("the presentation attribute section was not found")
+    section = styling_html[start:end]
+    table = section[section.find("<table"):section.find("</table>")]
+    listed = set(re.findall(r'class="property"[^>]*>([\w-]+)</a>', table)) | set(re.findall(r"<code>([\w-]+)</code>", table))
+    if len(index) < 40 or len(listed) < 50:
+        fail("the property index parsed to %d names and the presentation list to %d; the page changed" % (len(index), len(listed)))
+    return index, listed
+
+
+def load_properties(path, index, listed):
+    rows = []
+    seen = set()
+    with open(path, encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            line = line.rstrip("\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) != 9:
+                fail("properties.tsv:%d: %d tab-separated fields, not nine" % (number, len(parts)))
+            name, kind, basis, reads, source, inherits, initial, grammar, note = parts
+            if name in seen:
+                fail("properties.tsv:%d: %s twice" % (number, name))
+            seen.add(name)
+            if kind not in PROPERTY_TYPES:
+                fail("properties.tsv:%d: unknown type %s" % (number, kind))
+            if basis not in PROPERTY_BASES:
+                fail("properties.tsv:%d: unknown basis %s" % (number, basis))
+            if source not in PROPERTY_SOURCES:
+                fail("properties.tsv:%d: unknown source %s" % (number, source))
+            if basis != "-" and kind not in ("LENGTH", "DASHARRAY"):
+                fail("properties.tsv:%d: %s has a percentage basis but is not a length" % (number, name))
+            if source == "G" and (inherits or initial or grammar or note):
+                fail("properties.tsv:%d: %s is the pin's, so it has no definition to give" % (number, name))
+            if source != "G" and not (inherits in ("yes", "no") and initial and grammar and note):
+                fail("properties.tsv:%d: %s is registered or overridden, so it gives inherits, initial, grammar and note" % (number, name))
+            rows.append({"name": name, "type": kind, "basis": basis, "reads": reads or name, "source": source,
+                         "inherits": inherits, "initial": initial, "grammar": grammar, "note": note})
+    names = [r["name"] for r in rows]
+    if names != sorted(names):
+        fail("properties.tsv is not in the byte order of the names")
+    missing = sorted((index | listed) - seen)
+    if missing:
+        fail("properties.tsv lacks %s of the property index or the presentation attribute list" % ", ".join(missing))
+    return rows
 
 
 def snake(name):
@@ -202,6 +264,98 @@ def mask_of(element_names_, kind_index, add_unknown=False):
     if add_unknown:
         lo |= 1
     return lo, hi
+
+
+def cstr(text):
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def render_properties(inputs, lic):
+    index, listed = page_properties(read(inputs, "propidx.html"), read(inputs, "styling.html"))
+    rows = load_properties(PROPERTIES_PATH, index, listed)
+    files = {}
+    n = len(rows)
+    pub = [lic, "\n/**\n * @file\n *\n * The properties the style layer knows by name (generated by tools/svg2/gen-tables.py from the SVG 2\n"
+           " * Candidate Recommendation's property index and presentation attribute list and tools/svg2/properties.tsv; do not edit).\n */\n\n"
+           "#ifndef GHOTI_IO_GVEC_SVG_PROP_H\n#define GHOTI_IO_GVEC_SVG_PROP_H\n\n#include <ghoti.io/vector/macros.h>\n\n"
+           "#include <stdbool.h>\n#include <stddef.h>\n\n#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n"
+           "/** A property of SVG 2 (or of a module it takes one from). The numbers are stable within a release; they follow the byte order of the names. */\n"
+           "typedef enum GVEC_Svg_Property {\n"]
+    for i, r in enumerate(rows):
+        pub.append("  GVEC_SVG_PROP_%s = %d, ///< `%s`\n" % (snake(r["name"]), i, r["name"]))
+    pub.append("  GVEC_SVG_PROP_COUNT = %d ///< Closes the enum.\n} GVEC_Svg_Property;\n\n"
+               "/** The CSS name of a property; NULL for a value that is not one. Static. */\n"
+               "GVEC_API const char * gvec_svg_property_name(GVEC_Svg_Property property);\n\n"
+               "/** The property named `name` (ASCII case-sensitive, as CSS spells it); false when SVG has none of that name. */\n"
+               "GVEC_API bool gvec_svg_property_find(const char * name, size_t length, GVEC_Svg_Property * out);\n\n"
+               "#ifdef __cplusplus\n}\n#endif\n\n#endif // GHOTI_IO_GVEC_SVG_PROP_H\n" % n)
+    files["include/ghoti.io/vector/svg_prop.h"] = "".join(pub)
+
+    h = [lic, "\n/**\n * @file svg_prop_tables.h\n *\n * What the style layer knows of each property (generated by tools/svg2/gen-tables.py; do not edit).\n */\n\n"
+         "#ifndef GHOTI_IO_GVEC_SVG_PROP_TABLES_H\n#define GHOTI_IO_GVEC_SVG_PROP_TABLES_H\n\n#include <ghoti.io/vector/macros.h>\n\n"
+         "#include <stdbool.h>\n#include <stdint.h>\n\n#include <ghoti.io/vector/svg_prop.h>\n\n"
+         "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n/** How gvec_svg_get() reads a property. */\ntypedef enum gvec_svg_prop_type {\n"]
+    for i, t in enumerate(PROPERTY_TYPES):
+        h.append("  GVEC_SVG_PT_%s = %d,\n" % (t, i))
+    h.append("  GVEC_SVG_PT_COUNT = %d\n} gvec_svg_prop_type;\n\n/** What a percentage of a length is of. */\ntypedef enum gvec_svg_prop_basis {\n" % len(PROPERTY_TYPES))
+    for i, b in enumerate(["NONE", "WIDTH", "HEIGHT", "DIAGONAL"]):
+        h.append("  GVEC_SVG_BASIS_%s = %d,\n" % (b, i))
+    h.append("  GVEC_SVG_BASIS_COUNT = 4\n} gvec_svg_prop_basis;\n\n/** Where the registry's definition of a property comes from. */\ntypedef enum gvec_svg_prop_source {\n"
+             "  GVEC_SVG_SOURCE_GENERATED = 0, ///< The pin of `text` defines it and the definition stands.\n"
+             "  GVEC_SVG_SOURCE_REGISTERED,    ///< The pin lacks it; this library registers it.\n"
+             "  GVEC_SVG_SOURCE_OVERRIDDEN     ///< The pin defines it differently from the CR (or cannot decide a value); this library overrides it.\n"
+             "} gvec_svg_prop_source;\n\n"
+             "/** One property. */\ntypedef struct gvec_svg_prop_row {\n  const char * name;\n  uint8_t type;       ///< A gvec_svg_prop_type.\n"
+             "  uint8_t basis;      ///< A gvec_svg_prop_basis.\n  uint8_t source;     ///< A gvec_svg_prop_source.\n  bool inherits;      ///< Registered and overridden properties only.\n"
+             "  const char * reads; ///< The registry property whose computed value is read.\n  const char * initial;\n  const char * grammar;\n"
+             "  const char * note;\n} gvec_svg_prop_row;\n\n"
+             "/** The rows, indexed by GVEC_Svg_Property. */\nGVEC_INTERNAL_API extern const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT];\n\n"
+             "#ifdef __cplusplus\n}\n#endif\n\n#endif // GHOTI_IO_GVEC_SVG_PROP_TABLES_H\n")
+    files["src/codec/svg/style/svg_prop_tables.h"] = "".join(h)
+
+    basis_name = {"-": "NONE", "W": "WIDTH", "H": "HEIGHT", "D": "DIAGONAL"}
+    source_name = {"G": "GENERATED", "R": "REGISTERED", "O": "OVERRIDDEN"}
+    c = [lic, "\n/**\n * @file\n *\n * The property tables (generated by tools/svg2/gen-tables.py; do not edit).\n */\n\n"
+         "#include \"svg_prop_tables.h\"\n\n#include <string.h>\n\n"
+         "const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {\n"]
+    for r in rows:
+        c.append("  {%s, GVEC_SVG_PT_%s, GVEC_SVG_BASIS_%s, GVEC_SVG_SOURCE_%s, %s, %s, %s, %s, %s},\n" % (
+            cstr(r["name"]), r["type"], basis_name[r["basis"]], source_name[r["source"]], "true" if r["inherits"] == "yes" else "false",
+            cstr(r["reads"]), cstr(r["initial"]) if r["initial"] else "NULL", cstr(r["grammar"]) if r["grammar"] else "NULL",
+            cstr(r["note"]) if r["note"] else "NULL"))
+    c.append("};\n\nconst char * gvec_svg_property_name(GVEC_Svg_Property property) {\n"
+             "  return (unsigned) property < GVEC_SVG_PROP_COUNT ? gvec_svg_prop_rows[property].name : NULL;\n}\n\n"
+             "bool gvec_svg_property_find(const char * name, size_t length, GVEC_Svg_Property * out) {\n"
+             "  size_t lo = 0, hi = GVEC_SVG_PROP_COUNT;\n  if (!name || !out) {\n    return false;\n  }\n"
+             "  while (lo < hi) {\n    size_t mid = lo + (hi - lo) / 2;\n    const char * row = gvec_svg_prop_rows[mid].name;\n"
+             "    int c = strncmp(name, row, length);\n    if (c == 0 && row[length] != 0) {\n      c = -1;\n    }\n"
+             "    if (c == 0) {\n      *out = (GVEC_Svg_Property) mid;\n      return true;\n    }\n"
+             "    if (c < 0) {\n      hi = mid;\n    } else {\n      lo = mid + 1;\n    }\n  }\n  return false;\n}\n")
+    files["src/codec/svg/style/svg_prop_tables.c"] = "".join(c)
+
+    d = ["# SVG properties\n\nGenerated by `tools/svg2/gen-tables.py` from `tools/svg2/properties.tsv` and the SVG 2 Candidate Recommendation's property "
+         "index (Appendix H) and presentation attribute list (chapter 6.6); do not edit. The cascade, the inheritance and the computed values are "
+         "`text`'s; this page says, for each of the %d properties the style layer names, where the registry's definition comes from, how "
+         "`gvec_svg_get()` reads it, and what a percentage of it is of.\n\n"
+         "The sources: **generated** is the definition of the pin the registry of `text` is made from, which stands; **registered** is a property "
+         "the pin lacks, which this library adds; **overridden** is one the pin defines differently from the CR (or cannot decide a value for), "
+         "which this library redefines, and every override is reported by `gvec_svg_style_context_override_at()`. A property of the CR's index or "
+         "presentation attribute list that is in none of the three fails the generator, and a registered or overridden definition that the "
+         "registry does not hold fails the property tests.\n\n"
+         "Types: **keyword** is the computed value as text; **length** is in user units; a percentage of a length is of the **width** or **height** "
+         "of the nearest viewport (its `viewBox` size when it has one) or of their **diagonal** `sqrt((w\u00b2 + h\u00b2) / 2)`; **shorthand** has no value "
+         "of its own.\n\n| property | source | type | percentage of | reads |\n| --- | --- | --- | --- | --- |\n" % n]
+    for r in rows:
+        d.append("| `%s` | %s | %s | %s | %s |\n" % (r["name"], source_name[r["source"]].lower(), r["type"].lower(),
+                 {"-": "", "W": "width", "H": "height", "D": "diagonal"}[r["basis"]], "" if r["reads"] == r["name"] else "`%s`" % r["reads"]))
+    d.append("\n## Registered and overridden definitions\n\n")
+    for r in rows:
+        if r["source"] == "G":
+            continue
+        d.append("### `%s` (%s)\n\n- inherited: %s\n- initial value: `%s`\n- value: `%s`\n- why: %s\n\n" % (
+            r["name"], source_name[r["source"]].lower(), r["inherits"], r["initial"], r["grammar"], r["note"]))
+    files["documentation/properties.md"] = "".join(d)
+    return files
 
 
 def render(inputs):
@@ -357,6 +511,7 @@ def render(inputs):
         d.append("| `%s` | %s |\n" % (name, text))
     d.append("\n## SVG 1.1 attributes SVG 2 removed\n\nKept as written, without a notice: %s.\n" % ", ".join("`%s`" % l for l in legacy))
     files["documentation/elements.md"] = "".join(d)
+    files.update(render_properties(inputs, lic))
     return files
 
 
@@ -365,9 +520,11 @@ def main(argv):
     ap.add_argument("--input", default=os.path.join(ROOT, "third_party/svg2"))
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--rules", default=RULES_PATH)
+    ap.add_argument("--properties", default=PROPERTIES_PATH)
     ap.add_argument("--root", default=ROOT, help="where the committed files are read from and written to")
     args = ap.parse_args(argv)
     globals()["RULES_PATH"] = args.rules
+    globals()["PROPERTIES_PATH"] = args.properties
     files = render(args.input)
     bad = False
     for rel, text in files.items():

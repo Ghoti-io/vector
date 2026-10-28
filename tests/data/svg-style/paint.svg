@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <defs>
+    <linearGradient id="lg"/>
+    <radialGradient id="rg"/>
+    <pattern id="pat"/>
+    <clipPath id="cp"/>
+  </defs>
+  <rect id="grad" fill="url(#lg)"/>
+  <rect id="fallback" fill="url(#rg) red" stroke="url(#pat) none"/>
+  <rect id="missing" fill="url(#nothing)" stroke="url(#nothing) blue"/>
+  <rect id="notserver" fill="url(#cp)" stroke="url(#cp) green"/>
+  <rect id="quoted" fill="url('#lg')" stroke='url("#rg")'/>
+  <rect id="spaced" fill="url( #lg )"/>
+  <rect id="ctx" fill="context-fill" stroke="context-stroke"/>
+  <g id="inh" fill="url(#lg) red"><rect id="inhchild"/></g>
+  <rect id="paintorder" paint-order="stroke"/>
+  <rect id="paintorder2" paint-order="markers fill"/>
+</svg>

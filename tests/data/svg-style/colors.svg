@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <rect id="named" fill="rebeccapurple"/>
+  <rect id="upper" fill="RED"/>
+  <rect id="hex3" fill="#f80"/>
+  <rect id="hex4" fill="#f808"/>
+  <rect id="hex6" fill="#ff8800"/>
+  <rect id="hex8" fill="#ff880080"/>
+  <rect id="rgb" fill="rgb(10, 20, 30)"/>
+  <rect id="rgba" fill="rgba(10, 20, 30, .5)"/>
+  <rect id="rgbmodern" fill="rgb(10 20 30 / 50%)"/>
+  <rect id="rgbpct" fill="rgb(100% 50% 0%)"/>
+  <rect id="clamp" fill="rgb(300 -5 0)"/>
+  <rect id="hsl" fill="hsl(120 100% 25%)"/>
+  <rect id="hsl2" fill="hsl(210deg 50% 40% / .5)"/>
+  <rect id="hwb" fill="hwb(30 10% 20%)"/>
+  <rect id="transparent" fill="transparent"/>
+  <rect id="none" fill="none" stroke="none"/>
+  <rect id="srgb" fill="color(srgb 1 0.5 0)"/>
+  <rect id="current" color="green" fill="currentColor" stroke="currentcolor"/>
+  <g id="cg" color="blue" fill="currentColor"><rect id="cchild" color="red"/><rect id="cinherit"/></g>
+  <rect id="nocolor" fill="currentColor"/>
+  <rect id="colorprop" color="#123456" style="stroke: currentColor"/>
+  <rect id="stop" stop-color="red" stop-opacity="0.5"/>
+  <rect id="flood" flood-color="blue" flood-opacity="0.25" lighting-color="yellow"/>
+  <rect id="opacities" fill-opacity="50%" stroke-opacity="0.25" opacity="1.5"/>
+  <rect id="scheme" style="color: light-dark(red, blue)"/>
+  <rect id="system" fill="Canvas" stroke="CanvasText"/>
+</svg>

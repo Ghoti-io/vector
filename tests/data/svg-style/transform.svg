@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <g id="none"/>
+  <g id="rotate" transform="rotate(30)"/>
+  <g id="rotate3" transform="rotate(90 10 20)"/>
+  <g id="translate" transform="translate(10)"/>
+  <g id="translate2" transform="translate(10, 20)"/>
+  <g id="scale" transform="scale(2)"/>
+  <g id="scale2" transform="scale(2 3)"/>
+  <g id="skewx" transform="skewX(30)"/>
+  <g id="skewy" transform="skewY(-20)"/>
+  <g id="matrix" transform="matrix(1 2 3 4 5 6)"/>
+  <g id="list" transform="translate(10 20) rotate(45) scale(1.5)"/>
+  <g id="commas" transform="translate(10,20),rotate(45)"/>
+  <g id="bad" transform="rotate("/>
+  <g id="badthenstyle" transform="rotate(" style="transform: scale(2)"/>
+  <g id="style" style="transform: translate(10px, 20px) rotate(0.25turn)"/>
+  <g id="stylepct" style="transform: translate(50%, 10%)"/>
+  <g id="origin" style="transform: rotate(180deg); transform-origin: 10px 20px"/>
+  <g id="originpct" style="transform: rotate(90deg); transform-origin: 50% 50%"/>
+  <g id="originkw" style="transform: rotate(90deg); transform-origin: right bottom"/>
+  <g id="box" style="transform: rotate(90deg); transform-origin: 50% 50%; transform-box: fill-box"/>
+  <g id="three" style="transform: rotateX(30deg)"/>
+  <pattern id="pat" patternTransform="rotate(10)"/>
+  <linearGradient id="lg" gradientTransform="scale(2)"/>
+</svg>

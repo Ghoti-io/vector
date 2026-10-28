@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <rect id="attr" fill="red" stroke-width="2" width="10" height="20"/>
+  <rect id="style" fill="red" style="fill: blue; stroke-width: 4"/>
+  <rect id="important" fill="red" style="fill: blue !important; fill: green"/>
+  <rect id="last" style="fill: red; fill: blue"/>
+  <rect id="invalid" fill="rgb(1" stroke-width="abc" style="fill-opacity: 2; stroke-opacity: x; opacity: .5"/>
+  <rect id="unknown" style="bogus: 1; fill: red; --custom: 3"/>
+  <rect id="spaces" style="  fill :  red ;stroke:blue;;  stroke-width : 5px"/>
+  <rect id="case" style="FILL: red; Stroke: BLUE; stroke-WIDTH: 3PX"/>
+  <rect id="marker" style="marker: url(#m)"/>
+  <marker id="m"/>
+  <rect id="comment" style="fill: /* c */ red; /* x */ stroke: blue"/>
+  <rect id="allunset" style="all: unset"/>
+  <g id="gimportant" style="fill: red !important"><rect id="child" fill="blue" style="fill: green"/></g>
+</svg>

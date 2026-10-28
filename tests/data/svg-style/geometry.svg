@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" width="300" height="150">
+  <rect id="rect" x="10" y="20" width="30" height="40" rx="5" ry="6"/>
+  <rect id="auto" rx="auto" ry="auto"/>
+  <rect id="units" x="1in" y="1cm" width="10mm" height="12pt" rx="2em"/>
+  <circle id="circle" cx="5" cy="6" r="7"/>
+  <ellipse id="ellipse" cx="1" cy="2" rx="3" ry="4"/>
+  <rect id="style" style="x: 3px; y: 4px; width: 5px; height: 6px"/>
+  <use id="use" x="5" y="6" width="7" height="8" href="#rect"/>
+  <svg id="nested" x="1" y="2" width="30" height="40"/>
+  <image id="image" x="1" y="2" width="3" height="4"/>
+  <foreignObject id="fo" x="1" y="2" width="3" height="4"/>
+  <g id="notprop" x="1" width="2" r="3"/>
+</svg>

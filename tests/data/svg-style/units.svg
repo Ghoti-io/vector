@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" font-size="10">
+  <rect id="px" stroke-width="2px"/>
+  <rect id="bare" stroke-width="2.5"/>
+  <rect id="in" stroke-width="1in"/>
+  <rect id="cm" stroke-width="1cm"/>
+  <rect id="mm" stroke-width="10mm"/>
+  <rect id="q" stroke-width="40Q"/>
+  <rect id="pt" stroke-width="72pt"/>
+  <rect id="pc" stroke-width="6pc"/>
+  <rect id="upper" stroke-width="1IN"/>
+  <rect id="em" stroke-width="2em"/>
+  <rect id="rem" stroke-width="2rem"/>
+  <g id="big" font-size="20"><rect id="emb" stroke-width="1.5em"/><rect id="nested" font-size="2em" stroke-width="1em"/></g>
+  <rect id="calc" stroke-width="calc(1px + 2px * 3)"/>
+  <rect id="min" stroke-width="min(10px, 2cm)"/>
+  <rect id="clamp" stroke-width="clamp(1px, 5px, 3px)"/>
+  <rect id="neg" stroke-width="-1"/>
+  <rect id="zero" stroke-width="0"/>
+  <rect id="exp" stroke-width="1e1"/>
+  <rect id="offset" stroke-dashoffset="1in"/>
+  <rect id="fs" font-size="12pt"/>
+  <rect id="fsrel" font-size="150%"/>
+  <rect id="fskw" font-size="large"/>
+  <rect id="fslarger" font-size="larger"/>
+</svg>

@@ -1,0 +1,100 @@
+# The SVG 2 properties the style layer knows by name: every property of the CR's property index (Appendix H), of its
+# presentation attribute list (chapter 6.6) and of the other modules the chapters take (transform, mask, filter ...).
+# tools/svg2/gen-tables.py reads this file with those two pages and fails when a property of either page is not here
+# (so a page that grows is noticed), then writes include/ghoti.io/vector/svg_prop.h, src/codec/svg/style/svg_prop_tables.[ch]
+# and documentation/properties.md.
+#
+# Columns (TAB separated):
+#   name      the property, as the registry of `text` spells it.
+#   type      how gvec_svg_get() reads it: KEYWORD (the computed value as text), NUMBER, LENGTH (user units), COLOR, PAINT,
+#             DASHARRAY, TRANSFORM, REFS (url() references, `none`, or other values kept as text), SHORTHAND (no value of
+#             its own; its longhands are read).
+#   basis     the percentage basis of a LENGTH: W (the width of the nearest viewport), H (its height), D (the normalised
+#             diagonal sqrt((w*w + h*h)/2)), - (none: the computed value is already absolute).
+#   reads     the registry property read for the value, when it is not the property itself (a shorthand's longhand, an alias's target).
+#   source    how the registry has it: G (the pin's definition stands), R (registered: the pin lacks it), O (overridden: the pin's
+#             definition differs from the CR's, or cannot decide a value; the next three columns define it).
+#   inherits  for R and O: yes or no (the CR's "Inh." column).
+#   initial   for R and O: the initial value, as the CR gives it.
+#   grammar   for R and O: the value in the Value Definition Syntax.
+#   note      why, and the sentence of the specification that decides it.
+#
+# An override is reported: gvec_svg_style_context_override_at() lists them, and documentation/properties.md quotes the note.
+alignment-baseline	KEYWORD	-		G				
+baseline-shift	KEYWORD	-		G				
+clip-path	REFS	-		G				
+clip-rule	KEYWORD	-		G				
+color	COLOR	-		G				
+color-interpolation	KEYWORD	-		G				
+color-interpolation-filters	KEYWORD	-		G				
+color-rendering	KEYWORD	-		R	yes	auto	auto | optimizeSpeed | optimizeQuality	SVG 2 CR, Appendix H: `auto | optimizeSpeed | optimizeQuality`, initial `auto`, inherited. The served drafts dropped the property; browsers still accept it, and it never changes the picture.
+cursor	KEYWORD	-		G				
+cx	LENGTH	W		G				
+cy	LENGTH	H		G				
+d	KEYWORD	-		G				
+direction	KEYWORD	-		G				
+display	KEYWORD	-		G				
+dominant-baseline	KEYWORD	-		G				
+fill	PAINT	-		O	yes	black	none | <color> | <url> [ none | <color> ]? | context-fill | context-stroke	CSS Fill and Stroke 3's <paint> has no <color> (`fill: red` is invalid by the pin); SVG 2 section 13.2: "<paint> = none | <color> | <url> [none | <color>]? | context-fill | context-stroke".
+fill-opacity	NUMBER	-		G				
+fill-rule	KEYWORD	-		G				
+filter	REFS	-		G				
+flood-color	COLOR	-		G				
+flood-opacity	NUMBER	-		G				
+font	SHORTHAND	-		G				
+font-family	KEYWORD	-		G				
+font-size	LENGTH	-		G				
+font-size-adjust	KEYWORD	-		G				
+font-stretch	KEYWORD	-	font-width	G				
+font-style	KEYWORD	-		G				
+font-variant	KEYWORD	-		G				
+font-weight	NUMBER	-		G				
+glyph-orientation-horizontal	KEYWORD	-		R	yes	0deg	<angle> | <number>	SVG 1.1 section 10.7.3 (deprecated in SVG 2, still a presentation attribute of the CR's list): `<angle>`, initial 0deg, inherited.
+glyph-orientation-vertical	KEYWORD	-		O	yes	auto	auto | <angle> | <number>	The pin's text is not a definition (the property has no grammar); SVG 2 CR Appendix H: `auto | <angle> | <number>`, initial `auto`, inherited.
+height	LENGTH	H		G				
+image-rendering	KEYWORD	-		G				
+isolation	KEYWORD	-		G				
+letter-spacing	KEYWORD	-		G				
+lighting-color	COLOR	-		G				
+line-height	KEYWORD	-		G				
+marker	SHORTHAND	-		G				
+marker-end	REFS	-		G				
+marker-mid	REFS	-		G				
+marker-start	REFS	-		G				
+mask	REFS	-	mask-image	G				
+mask-type	KEYWORD	-		G				
+mix-blend-mode	KEYWORD	-		G				
+opacity	NUMBER	-		G				
+overflow	KEYWORD	-	overflow-x	G				
+paint-order	KEYWORD	-		G				
+pointer-events	KEYWORD	-		G				
+r	LENGTH	D		G				
+rx	LENGTH	W		G				
+ry	LENGTH	H		G				
+shape-rendering	KEYWORD	-		G				
+stop-color	COLOR	-		O	no	black	currentcolor | <color>	The pin gives the property no initial value (and does not say whether it inherits); SVG 2 CR Appendix H: initial `black`, not inherited.
+stop-opacity	NUMBER	-		O	no	1	<opacity-value>	The pin gives the property no initial value; SVG 2 CR Appendix H: initial 1, not inherited.
+stroke	PAINT	-		O	yes	none	none | <color> | <url> [ none | <color> ]? | context-fill | context-stroke	As fill.
+stroke-dasharray	DASHARRAY	D		G				
+stroke-dashoffset	LENGTH	D		G				
+stroke-linecap	KEYWORD	-		G				
+stroke-linejoin	KEYWORD	-		G				
+stroke-miterlimit	NUMBER	-		G				
+stroke-opacity	NUMBER	-		G				
+stroke-width	LENGTH	D		O	yes	1px	<length-percentage [0,∞]> | <number [0,∞]>	CSS Fill and Stroke 3 makes it a comma separated list, one width for each stroke layer, and adds the <line-width> keywords; SVG 2 section 13.3 and the browsers take one <length-percentage> or <number>, and a list is invalid.
+text-anchor	KEYWORD	-		G				
+text-decoration	KEYWORD	-	text-decoration-line	G				
+text-overflow	KEYWORD	-		G				
+text-rendering	KEYWORD	-		G				
+transform	TRANSFORM	-		G				
+transform-box	KEYWORD	-		G				
+transform-origin	KEYWORD	-		G				
+unicode-bidi	KEYWORD	-		G				
+vector-effect	KEYWORD	-		G				
+visibility	KEYWORD	-		G				
+white-space	KEYWORD	-		G				
+width	LENGTH	W		G				
+word-spacing	KEYWORD	-		G				
+writing-mode	KEYWORD	-		G				
+x	LENGTH	W		G				
+y	LENGTH	H		G				

@@ -16,3 +16,7 @@ resvg	localhost/ghoti-vector-oracle-resvg:0.45.1	resvg 0.45.1	SVG to PNG; the re
 # Inkscape 1.4 (Debian). Renders an SVG file to a PNG of a stated size,
 # headless.
 inkscape	localhost/ghoti-vector-oracle-inkscape:1.4	Inkscape 1.4	SVG to PNG by an independent renderer
+
+# Chrome for Testing 156 (Blink) and Firefox 158 (Gecko), with the drivers that read `getComputedStyle()` of an SVG document. The style
+# oracle compares the computed values of this library with what both browsers say.
+browser	localhost/ghoti-vector-oracle-browser:156.0.8078.47-158.0.1	chrome 156.0.8078.47	computed style of an SVG document, from two independent engines

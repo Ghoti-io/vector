@@ -80,8 +80,25 @@ def main(argv):
         expect(run(["--input", inputs, "--check", "--rules", rules]), "maps no pair", "a stale rule")
         open(rules, "w", encoding="utf-8").write(text.replace("RAW_ARIA", "NO_SUCH_GRAMMAR", 1))
         expect(run(["--input", inputs, "--check", "--rules", rules]), "unknown grammar", "a rule naming a grammar the library lacks")
+        # The property table: a property of the CR's indexes that the table lacks, a page that grows a property, and malformed rows.
+        props = os.path.join(tmp, "properties.tsv")
+        ptext = open(os.path.join(HERE, "properties.tsv"), encoding="utf-8").read()
+        open(props, "w", encoding="utf-8").write("\n".join(l for l in ptext.split("\n") if not l.startswith("stroke-linecap\t")))
+        expect(run(["--input", inputs, "--check", "--properties", props]), "lacks stroke-linecap", "a property of the index that the table lacks")
+        fake_property = '<tr><td><a class="property" href="x">zz-new-property</a></td><td>none</td></tr>'
+        expect(run(["--input", pages(edit("propidx.html", lambda t: t.replace("</table>", fake_property + "</table>", 1))), "--check"]),
+               "lacks zz-new-property", "a property the index grows")
+        open(props, "w", encoding="utf-8").write(ptext.replace("\tKEYWORD\t", "\tNOSUCHTYPE\t", 1))
+        expect(run(["--input", inputs, "--check", "--properties", props]), "unknown type", "a property of a type the library lacks")
+        open(props, "w", encoding="utf-8").write(ptext.replace("alignment-baseline\tKEYWORD", "alignment-baseline\tKEYWORD\textra", 1))
+        expect(run(["--input", inputs, "--check", "--properties", props]), "not nine", "a row of the wrong width")
+        open(props, "w", encoding="utf-8").write(ptext.replace("color-rendering\tKEYWORD\t-\t\tR\tyes\tauto\tauto | optimizeSpeed | optimizeQuality\t", "color-rendering\tKEYWORD\t-\t\tR\t\t\t\t", 1))
+        expect(run(["--input", inputs, "--check", "--properties", props]), "registered or overridden", "a registered property with no definition")
+        open(props, "w", encoding="utf-8").write(ptext.replace("\nalignment-baseline\t", "\nzz-first\tKEYWORD\t-\t\tG\t\t\t\t\nalignment-baseline\t", 1))
+        expect(run(["--input", inputs, "--check", "--properties", props]), "byte order", "a table out of order")
         root = os.path.join(tmp, "root")
-        for rel in ("include/ghoti.io/vector/svg_kind.h", "src/codec/svg/svg_tables.h", "src/codec/svg/svg_tables.c", "documentation/elements.md"):
+        for rel in ("include/ghoti.io/vector/svg_kind.h", "include/ghoti.io/vector/svg_prop.h", "src/codec/svg/svg_tables.h", "src/codec/svg/svg_tables.c",
+                    "src/codec/svg/style/svg_prop_tables.h", "src/codec/svg/style/svg_prop_tables.c", "documentation/elements.md", "documentation/properties.md"):
             os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
             shutil.copy(os.path.join(ROOT, rel), os.path.join(root, rel))
         path = os.path.join(root, "src/codec/svg/svg_tables.c")

@@ -1,0 +1,2 @@
+#!/bin/sh
+printf "browser %s\n" "$(browser-driver --version)"

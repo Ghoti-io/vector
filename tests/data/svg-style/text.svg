@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" font-family="serif" font-size="16">
+  <text id="t1" font-weight="bold" font-style="italic" font-variant="small-caps" letter-spacing="1px" word-spacing="2px" text-anchor="middle">x</text>
+  <text id="t2" font-family="Arial, sans-serif" font-size="20" font-weight="700" font-stretch="condensed" line-height="1.5">x</text>
+  <text id="t3" font-size="smaller" font-weight="lighter" text-decoration="line-through">x</text>
+  <text id="t4" style="font: italic bold 12px/30px Georgia, serif">x</text>
+  <text id="t5" font-size-adjust="0.5" baseline-shift="10%" dominant-baseline="hanging">x</text>
+  <text id="t6" writing-mode="tb" direction="rtl" unicode-bidi="bidi-override" glyph-orientation-horizontal="0">x</text>
+  <text id="t7" text-overflow="ellipsis" white-space="nowrap">x</text>
+</svg>

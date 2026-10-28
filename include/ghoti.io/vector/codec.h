@@ -110,6 +110,17 @@ typedef struct GVEC_Probe_Result {
  */
 GVEC_API GVEC_Result gvec_probe(GVEC_Stream * stream, const GVEC_Limits * limits, GVEC_Probe_Result * out_result);
 
+/** The color scheme of the user, for `light-dark()` and the system colors. The numbers are stable. */
+typedef enum GVEC_Color_Scheme {
+  GVEC_COLOR_SCHEME_LIGHT = 0,
+  GVEC_COLOR_SCHEME_DARK,
+  GVEC_COLOR_SCHEME_COUNT
+} GVEC_Color_Scheme;
+
+/** The viewport of a load that names none: CSS Images 3's default object size. */
+#define GVEC_DEFAULT_VIEWPORT_WIDTH 300.0
+#define GVEC_DEFAULT_VIEWPORT_HEIGHT 150.0
+
 /** What a load may use. Zero-fill it, or set only what you need. */
 typedef struct GVEC_Load_Options {
   const GVEC_Limits * limits; ///< NULL for the defaults.
@@ -120,6 +131,14 @@ typedef struct GVEC_Load_Options {
    */
   const char * const * languages;
   size_t language_count;       ///< How many entries `languages` has.
+  /**
+   * The size of the viewport the outermost `svg` is laid out in and `vw`, `vh`, `vmin` and `vmax` are relative to, in
+   * CSS pixels (D8: nothing is read from the environment). Zero selects the default, 300 by 150 (CSS Images 3's default
+   * object size). Each is finite and at most 1e9; otherwise the load is GVEC_ERR_INVALID.
+   */
+  double viewport_width;
+  double viewport_height;      ///< As `viewport_width`.
+  GVEC_Color_Scheme color_scheme; ///< The scheme `light-dark()` and the system colors are resolved in; the default is light.
   uint8_t _reserved[8];        ///< Zero.
 } GVEC_Load_Options;
 

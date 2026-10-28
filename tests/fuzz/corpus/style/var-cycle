@@ -1,0 +1,6 @@
+
+
+
+--a: var(--b); --b: var(--a); fill: var(--a, green)
+
+

@@ -52,8 +52,8 @@ line when the document is built.
 
 * **Tables from the specification.** The element and attribute lists come from the Candidate Recommendation's own
   indexes, not from a reading of them; `elements.md` lists how each element and attribute is read.
-* **Properties are not typed here.** SVG 2 makes `x`, `y`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `transform`
-  and the rest properties, parsed as CSS; they are held as written. The `d` attribute of `path` is path data, which
+* **Properties are not typed by the document.** SVG 2 makes `x`, `y`, `width`, `height`, `cx`, `cy`, `r`, `rx`, `ry`, `transform`
+  and the rest properties, parsed as CSS; they are held as written and read through the style layer (below). The `d` attribute of `path` is path data, which
   SVG 2 defines as its own grammar, and is parsed here.
 * **Numbers** follow SVG 2's `<number>` and are converted with correct rounding. A value beyond the largest finite
   `double` is invalid; one below the smallest subnormal is zero. Surrounding white space is allowed.
@@ -70,3 +70,26 @@ line when the document is built.
 * **Ids**: the first element with an id in document order wins; later ones are diagnosed.
 * **SVG 1.1 attributes removed from SVG 2** (`version`, `baseProfile`, `contentScriptType`, `contentStyleType`,
   `externalResourcesRequired`, `requiredFeatures`, `xml:base`, `xml:lang`) are kept without a notice.
+
+## Style
+
+* **The cascade is CSS's.** A presentation attribute is a declaration of specificity zero ahead of every rule, `style` is
+  the element's own declaration block, and a declaration that is not valid is dropped and reported. A `<style>` element is
+  not read yet.
+* **Inheritance follows what is drawn.** An element drawn by a `use` inherits from the `use`, not from where it is written
+  (SVG 2, 5.6), so a style is read for an *instance* of an element.
+* **Lengths** are user units: `1in` is 96, `1cm` is 96 / 2.54, and a percentage is of the width, the height or the
+  normalised diagonal of the nearest viewport (its `viewBox` size when it has one), as the property says.
+* **`currentColor`** is the element's `color`; when `color` was never specified the paint is the waist's foreground, so a
+  host can supply it.
+* **Colors** keep their precision and their space; the ones the waist cannot carry are refused and reported, not
+  approximated.
+* **`transform-origin`** that nobody declared is `0 0`, and `transform-box` is `view-box`, so percentages in a transform
+  are of the nearest viewport; with another box they wait for the bounding box.
+* **A reference that closes a cycle** through a property is cut and reported; a reference to nothing is the fallback that
+  follows it, else `none`, and is reported.
+* **Not read:** `d` as a CSS property (the typed attribute is used), the `<style>` element and selectors, 3D transforms,
+  `lab()`/`lch()`/`oklab()`/`oklch()`/`color-mix()`, system colors other than `Canvas` and `CanvasText`, `ex`/`ch` from a
+  real font, and `filter` and `mask` beyond reading their references.
+
+`properties.md` states where the registry's definition of each property comes from.

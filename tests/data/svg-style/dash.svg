@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" font-size="10">
+  <path id="none" stroke-dasharray="none"/>
+  <path id="two" stroke-dasharray="5 10"/>
+  <path id="three" stroke-dasharray="5,10,15"/>
+  <path id="units" stroke-dasharray="1em 2px 1in"/>
+  <path id="zero" stroke-dasharray="0 0"/>
+  <path id="negative" stroke-dasharray="-1 2"/>
+  <path id="bad" stroke-dasharray="1 abc"/>
+  <path id="calc" stroke-dasharray="calc(2px + 3px) 4"/>
+  <path id="one" stroke-dasharray="7"/>
+  <path id="offset" stroke-dashoffset="3" stroke-dasharray="1 1"/>
+  <path id="miter" stroke-miterlimit="2" stroke-linejoin="round" stroke-linecap="square"/>
+  <path id="miterbad" stroke-miterlimit="0.5"/>
+</svg>

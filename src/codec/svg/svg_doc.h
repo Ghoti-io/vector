@@ -146,6 +146,10 @@ struct GVEC_Svg_Document {
   bool has_animation;
   bool has_script;
   size_t text_bytes;
+  double viewport_width;          ///< The load options' viewport, defaults applied (the style layer's initial containing block).
+  double viewport_height;
+  GVEC_Color_Scheme color_scheme;
+  GVEC_Limits limits;             ///< The limits the document was loaded under, defaults applied (the style layer's bounds are among them).
 };
 
 /** What the build needs besides the markup tree. */
@@ -153,6 +157,9 @@ typedef struct gvec_svg_build_options {
   const GVEC_Limits * limits;
   const char * const * languages; ///< NULL for {"en"}.
   size_t language_count;
+  double viewport_width;          ///< 0 for the default.
+  double viewport_height;
+  GVEC_Color_Scheme color_scheme;
 } gvec_svg_build_options;
 
 /** The document of a GVEC_Doc whose codec is SVG, or NULL. */

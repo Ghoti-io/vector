@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root" fill="red" stroke="blue" stroke-width="3" opacity="0.5">
+  <g id="g1" font-size="20" letter-spacing="2" visibility="hidden" stroke-linecap="round">
+    <rect id="plain" width="10" height="10"/>
+    <rect id="own" fill="green" opacity="0.25" visibility="visible"/>
+    <rect id="inherit" fill="inherit" opacity="inherit" stroke="inherit"/>
+    <rect id="initial" fill="initial" stroke="initial" stroke-width="initial" opacity="initial"/>
+    <rect id="unset" fill="unset" stroke="unset" opacity="unset" letter-spacing="unset"/>
+    <g id="g2" fill="none" stroke-width="1"><circle id="deep" r="5" stroke-linecap="square"/></g>
+  </g>
+  <rect id="outside"/>
+</svg>

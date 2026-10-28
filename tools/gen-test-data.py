@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # Write the load tests' fixtures (tests/data/svg) and the load fuzzer's seed
-# corpus (tests/fuzz/corpus/load), or with --check, fail unless the committed
+# corpora (tests/fuzz/corpus/load and tests/fuzz/corpus/style), or with --check, fail unless the committed
 # files are exactly what this writes.
 #
 # The fixtures are written by a program rather than by hand because several are
@@ -22,6 +22,7 @@ import zlib
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "tests", "data", "svg")
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "load")
+CORPUS_STYLE = os.path.join(ROOT, "tests", "fuzz", "corpus", "style")
 
 SVG_NS = "http://www.w3.org/2000/svg"
 MINIMAL = ('<svg xmlns="%s" width="10" height="10"/>\n' % SVG_NS).encode()
@@ -230,6 +231,59 @@ def corpus(fx):
     return c
 
 
+def style_corpus():
+    """The style fuzzer's seeds: an options byte, then seven pieces separated by line feeds: the style of the root, of the clip
+    path's rect, of the symbol's rect and of the group, and the group's fill, transform and stroke-dasharray attributes."""
+    def seed(option=0x0f, root="", clip="", symbol="", group="", fill="", transform="", dash=""):
+        return bytes([option]) + "\n".join([root, clip, symbol, group, fill, transform, dash]).encode()
+
+    c = {}
+    c["empty"] = seed()
+    c["colors"] = seed(group="fill: red; stroke: rgb(1 2 3 / 50%); color: hsl(10 20% 30%)")
+    c["named-and-hex"] = seed(group="fill: rebeccapurple; stroke: #f80; color: #ff880080; stop-color: transparent")
+    c["wide-gamuts"] = seed(group="fill: color(display-p3 1 0 0); stroke: color(prophoto-rgb .5 .5 .5); color: color(rec2020 0.1 0.2 0.3)")
+    c["unsupported-color"] = seed(group="fill: lab(50% 10 10); stroke: color-mix(in srgb, red, blue)")
+    c["system-colors"] = seed(root="color-scheme: light dark", group="fill: Canvas; stroke: CanvasText; color: ButtonFace")
+    c["invalid"] = seed(group="fill: rgb(1; stroke-width: abc; a:;b:c; opacity: 2")
+    c["important"] = seed(group="fill: blue !important; stroke: red !IMPORTANT", fill="green")
+    c["var"] = seed(group="--c: red; --w: 3; fill: var(--c); stroke-width: var(--w); stroke: var(--none, blue)")
+    c["var-cycle"] = seed(group="--a: var(--b); --b: var(--a); fill: var(--a, green)")
+    c["var-bomb"] = seed(option=0x02, group="--a: 1 1 1 1 1 1 1 1; --b: var(--a) var(--a) var(--a) var(--a); --c: var(--b) var(--b) var(--b) var(--b); stroke-width: calc(1px * 2); stroke-dasharray: var(--c)")
+    c["units"] = seed(group="font-size: 12px; stroke-width: 2em; stroke-dashoffset: 3ex; letter-spacing: 1ch; word-spacing: 1rem; opacity: 50%")
+    c["viewport-units"] = seed(group="stroke-width: 10vw; stroke-dashoffset: 5vmin; font-size: 2vh")
+    c["percentages"] = seed(symbol="width: 50%; height: 25%; x: 10%; r: 10%; stroke-width: 20%")
+    c["dash"] = seed(dash="5 10 15")
+    c["dash-percent"] = seed(dash="10%, 2em 3")
+    c["dash-invalid"] = seed(dash="-1 2")
+    c["dash-zero"] = seed(dash="0 0")
+    c["paint-servers"] = seed(fill="url(#g) red", group="stroke: url(#g) none")
+    c["paint-missing"] = seed(fill="url(#missing) blue", group="stroke: url(#missing)")
+    c["paint-not-a-server"] = seed(fill="url(#c)", group="stroke: url(#m) red")
+    c["context-paints"] = seed(fill="context-fill", group="stroke: context-stroke")
+    c["transform-attribute"] = seed(transform="rotate(45 10 10) translate(1 2) scale(2) skewX(30) matrix(1 2 3 4 5 6)")
+    c["transform-style"] = seed(group="transform: translate(50%, 10%) rotate(0.25turn); transform-origin: 10% 20px")
+    c["transform-fill-box"] = seed(group="transform: translate(50%, 10%); transform-origin: 50% 50%; transform-box: fill-box")
+    c["transform-3d"] = seed(group="transform: rotateX(30deg) perspective(100px)")
+    c["transform-skew"] = seed(group="transform: skew(10deg, 20deg) skewY(5deg) scale(-1, 2)")
+    c["transform-huge"] = seed(group="transform: scale(1e300) scale(1e300)")
+    c["transform-quarter"] = seed(group="transform: rotate(1e30deg)", transform="rotate(90)")
+    c["references"] = seed(group="clip-path: url(#c); mask: url(#c); marker: url(#m); filter: url(#nothere) blur(2px)")
+    c["reference-cycle"] = seed(clip="clip-path: url(#c)", group="clip-path: url(#c)")
+    c["pattern-cycle"] = seed(clip="fill: url(#g)", group="fill: url(#g)")
+    c["use-inheritance"] = seed(group="fill: red; stroke-width: 5", symbol="fill: inherit; stroke-width: 50%")
+    c["geometry"] = seed(group="x: 10; y: 5%; width: calc(10% + 2px); height: auto; rx: 1; ry: auto; cx: 1; cy: 2; r: 3")
+    c["text-properties"] = seed(group="font: italic bold 12px/1.5 serif; text-decoration: underline; white-space: pre; writing-mode: vertical-rl")
+    c["shorthands"] = seed(group="marker: none; overflow: hidden scroll; mask: none; font-variant: small-caps")
+    c["limit-style-bytes"] = seed(option=0x00, group="fill: red; stroke: blue; stroke-width: 4; opacity: 0.5")
+    c["limit-declarations"] = seed(option=0x01, group="fill: red; stroke: blue; stroke-width: 4; opacity: 0.5")
+    c["limit-expansion"] = seed(option=0x02, group="--a: 1 2 3 4 5 6 7 8; --b: var(--a) var(--a) var(--a); fill: var(--b, red)")
+    c["limit-references"] = seed(option=0x03, group="fill: red")
+    c["limit-attributes"] = seed(option=0x04, group="fill: red")
+    c["xml-markup"] = seed(group='fill: red"/><evil/>', fill="&amp;<>", transform="\"")
+    c["binary"] = (bytes([0x0f]) + bytes(range(1, 128)).replace(b"\n", b" "))
+    return c
+
+
 def write_all(directory, files, check):
     bad = []
     if not check:
@@ -259,15 +313,15 @@ def write_all(directory, files, check):
 def main():
     check = "--check" in sys.argv[1:]
     fx = fixtures()
-    bad = write_all(DATA, fx, check) + write_all(CORPUS, corpus(fx), check)
+    bad = write_all(DATA, fx, check) + write_all(CORPUS, corpus(fx), check) + write_all(CORPUS_STYLE, style_corpus(), check)
     if check:
         if bad:
             for b in bad:
                 print("check-test-data: " + b, file=sys.stderr)
             print("check-test-data: run tools/gen-test-data.py and commit the result", file=sys.stderr)
             return 1
-        print("check-test-data: %d fixtures and %d seeds are what the generator writes"
-              % (len(fx), len(corpus(fx))))
+        print("check-test-data: %d fixtures and %d + %d seeds are what the generator writes"
+              % (len(fx), len(corpus(fx)), len(style_corpus())))
     return 0
 
 
