@@ -160,6 +160,24 @@ GVEC_Result gvec_lw_append_pair(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_l
   return GVEC_OK;
 }
 
+GVEC_Result gvec_lw_append_all(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * const * nodes, size_t count) {
+  size_t weight = 0, occurrences = 0, node_count = 0, items = 0;
+  for (size_t i = 0; i < count; i++) {
+    weight = saturating_add(weight, nodes[i]->weight);
+    occurrences = saturating_add(occurrences, nodes[i]->occurrences);
+    node_count = saturating_add(node_count, nodes[i]->nodes);
+    items = saturating_add(items, nodes[i]->items);
+  }
+  if (!room(ctx, parent, weight, occurrences, node_count, items)) {
+    const GVEC_Svg_Element * element = count && nodes[0]->site != GVEC_LW_NO_SITE ? ctx->sites[nodes[0]->site].element : NULL;
+    return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
+  }
+  for (size_t i = 0; i < count; i++) {
+    link_child(parent, nodes[i]);
+  }
+  return GVEC_OK;
+}
+
 uint32_t gvec_lw_new_site(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, uint64_t key) {
   if (ctx->site_count == ctx->site_capacity) {
     size_t capacity = ctx->site_capacity ? ctx->site_capacity * 2 : 64, bytes;
@@ -230,6 +248,10 @@ GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lo
     ctx->caps.expansion = GVEC_LW_CAP(max_expansion);
     ctx->caps.nodes = GVEC_LW_CAP(max_nodes);
 #undef GVEC_LW_CAP
+    ctx->caps.marker_instances = ctx->caps.nodes / 2;
+    if (options && options->max_marker_instances && options->max_marker_instances < ctx->caps.marker_instances) {
+      ctx->caps.marker_instances = options->max_marker_instances;
+    }
   }
   size_t count = gvec_svg_element_count(ctx->document);
   ctx->refused = gvec_alloc(ctx->allocator, count * sizeof *ctx->refused);
@@ -370,8 +392,7 @@ static GVEC_Result references_refuse(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
  *
  * @param leaf Shapes and the elements that are only refused: nothing is checked if they cannot be seen.
  */
-static GVEC_Result prepare(
-    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, bool leaf, bool markers, common * c) {
+static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, bool leaf, common * c) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   GVEC_Svg_Style_Value v;
   bool usable;
@@ -424,19 +445,6 @@ static GVEC_Result prepare(
   if (!gvec_lw_keyword_is(&v, "normal")) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_BLEND, "mix-blend-mode is not lowered yet");
   }
-  if (markers) {
-    static const GVEC_Svg_Property marker_properties[3] = {
-        GVEC_SVG_PROP_MARKER_START, GVEC_SVG_PROP_MARKER_MID, GVEC_SVG_PROP_MARKER_END};
-    for (int i = 0; i < 3; i++) {
-      r = references_refuse(ctx, inst, marker_properties[i], false, &refuse, &usable);
-      if (r != GVEC_OK || !usable) {
-        return r;
-      }
-    }
-    if (refuse) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_MARKER, "markers are not lowered yet");
-    }
-  }
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TRANSFORM, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
@@ -460,7 +468,7 @@ static GVEC_Result prepare(
  * Enter a wrapper (an opacity group or a clip): the walk is one level deeper and one clip or group more open until it leaves.
  * Refuses the element when the scene's limits would not hold what is inside.
  */
-static GVEC_Result wrap_enter(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, bool * entered) {
+GVEC_Result gvec_lw_wrap_enter(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, bool * entered) {
   *entered = false;
   if (ctx->levels + 2 > ctx->caps.node_depth || ctx->open + 1 > ctx->caps.open) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the drawing nests deeper than the scene's limits allow");
@@ -471,7 +479,7 @@ static GVEC_Result wrap_enter(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, boo
   return GVEC_OK;
 }
 
-static void wrap_leave(gvec_lw_ctx * ctx) {
+void gvec_lw_wrap_leave(gvec_lw_ctx * ctx) {
   ctx->levels--;
   ctx->open--;
 }
@@ -487,7 +495,7 @@ static GVEC_Result opacity_group(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, 
     return GVEC_OK;
   }
   bool entered;
-  GVEC_Result r = wrap_enter(ctx, e, &entered);
+  GVEC_Result r = gvec_lw_wrap_enter(ctx, e, &entered);
   if (r != GVEC_OK || !entered) {
     *skip = true;
     return r;
@@ -509,7 +517,7 @@ static GVEC_Result opacity_group(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, 
 /* The tree an element's content is recorded under: its opacity group when it has one. */
 #define TARGET(group, parent) ((group) ? (group) : (parent))
 
-static GVEC_Result attach(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * node) {
+GVEC_Result gvec_lw_attach(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * node) {
   return node->content ? gvec_lw_append(ctx, parent, node) : GVEC_OK;
 }
 
@@ -519,7 +527,7 @@ static GVEC_Result attach(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node
 
 static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent);
 
-static GVEC_Result lw_children(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+GVEC_Result gvec_lw_children(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   for (const GVEC_Svg_Element * child = gvec_svg_element_first_child(e); child; child = gvec_svg_element_next_sibling(child)) {
     const GVEC_Svg_Instance * ci = NULL;
@@ -542,7 +550,7 @@ static GVEC_Result lw_children(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
 /* `g` and `a`: the transform is the frame of the children, and nothing else is drawn. */
 static GVEC_Result lw_group(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   common c;
-  GVEC_Result r = prepare(ctx, inst, frame, false, false, &c);
+  GVEC_Result r = prepare(ctx, inst, frame, false, &c);
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
@@ -552,11 +560,11 @@ static GVEC_Result lw_group(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (r != GVEC_OK || skip) {
     return r;
   }
-  r = lw_children(ctx, inst, &c.local, TARGET(group, parent));
+  r = gvec_lw_children(ctx, inst, &c.local, TARGET(group, parent));
   if (group) {
-    wrap_leave(ctx);
+    gvec_lw_wrap_leave(ctx);
     if (r == GVEC_OK) {
-      r = attach(ctx, parent, group);
+      r = gvec_lw_attach(ctx, parent, group);
     }
   }
   return r;
@@ -565,7 +573,7 @@ static GVEC_Result lw_group(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
 /* `switch`: the child it selected, in the frame of its own transform. */
 static GVEC_Result lw_switch(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   common c;
-  GVEC_Result r = prepare(ctx, inst, frame, false, false, &c);
+  GVEC_Result r = prepare(ctx, inst, frame, false, &c);
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
@@ -589,9 +597,9 @@ static GVEC_Result lw_switch(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
     r = lw_element(ctx, ci, &c.local, TARGET(group, parent));
   }
   if (group) {
-    wrap_leave(ctx);
+    gvec_lw_wrap_leave(ctx);
     if (r == GVEC_OK) {
-      r = attach(ctx, parent, group);
+      r = gvec_lw_attach(ctx, parent, group);
     }
   }
   return r;
@@ -622,6 +630,35 @@ static GVEC_Result fill_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GS
   return gvec_lw_paint_of(ctx, e, &fill, fill_opacity, paint, decision);
 }
 
+bool gvec_lw_absolute_length(const GVEC_Svg_Length * length, double * out) {
+  switch (length->unit) {
+  case GVEC_SVG_UNIT_NONE:
+  case GVEC_SVG_UNIT_PX:
+    *out = length->value;
+    return true;
+  case GVEC_SVG_UNIT_IN:
+    *out = length->value * 96.0;
+    return true;
+  case GVEC_SVG_UNIT_CM:
+    *out = length->value * 96.0 / 2.54;
+    return true;
+  case GVEC_SVG_UNIT_MM:
+    *out = length->value * 96.0 / 25.4;
+    return true;
+  case GVEC_SVG_UNIT_Q:
+    *out = length->value * 96.0 / 101.6;
+    return true;
+  case GVEC_SVG_UNIT_PT:
+    *out = length->value * 96.0 / 72.0;
+    return true;
+  case GVEC_SVG_UNIT_PC:
+    *out = length->value * 16.0;
+    return true;
+  default:
+    return false;
+  }
+}
+
 /* The length of an attribute of a `line` in user units; `usable` is false when the unit needs the cascade (the element is refused). */
 static GVEC_Result line_coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const char * name, bool horizontal, double * out,
     bool * usable) {
@@ -633,39 +670,42 @@ static GVEC_Result line_coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
   if (!attribute || !gvec_svg_attribute_length(attribute, &length)) {
     return GVEC_OK; /* Absent, or invalid (reported when the document was loaded): 0. */
   }
-  switch (length.unit) {
-  case GVEC_SVG_UNIT_NONE:
-  case GVEC_SVG_UNIT_PX:
-    *out = length.value;
-    return GVEC_OK;
-  case GVEC_SVG_UNIT_PERCENT: {
+  if (length.unit == GVEC_SVG_UNIT_PERCENT) {
     double w, h;
     gvec_svg_instance_viewport(inst, &w, &h);
     *out = length.value * (horizontal ? w : h) / 100.0;
     return GVEC_OK;
   }
-  case GVEC_SVG_UNIT_IN:
-    *out = length.value * 96.0;
+  if (gvec_lw_absolute_length(&length, out)) {
     return GVEC_OK;
-  case GVEC_SVG_UNIT_CM:
-    *out = length.value * 96.0 / 2.54;
-    return GVEC_OK;
-  case GVEC_SVG_UNIT_MM:
-    *out = length.value * 96.0 / 25.4;
-    return GVEC_OK;
-  case GVEC_SVG_UNIT_Q:
-    *out = length.value * 96.0 / 101.6;
-    return GVEC_OK;
-  case GVEC_SVG_UNIT_PT:
-    *out = length.value * 96.0 / 72.0;
-    return GVEC_OK;
-  case GVEC_SVG_UNIT_PC:
-    *out = length.value * 16.0;
-    return GVEC_OK;
-  default:
-    *usable = false;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a length of the line needs the font or the window, which the lowering does not read");
   }
+  *usable = false;
+  return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a length of the line needs the font or the window, which the lowering does not read");
+}
+
+GVEC_Result gvec_lw_centerline_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_geometry * geometry,
+    const GSHSCENE_Resource ** path, bool * usable) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  *path = NULL;
+  *usable = true;
+  if (gvec_svg_element_kind(e) != GVEC_SVG_KIND_LINE) {
+    return gvec_lw_path_of(ctx, e, true, geometry, path);
+  }
+  double x1, y1, x2, y2;
+  GVEC_Result r = line_coordinate(ctx, inst, "x1", true, &x1, usable);
+  if (r == GVEC_OK && *usable) {
+    r = line_coordinate(ctx, inst, "y1", false, &y1, usable);
+  }
+  if (r == GVEC_OK && *usable) {
+    r = line_coordinate(ctx, inst, "x2", true, &x2, usable);
+  }
+  if (r == GVEC_OK && *usable) {
+    r = line_coordinate(ctx, inst, "y2", false, &y2, usable);
+  }
+  if (r != GVEC_OK || !*usable) {
+    return r;
+  }
+  return gvec_lw_line_path(ctx, x1, y1, x2, y2, geometry, path);
 }
 
 /* The node of a path painted under the element's map: a fill, or a stroke when `style` is given. */
@@ -690,9 +730,8 @@ static GVEC_Result shape_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, con
 static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   GVEC_Svg_Kind kind = gvec_svg_element_kind(e);
-  bool marked = kind == GVEC_SVG_KIND_PATH || kind == GVEC_SVG_KIND_LINE || kind == GVEC_SVG_KIND_POLYLINE || kind == GVEC_SVG_KIND_POLYGON;
   common c;
-  GVEC_Result r = prepare(ctx, inst, frame, true, marked, &c);
+  GVEC_Result r = prepare(ctx, inst, frame, true, &c);
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
@@ -710,7 +749,8 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   bool filled = fill_decision == GVEC_LW_PAINT_DRAW; /* A line has no area: its fill path is empty. */
   bool stroked = stroke.decision == GVEC_LW_PAINT_DRAW;
-  if (!filled && !stroked) {
+  bool marked = kind == GVEC_SVG_KIND_PATH || kind == GVEC_SVG_KIND_LINE || kind == GVEC_SVG_KIND_POLYLINE || kind == GVEC_SVG_KIND_POLYGON;
+  if (!filled && !stroked && !marked) {
     return GVEC_OK;
   }
   switch (kind) {
@@ -720,14 +760,6 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_RECT, "rect, circle and ellipse wait for the shape family's exact primitives");
   default:
     break;
-  }
-  bool stroke_first = false;
-  if (filled && stroked) {
-    bool usable;
-    r = gvec_lw_stroke_first(ctx, inst, &stroke_first, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
   }
   gvec_lw_node * fill_node = NULL;
   gvec_lw_node * stroke_node = NULL;
@@ -752,29 +784,9 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
     }
   }
   if (stroked) {
-    path = NULL;
-    if (kind == GVEC_SVG_KIND_LINE) {
-      double x1, y1, x2, y2;
-      bool usable;
-      r = line_coordinate(ctx, inst, "x1", true, &x1, &usable);
-      if (r == GVEC_OK && usable) {
-        r = line_coordinate(ctx, inst, "y1", false, &y1, &usable);
-      }
-      if (r == GVEC_OK && usable) {
-        r = line_coordinate(ctx, inst, "x2", true, &x2, &usable);
-      }
-      if (r == GVEC_OK && usable) {
-        r = line_coordinate(ctx, inst, "y2", false, &y2, &usable);
-      }
-      if (r != GVEC_OK || !usable) {
-        return r;
-      }
-      r = gvec_lw_line_path(ctx, x1, y1, x2, y2, &geometry, &path);
-    }
-    else {
-      r = gvec_lw_path_of(ctx, e, true, &geometry, &path);
-    }
-    if (r != GVEC_OK) {
+    bool usable;
+    r = gvec_lw_centerline_of(ctx, inst, &geometry, &path, &usable);
+    if (r != GVEC_OK || !usable) {
       return r;
     }
     if (geometry == GVEC_LW_GEOMETRY_ARC) {
@@ -790,11 +802,44 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
       }
     }
   }
-  if (!fill_node && !stroke_node) {
+  gvec_lw_marker_set markers = {NULL, 0, false};
+  if (marked) {
+    r = gvec_lw_markers(ctx, inst, &c.local, &markers);
+    if (r != GVEC_OK || markers.refused) {
+      return r;
+    }
+  }
+  size_t parts = (fill_node != NULL) + (stroke_node != NULL) + (markers.count > 0);
+  if (!parts) {
     return GVEC_OK;
   }
-  gvec_lw_node * first = stroke_first && stroke_node ? stroke_node : (fill_node ? fill_node : stroke_node);
-  gvec_lw_node * second = first == stroke_node ? fill_node : stroke_node;
+  gvec_lw_part order[3] = {GVEC_LW_PART_FILL, GVEC_LW_PART_STROKE, GVEC_LW_PART_MARKERS};
+  if (parts > 1) {
+    bool usable;
+    r = gvec_lw_paint_order(ctx, inst, order, &usable);
+    if (r != GVEC_OK || !usable) {
+      return r;
+    }
+  }
+  size_t total = (fill_node != NULL) + (stroke_node != NULL) + markers.count;
+  gvec_lw_node ** sequence = gvec_arena_alloc(&ctx->arena, total * sizeof *sequence, sizeof(void *));
+  if (!sequence) {
+    return GVEC_ERR_OOM;
+  }
+  size_t n = 0;
+  for (int i = 0; i < 3; i++) {
+    if (order[i] == GVEC_LW_PART_FILL && fill_node) {
+      sequence[n++] = fill_node;
+    }
+    else if (order[i] == GVEC_LW_PART_STROKE && stroke_node) {
+      sequence[n++] = stroke_node;
+    }
+    else if (order[i] == GVEC_LW_PART_MARKERS) {
+      for (size_t k = 0; k < markers.count; k++) {
+        sequence[n++] = markers.nodes[k];
+      }
+    }
+  }
   gvec_lw_node * group;
   bool skip;
   r = opacity_group(ctx, e, c.opacity, &group, &skip);
@@ -804,16 +849,13 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (ctx->levels + 1 > ctx->caps.node_depth) {
     r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the drawing nests deeper than the scene's limits allow");
   }
-  else if (second) {
-    r = gvec_lw_append_pair(ctx, TARGET(group, parent), first, second);
-  }
   else {
-    r = gvec_lw_append(ctx, TARGET(group, parent), first);
+    r = gvec_lw_append_all(ctx, TARGET(group, parent), sequence, n);
   }
   if (group) {
-    wrap_leave(ctx);
+    gvec_lw_wrap_leave(ctx);
     if (r == GVEC_OK) {
-      r = attach(ctx, parent, group);
+      r = gvec_lw_attach(ctx, parent, group);
     }
   }
   return r;
@@ -837,7 +879,7 @@ static GVEC_Result read_length(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
 static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   common c;
-  GVEC_Result r = prepare(ctx, inst, frame, false, false, &c);
+  GVEC_Result r = prepare(ctx, inst, frame, false, &c);
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
@@ -941,21 +983,21 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   gvec_lw_node * target = TARGET(group, parent);
   bool clip_entered = false;
   if (clip) {
-    r = wrap_enter(ctx, e, &clip_entered);
+    r = gvec_lw_wrap_enter(ctx, e, &clip_entered);
   }
   if (r == GVEC_OK && (!clip || clip_entered)) {
-    r = lw_children(ctx, inst, &children_frame, clip ? clip : target);
+    r = gvec_lw_children(ctx, inst, &children_frame, clip ? clip : target);
     if (clip) {
-      wrap_leave(ctx);
+      gvec_lw_wrap_leave(ctx);
       if (r == GVEC_OK) {
-        r = attach(ctx, target, clip);
+        r = gvec_lw_attach(ctx, target, clip);
       }
     }
   }
   if (group) {
-    wrap_leave(ctx);
+    gvec_lw_wrap_leave(ctx);
     if (r == GVEC_OK) {
-      r = attach(ctx, parent, group);
+      r = gvec_lw_attach(ctx, parent, group);
     }
   }
   return r;
@@ -985,7 +1027,7 @@ static GVEC_Result push_use(gvec_lw_ctx * ctx, const GVEC_Svg_Element * use) {
 static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   common c;
-  GVEC_Result r = prepare(ctx, inst, frame, false, false, &c);
+  GVEC_Result r = prepare(ctx, inst, frame, false, &c);
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
@@ -1058,7 +1100,7 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   /* The instance is a level and its target another, and the picture is a list of its own. */
   if (ctx->levels + 3 > ctx->caps.node_depth || ctx->picture_depth + 1 > ctx->caps.picture_depth) {
     if (group) {
-      wrap_leave(ctx);
+      gvec_lw_wrap_leave(ctx);
     }
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the use nests pictures deeper than the scene's limits allow");
   }
@@ -1087,12 +1129,12 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   ctx->picture_depth--;
   ctx->open = saved_open;
   if (r == GVEC_OK) {
-    r = attach(ctx, TARGET(group, parent), use);
+    r = gvec_lw_attach(ctx, TARGET(group, parent), use);
   }
   if (group) {
-    wrap_leave(ctx);
+    gvec_lw_wrap_leave(ctx);
     if (r == GVEC_OK) {
-      r = attach(ctx, parent, group);
+      r = gvec_lw_attach(ctx, parent, group);
     }
   }
   return r;

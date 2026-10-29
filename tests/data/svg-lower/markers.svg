@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- Markers are pictures placed at the vertices the geometry gives, in the order paint-order gives (K7 to K10). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="context-stroke"/>
+    </marker>
+    <g fill="#586e75">
+      <marker id="dot" viewBox="0 0 10 10" refX="center" refY="center" markerWidth="4" markerHeight="4" markerUnits="userSpaceOnUse">
+        <path d="M5 0L10 5L5 10L0 5Z"/>
+      </marker>
+    </g>
+    <marker id="flag" markerWidth="8" markerHeight="8" refX="0" refY="0" orient="30" overflow="visible" markerUnits="userSpaceOnUse">
+      <path d="M0 0H12V4H0Z" fill="context-fill" stroke="context-stroke" stroke-width="1"/>
+    </marker>
+  </defs>
+  <path d="M8 60L30 20L52 60L74 20" fill="none" stroke="#268bd2" stroke-width="3" marker-start="url(#arrow)" marker-mid="url(#dot)" marker-end="url(#arrow)"/>
+  <polyline points="8,74 60,74" fill="none" stroke="#2aa198" stroke-width="2" marker-end="url(#arrow)"/>
+  <polygon points="84,10 112,10 98,34" fill="#b58900" stroke="#6c71c4" stroke-width="2" marker-mid="url(#dot)" marker-start="url(#flag)"/>
+  <path d="M84 50L112 50L112 74Z" fill="#dc322f" stroke="#073642" stroke-width="2" style="marker: url(#flag)" paint-order="markers stroke"/>
+  <line x1="78" y1="40" x2="116" y2="40" stroke="#859900" stroke-width="1.5" marker-end="url(#arrow)" opacity=".7"/>
+  <rect x="2" y="2" width="4" height="4" fill="none" marker-start="url(#dot)"/>
+  <path d="M40 44L48 44" fill="none" stroke="#000" stroke-width="0" marker-start="url(#arrow)"/>
+</svg>

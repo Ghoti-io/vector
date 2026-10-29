@@ -33,7 +33,6 @@ static const struct {
   {NULL}, /* 0 is no reason */
   {"arc"}, /* ARC */
   {"rect"}, /* RECT */
-  {"marker"}, /* MARKER */
   {"gradient"}, /* GRADIENT */
   {"pattern"}, /* PATTERN */
   {"clip-path"}, /* CLIP_PATH */

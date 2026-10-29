@@ -91,7 +91,6 @@ extern "C" {
 typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_ARC = 1,                  ///< An elliptical arc in path data (the shape family's G1).
   GVEC_LOWER_RECT,                     ///< `rect`, `circle` or `ellipse` (G2: the named shapes).
-  GVEC_LOWER_MARKER,                   ///< Markers on a path, line, polyline or polygon.
   GVEC_LOWER_GRADIENT,                 ///< A gradient paint.
   GVEC_LOWER_PATTERN,                  ///< A pattern paint (G7).
   GVEC_LOWER_CLIP_PATH,                ///< `clip-path` (G4).
@@ -183,7 +182,13 @@ typedef struct GVEC_Lower_Options {
    */
   const GSHSCENE_Limits * scene_limits;
   GVEC_Lower_Trace * trace;              ///< Receives the sites; NULL for none. Reset by the call.
-  uint8_t _reserved[16];                 ///< Zero.
+  /**
+   * The most marker instances one lowering draws, counted over the whole document, nested markers included: 0 for the default,
+   * which is also the ceiling, half the nodes a version of the scene may hold (an instance is two nodes). An element whose markers
+   * would pass it is refused with GVEC_LOWER_LIMIT, whole, and reported.
+   */
+  size_t max_marker_instances;
+  uint8_t _reserved[8];                  ///< Zero.
 } GVEC_Lower_Options;
 
 /**

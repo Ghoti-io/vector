@@ -115,6 +115,21 @@ line when the document is built.
 * **Fills.** `fill-rule` is the item's rule. A subpath with no length, a path of one point, and a `polygon` of one point draw
   nothing. A `line` has no area. A trailing odd coordinate of `points` ends the list (SVG 2, 9.8.1); a path that ends in an
   error draws its valid prefix (SVG 2, 9.5.4) and the error is reported by the load.
+* **Strokes.** The `stroke-*` properties become the waist's stroke style, and the stroke is an item beside the fill, in the
+  order `paint-order` gives. The waist outlines, dashes and joins; this library does not. An odd `stroke-dasharray` is
+  repeated to an even one and one that is negative or sums to zero is solid; a width, a dash or an offset outside the
+  waist's range refuses the element with `limit`, and a `stroke-miterlimit` above its bound is clamped to it. A `polyline` is
+  stroked open, a `polygon` closed, a `line` is a stroke only, and a subpath of no length is drawn by its cap (SVG 2, 13.5.4).
+  `vector-effect: non-scaling-stroke` is a stroke width in device units; another `vector-effect` is refused.
+  `stroke-linejoin: miter-clip` and `arcs` are the waist's joins.
+* **Markers.** `marker-start`, `marker-mid` and `marker-end` (and `marker`) on a `path`, `line`, `polyline` or `polygon` draw
+  the marker's content once for each vertex, a picture shared by every vertex of a shape. The vertices and their directions are
+  the geometry library's. `orient` (an angle, `auto`, `auto-start-reverse`), `markerUnits`, `markerWidth`, `markerHeight`,
+  `viewBox`, `preserveAspectRatio`, `refX` and `refY` (with `left`, `center`, `right`, `top`, `bottom`) and `overflow` are as
+  SVG 2 has them. The content inherits from the marker's place in the document, and `context-fill` and `context-stroke` are the
+  paints of the shape the marker is for, so one marker used with two paints is two pictures. Marker instances are counted over
+  the lowering and bounded by `GVEC_Lower_Options.max_marker_instances`; a marker length in a unit that needs the cascade (`em`,
+  `%`) is refused. A marker on a shape with an elliptical arc is refused with `arc`.
 * **Refusals** are listed, with what lifts each, in `refusals.md`. `clip-path` naming a `clipPath` or a basic shape,
   `mask`, `filter` and `mix-blend-mode` refuse the element that carries them, whole; `clip-path: url(#nothing)` is ignored, as
   SVG 2 says (a reference that names nothing leaves the property unspecified), and a `mask` or `filter` that names nothing is

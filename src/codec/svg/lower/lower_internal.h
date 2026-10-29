@@ -128,6 +128,7 @@ typedef struct gvec_lw_caps {
   size_t list_items;    ///< Items in one list.
   size_t expansion;     ///< Items of a list with every instance replaced by its picture's, and occurrences of the nodes of a version.
   size_t nodes;         ///< Nodes in a version.
+  size_t marker_instances; ///< Marker instances in one lowering.
 } gvec_lw_caps;
 
 /** The state of one lowering. */
@@ -157,6 +158,9 @@ typedef struct gvec_lw_ctx {
   size_t picture_depth;              ///< Pictures the walk is inside.
   const GVEC_Svg_Element ** use_stack;
   size_t use_stack_count, use_stack_capacity;
+  size_t marker_instances;           ///< Marker instances made so far, nested ones included.
+  bool context_set;                  ///< The walk is inside a marker: context-fill and context-stroke name the paints below.
+  GVEC_Svg_Paint context_fill, context_stroke;
   bool tracing;
   gvec_lw_table * tables;
   size_t table_count, table_capacity;
@@ -197,6 +201,9 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * p
 
 /** Link `first` then `second` last under `parent`, both or (when they would not fit the scene's limits) neither, refusing the element. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_append_pair(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * first, gvec_lw_node * second);
+
+/** Link all of `nodes` last under `parent`, or (when they would not fit the scene's limits) none of them, refusing the element of the first. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_append_all(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * const * nodes, size_t count);
 
 /** `outer . inner`, normalised so that no entry is negative zero (see lower_emit.c); false when an entry leaves the waist's range. */
 GVEC_INTERNAL_API bool gvec_lw_compose(const GSHGEOM_Map * outer, const GSHGEOM_Map * inner, GSHGEOM_Map * out);
@@ -241,8 +248,31 @@ typedef struct gvec_lw_stroke {
 /** Read the stroke properties of an instance and make the style and the paint; refuses the element whole when it cannot. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_stroke * out);
 
-/** Whether the stroke of an element is painted before its fill (`paint-order`). */
-GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_first(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * out, bool * usable);
+/** What an element draws, for `paint-order`. */
+typedef enum gvec_lw_part { GVEC_LW_PART_FILL = 0, GVEC_LW_PART_STROKE, GVEC_LW_PART_MARKERS } gvec_lw_part;
+
+/** The order an element draws its fill, its stroke and its markers in (`paint-order`, SVG 2, 13.6). */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_order(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_part order[3], bool * usable);
+
+//-----------------------------------------------------------------------------
+// Walking (lower_walk.c), for the markers
+//-----------------------------------------------------------------------------
+
+/** Enter a clip or an opacity group: one level deeper and one more open, unless the scene's limits would not hold what is inside (then refused, `*entered` false). */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_wrap_enter(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, bool * entered);
+
+/** Leave what gvec_lw_wrap_enter() entered. */
+GVEC_INTERNAL_API void gvec_lw_wrap_leave(gvec_lw_ctx * ctx);
+
+/** Link `node` under `parent` if it draws anything. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_attach(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * node);
+
+/** Walk the children of `inst` in `frame`, recording what they draw under `parent`. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_children(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent);
+
+/** A length in user units when its unit is absolute (none, px, in, cm, mm, Q, pt, pc); false for a unit that needs the cascade or a basis. */
+GVEC_INTERNAL_API bool gvec_lw_absolute_length(const GVEC_Svg_Length * length, double * out);
 
 //-----------------------------------------------------------------------------
 // Viewports (lower_viewport.c)
@@ -286,6 +316,31 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, do
 /** The path of the rectangle `x`, `y`, `width`, `height` as four lines (a viewport's clip); interned in the store. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_rect_path(
     gvec_lw_ctx * ctx, double x, double y, double width, double height, gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
+
+/** The centerline of a `path`, `polygon`, `polyline` or `line` instance (a stroke's and a marker's); `*usable` is false when the element was refused. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_centerline_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_geometry * geometry,
+    const GSHSCENE_Resource ** path, bool * usable);
+
+//-----------------------------------------------------------------------------
+// Markers (lower_marker.c)
+//-----------------------------------------------------------------------------
+
+/** The marker instances of a shape: one node for each, in vertex order. */
+typedef struct gvec_lw_marker_set {
+  gvec_lw_node ** nodes;
+  size_t count;
+  bool refused; ///< The element was refused (reported): draw none of it.
+} gvec_lw_marker_set;
+
+/**
+ * The markers of a `path`, `line`, `polyline` or `polygon`: a start marker at the first vertex of the path, an end marker at the
+ * last and a mid marker at each other, each a picture of the marker's content under the map of the vertex, its direction, its scale
+ * and its reference point. The nodes are not linked anywhere.
+ *
+ * @param local The element's map (the frame composed with its `transform`).
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_markers(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * local, gvec_lw_marker_set * out);
 
 //-----------------------------------------------------------------------------
 // Emitters (lower_emit_list.c, lower_emit_edit.c) and the trace (lower_trace.c)

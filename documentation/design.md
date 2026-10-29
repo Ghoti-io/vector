@@ -342,8 +342,7 @@ family's exact primitives.
 by content; a `line` has no area and draws nothing. A path whose segments have no length draws nothing. Path data that ends
 in an error draws its valid prefix. The paint is straight `double` components in their color space with the alpha multiplied
 by `fill-opacity`; `currentColor` is the waist's foreground until the document sets a `color` (`GVEC_Lower_Options` can set the
-foreground of the list or the edit); `fill: none` and an alpha of zero emit nothing. A stroke that could be seen (a paint
-other than `none`, a width and an opacity above zero) refuses the element.
+foreground of the list or the edit); `fill: none` and an alpha of zero emit nothing.
 
 **P8 `use` and `symbol`.** A `use` draws its referent in the clone's context into a picture (a list of its own, interned by
 content, so equal drawings share one) and is one instance with the map `transform` then `translate(x, y)`. In an edit the
@@ -366,6 +365,59 @@ caller's publish fail. The walk's model of each is tested against the scene's ow
 deepest the scene publishes. (A retained scene counts the occurrences of its nodes against `max_expansion`, a use being its
 instance and the target it draws, and a list counts items, a group being a push and a pop; the walk checks both.) The depth of the
 walk itself is bounded by `max_depth`.
+
+**K1 Strokes.** A stroke is an item of the shape waist beside the fill: this library names the style (`stroke-width`,
+`stroke-linecap`, `stroke-linejoin`, `stroke-miterlimit`, `stroke-dasharray`, `stroke-dashoffset`) and the paint, and the
+shape family outlines, dashes and joins. Nothing here approximates a join or a dash. A width, a dash or an offset outside
+the range the waist carries refuses the element with `limit`; a miter limit above the waist's bound is clamped to it, the edge
+a join that sharp cannot be told from a bevel. `miter-clip` and `arcs` are joins of the waist. A stroke that cannot be seen
+(a width or an opacity of zero, or `none`) draws nothing.
+
+**K2 A pair, whole.** A shape's fill and stroke are appended together, both or neither, under the one opacity group of the
+element: a refusal of either (a gradient, a paint outside the waist's colors, a value past a limit) refuses the element and
+nothing of it is half drawn. A `polyline` is stroked open and filled closed; a `polygon` is closed for both; a `line` has a
+stroke and no area; a subpath of no length is kept for a stroke, whose cap draws it.
+
+**K3 Paint.** A stroke's paint is read as a fill's, with `stroke-opacity` as the alpha. `context-fill` and `context-stroke`
+are the paints of the element a marker is drawn for (K8); outside a marker they are refused with `context-paint`.
+
+**K4 `vector-effect`.** `non-scaling-stroke` is the waist's device width space. Any other value is refused with
+`vector-effect`: the others change what the picture is, not how a stroke is drawn.
+
+**K5 `paint-order`.** `normal`, or the keywords `fill`, `stroke` and `markers` in the order listed with the ones left out
+following in that order, decide the order of the fill, the stroke and the marker instances within the element, in the list and
+in the edit's child order.
+
+**K6 The geometry of a stroke and of a marker are the same path.** The centerline is the element's path as written (a polyline
+open, a polygon closed); the vertices markers go on are read from it.
+
+**K7 Marker positions.** `marker-start`, `marker-mid` and `marker-end` (and the `marker` shorthand) apply to `path`, `line`,
+`polyline` and `polygon` and to no other shape. The start marker is at the first vertex of the whole path, the end marker at the
+last, and a mid marker at every other vertex, including the starts and the ends of the other subpaths; the vertex of a close is
+a vertex. The vertices, and the direction at each (the incoming and the outgoing, the bisector, and the rule for a segment of no
+length and for the corner at the start of a closed subpath), are the geometry library's: this library computes no tangent. A
+reference to nothing draws no marker, and a reference to an element that is no marker draws none and is said.
+
+**K8 The marker, and where it goes.** A marker is a viewport of `markerWidth` by `markerHeight` (3 by default), with a `viewBox`
+and `preserveAspectRatio` as any other, and its content is **a picture drawn once for each vertex** under the map of the shape
+(its `transform`), the vertex, the rotation, the scale and the reference point. `orient` is an angle in degrees, `auto` (the
+vertex's direction, built from the unit direction itself, so the quarter turns are exact), or `auto-start-reverse` (`auto` turned
+half way round at the start). `markerUnits` is `strokeWidth` (the used `stroke-width` of the shape, whether or not it is
+painted; a width of zero draws no marker) or `userSpaceOnUse`. `refX` and `refY` are in the content's coordinates; their
+keywords are 0%, 50% and 100% of the viewBox from its origin (of the viewport without one). `overflow` other than `visible`
+and `auto` clips the content to the marker's viewport, a rectangle in the picture's own coordinates. A marker of no size draws
+nothing and is said. The content inherits from where the marker is in the document (the instance it is drawn in is made from the
+root down through the marker's ancestors) and not from the shape, and the percentages in it are of the marker's viewport.
+
+**K9 Context paint, and the bound.** Inside a marker `context-fill` and `context-stroke` are the paints the shape has, so a
+marker used by two shapes with different paints is two pictures, and by two with the same paints, one. The instances are counted
+over the whole lowering, those of markers inside markers too, against `GVEC_Lower_Options.max_marker_instances` (by default and
+at most half the nodes a version of the scene may hold); the element that would pass it is refused whole with `limit`. A picture
+nested past the scene's depth is refused where it is. A marker whose content refers back to it is cut by the document's
+reference graph, which says so when it loads: nothing recurses.
+
+**K10 What is not a marker.** A `rect`, a `circle` and an `ellipse` have no markers, as SVG 2 says. A marker on a shape with
+an elliptical arc is refused with `arc` until the arc is the shape family's primitive.
 
 ## Threads
 

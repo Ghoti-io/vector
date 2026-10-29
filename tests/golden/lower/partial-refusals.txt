@@ -4,14 +4,14 @@ raster-hash 4e35c5c6273d7725
 diagnostics 6
 diagnostic code=7 detail=1 line=6 column=3 element=path
 diagnostic code=7 detail=2 line=7 column=3 element=rect
-diagnostic code=7 detail=11 line=8 column=3 element=path
-diagnostic code=7 detail=4 line=9 column=3 element=path
+diagnostic code=7 detail=10 line=8 column=3 element=path
+diagnostic code=7 detail=3 line=9 column=3 element=path
 diagnostic code=7 detail=2 line=10 column=3 element=circle
-diagnostic code=7 detail=10 line=12 column=3 element=text
+diagnostic code=7 detail=9 line=12 column=3 element=text
 list
 gshscene.list 1 items=5 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=6760f48036f2d822
-F res=path:f43bb96fde3669f8 map=03f5566ebbcadb97 rule=0 paint=0 3fe8181818181818 3fcc9c9c9c9c9c9d 3fc5959595959596 3ff0000000000000 space=1:2:0000000000000000 entry=0 gradient=0000000000000000 layer=0 depth=0000000000000000
-F res=path:3b91974985832b0e map=03f5566ebbcadb97 rule=0 paint=0 3fb6161616161616 3fe4141414141414 3fe0b0b0b0b0b0b1 3ff0000000000000 space=1:2:0000000000000000 entry=0 gradient=0000000000000000 layer=0 depth=0000000000000000
+F res=path:f43bb96fde3669f8 map=03f5566ebbcadb97 rule=0 paint=0 3fe8181818181818 3fcc9c9c9c9c9c9d 3fc5959595959596 3ff0000000000000 space=1:2:0000000000000000 entry=0 resource=0000000000000000 layer=0 depth=0000000000000000
+F res=path:3b91974985832b0e map=03f5566ebbcadb97 rule=0 paint=0 3fb6161616161616 3fe4141414141414 3fe0b0b0b0b0b0b1 3ff0000000000000 space=1:2:0000000000000000 entry=0 resource=0000000000000000 layer=0 depth=0000000000000000
 G opacity=3fe0000000000000 blend=0:0:0000000000000000 composite=0 order=0 layer=0 depth=0000000000000000
-F res=path:9649a5df211156bf map=03f5566ebbcadb97 rule=0 paint=0 3fea7a7a7a7a7a7a 3fd5151515151515 0000000000000000 3ff0000000000000 space=1:2:0000000000000000 entry=0 gradient=0000000000000000 layer=0 depth=0000000000000000
+F res=path:9649a5df211156bf map=03f5566ebbcadb97 rule=0 paint=0 3fea7a7a7a7a7a7a 3fd5151515151515 0000000000000000 3ff0000000000000 space=1:2:0000000000000000 entry=0 resource=0000000000000000 layer=0 depth=0000000000000000
 g

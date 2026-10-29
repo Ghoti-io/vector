@@ -66,8 +66,15 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element
   }
   case GVEC_SVG_PAINT_CONTEXT_FILL:
   case GVEC_SVG_PAINT_CONTEXT_STROKE:
+    if (!ctx->context_set) {
+      return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "context-fill and context-stroke are lowered only inside a marker");
+    }
+    /* The paint of the element the marker is drawn for, which was resolved when the marker was entered, so it is never itself a
+     * context paint. The opacity is the content's own. */
+    return gvec_lw_paint_of(
+        ctx, element, paint->kind == GVEC_SVG_PAINT_CONTEXT_FILL ? &ctx->context_fill : &ctx->context_stroke, opacity, out, decision);
   default:
-    return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "context-fill and context-stroke are not lowered yet");
+    return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "this paint is not lowered");
   }
 }
 
@@ -209,15 +216,19 @@ GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   return GVEC_OK;
 }
 
-GVEC_Result gvec_lw_stroke_first(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * out, bool * usable) {
+GVEC_Result gvec_lw_paint_order(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_part order[3], bool * usable) {
   GVEC_Svg_Style_Value v;
-  *out = false;
+  order[0] = GVEC_LW_PART_FILL;
+  order[1] = GVEC_LW_PART_STROKE;
+  order[2] = GVEC_LW_PART_MARKERS;
   GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_PAINT_ORDER, GVEC_LOWER_STYLE, &v, usable);
   if (r != GVEC_OK || !*usable || v.kind != GVEC_SVG_STYLE_KEYWORD || !v.keyword) {
     return r;
   }
   /* `normal`, or the keywords listed in order, the ones left out following in the order fill, stroke, markers (SVG 2, 13.6). */
-  int fill_at = -1, stroke_at = -1, at = 0;
+  static const char * const words[3] = {"fill", "stroke", "markers"};
+  bool seen[3] = {false, false, false};
+  size_t count = 0;
   const char * p = v.keyword;
   while (*p) {
     while (*p == ' ') {
@@ -228,16 +239,17 @@ GVEC_Result gvec_lw_stroke_first(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
       p++;
     }
     size_t n = (size_t) (p - start);
-    if (n == 4 && strncmp(start, "fill", 4) == 0) {
-      fill_at = at;
-    }
-    else if (n == 6 && strncmp(start, "stroke", 6) == 0) {
-      stroke_at = at;
-    }
-    if (n) {
-      at++;
+    for (int i = 0; i < 3; i++) {
+      if (!seen[i] && n == strlen(words[i]) && strncmp(start, words[i], n) == 0) {
+        seen[i] = true;
+        order[count++] = (gvec_lw_part) i;
+      }
     }
   }
-  *out = stroke_at >= 0 && (fill_at < 0 || stroke_at < fill_at);
+  for (int i = 0; i < 3; i++) {
+    if (!seen[i] && count < 3) {
+      order[count++] = (gvec_lw_part) i;
+    }
+  }
   return GVEC_OK;
 }
