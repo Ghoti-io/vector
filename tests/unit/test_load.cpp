@@ -570,7 +570,7 @@ TEST(Lower, NullArgumentsReservedBytesAndAMissingStoreAreInvalid) {
   EXPECT_EQ(gvec_doc_lower_list(out.doc, nullptr, nullptr, nullptr), GVEC_ERR_INVALID);
   GVEC_Lower_Options o;
   std::memset(&o, 0, sizeof(o));
-  o._reserved[15] = 1;
+  o._reserved[sizeof(o._reserved) - 1] = 1;
   EXPECT_EQ(gvec_doc_lower_list(out.doc, &o, (GSHSCENE_List *) &stand_in, nullptr), GVEC_ERR_INVALID);
   // A list lowering needs the store its list was made over.
   EXPECT_EQ(gvec_doc_lower_list(out.doc, nullptr, (GSHSCENE_List *) &stand_in, nullptr), GVEC_ERR_INVALID);

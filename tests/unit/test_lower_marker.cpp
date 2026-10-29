@@ -204,6 +204,33 @@ TEST(LowerMarker, TheReferencePointMovesTheMarkerAndItsKeywordsAreOfTheViewBox) 
   EXPECT_EQ(rin[0].map.t[1], 10.0 - 20.0);
 }
 
+TEST(LowerMarker, PreserveAspectRatioMapsTheViewBoxToTheViewport) {
+  const std::string body = "<path d=\"M0 0H4V4H0Z\"/>";
+  Lowered none;
+  LowerSvg(OnlyMarkers("<marker id=\"m\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" viewBox=\"0 0 10 5\" "
+                       "preserveAspectRatio=\"none\" overflow=\"visible\" orient=\"0\">" + body + "</marker>",
+               "<path d=\"M10 10L30 10\" fill=\"none\" marker-start=\"url(#m)\"/>"),
+      none);
+  std::vector<GSHSCENE_Item> n = Instances(none);
+  ASSERT_EQ(n.size(), (size_t) 1);
+  std::vector<GSHSCENE_Item> c = Picture(n[0]);
+  ASSERT_EQ(c.size(), (size_t) 1);
+  EXPECT_EQ(c[0].map.m[0][0], 2.0);  // the box's 10 by 5 stretched to 20 by 20
+  EXPECT_EQ(c[0].map.m[1][1], 4.0);
+  Lowered meet;
+  LowerSvg(OnlyMarkers("<marker id=\"m\" markerWidth=\"20\" markerHeight=\"20\" markerUnits=\"userSpaceOnUse\" viewBox=\"0 0 10 5\" "
+                       "overflow=\"visible\" orient=\"0\">" + body + "</marker>",
+               "<path d=\"M10 10L30 10\" fill=\"none\" marker-start=\"url(#m)\"/>"),
+      meet);
+  std::vector<GSHSCENE_Item> m = Instances(meet);
+  ASSERT_EQ(m.size(), (size_t) 1);
+  std::vector<GSHSCENE_Item> mc = Picture(m[0]);
+  ASSERT_EQ(mc.size(), (size_t) 1);
+  EXPECT_EQ(mc[0].map.m[0][0], 2.0);  // meet: the smaller scale on both axes, centered
+  EXPECT_EQ(mc[0].map.m[1][1], 2.0);
+  EXPECT_EQ(mc[0].map.t[1], 5.0);
+}
+
 TEST(LowerMarker, TheContentIsClippedToTheViewportUnlessOverflowIsVisible) {
   Lowered clipped;
   LowerSvg(OnlyMarkers("<marker id=\"m\" markerWidth=\"6\" markerHeight=\"4\" markerUnits=\"userSpaceOnUse\" orient=\"0\">"

@@ -87,7 +87,7 @@ case that draws something can be compared with its reference.
 
 ## The score today
 
-The lowering draws structure and solid fills of `path`, `polygon` and `polyline`; it refuses what it cannot draw yet
+The lowering draws structure, solid fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline` and `line`, and the markers of those; it refuses what it cannot draw yet
 (`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **4 of 1,679
 (0.24%)**, with the tolerance at zero.
 
@@ -108,9 +108,11 @@ are real passes (the document loaded, the lowering refused nothing, and the rend
 the whole of what this version can score.
 
 Almost nothing else can pass yet, for one reason that is easy to read off the report. The first element refused in each
-of the 761 refused cases is a `rect` in 474 of them (the corpus draws an "image frame", a `rect` with a stroke, in
-almost every file), a `path` in 172 (an arc or a stroke), a `circle` in 46, `text` in 22, a `line` in 16 and an `ellipse`
-in 12. The named shapes and the strokes are the next phases of the plan, and they decide how much of this table moves.
+of the 761 refused cases is a `rect` in 628 of them (the corpus draws an "image frame", a `rect` with a stroke, in
+almost every file), a `circle` in 52, `text` in 26, a `path` in 23 (an arc), an `ellipse` in 12, a `use` in 8 and a `line`
+in 5. Strokes and markers moved the `path` count from 172 to 23 and the `line` count from 16 to 5 and did not move the score,
+because the frame that is refused first in nearly every file is a `rect`. The named shapes are the next phase of the plan, and
+they decide how much of this table moves.
 No case has been seen to **fail**: every case that is drawn at all is one that draws nothing.
 
 The tolerance is therefore still zero, and that is the finding, not an omission. The only passing cases are blank, so
