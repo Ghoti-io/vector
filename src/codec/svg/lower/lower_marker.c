@@ -421,7 +421,7 @@ static GVEC_Result marker_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
 }
 
 /* The paint a context paint names for the markers of `inst`: its own, or (inside a marker) the one it takes from its context. */
-static GVEC_Result context_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property, GVEC_Svg_Paint * out,
+GVEC_Result gvec_lw_context_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property, GVEC_Svg_Paint * out,
     bool * usable) {
   GVEC_Svg_Style_Value v;
   GVEC_Result r = gvec_lw_read_property(ctx, inst, property, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, usable);
@@ -507,9 +507,9 @@ GVEC_Result gvec_lw_markers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
       w.scale[slot] = index == 0 ? 1 : stroke_width;
     }
   }
-  r = context_paint(ctx, inst, GVEC_SVG_PROP_FILL, &w.fill, &usable);
+  r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_FILL, &w.fill, &usable);
   if (r == GVEC_OK && usable) {
-    r = context_paint(ctx, inst, GVEC_SVG_PROP_STROKE, &w.stroke, &usable);
+    r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_STROKE, &w.stroke, &usable);
   }
   if (r != GVEC_OK || !usable) {
     out->refused = !usable;

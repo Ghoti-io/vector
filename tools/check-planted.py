@@ -173,6 +173,8 @@ PLANTS = [
      "an element past the limit is drawn without its markers"),
     ("K9", M, "  if (ctx->levels + 3 > ctx->caps.node_depth || ctx->picture_depth + 1 > ctx->caps.picture_depth) {\n    w->refused = true;",
      "  if (ctx->levels + 3 > ctx->caps.node_depth) {\n    w->refused = true;", "marker pictures nest without a bound"),
+    ("K9", W, "    ctx->context_set = true;\n    ctx->context_fill = use_fill;", "    ctx->context_set = false;\n    ctx->context_fill = use_fill;",
+     "a use's referent does not see the use's paint"),
     ("P7", "src/codec/svg/lower/lower_path.c", "    if (s->kind == GVEC_SVG_SEGMENT_ARC) {\n      *kind = GVEC_LW_GEOMETRY_ARC;\n      return GVEC_OK;\n    }",
      "    if (0) {\n      return GVEC_OK;\n    }", "an arc is not refused"),
     ("P7", W, '  *rule = gvec_lw_keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;', "  *rule = GSHGEOM_FILL_NONZERO;",

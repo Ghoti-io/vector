@@ -127,7 +127,7 @@ line when the document is built.
   the geometry library's. `orient` (an angle, `auto`, `auto-start-reverse`), `markerUnits`, `markerWidth`, `markerHeight`,
   `viewBox`, `preserveAspectRatio`, `refX` and `refY` (with `left`, `center`, `right`, `top`, `bottom`) and `overflow` are as
   SVG 2 has them. The content inherits from the marker's place in the document, and `context-fill` and `context-stroke` are the
-  paints of the shape the marker is for, so one marker used with two paints is two pictures. Marker instances are counted over
+  paints of the shape the marker is for (and, in the referent of a `use`, of the `use`), so one marker used with two paints is two pictures. Marker instances are counted over
   the lowering and bounded by `GVEC_Lower_Options.max_marker_instances`; a marker length in a unit that needs the cascade (`em`,
   `%`) is refused. A marker on a shape with an elliptical arc is refused with `arc`.
 * **Refusals** are listed, with what lifts each, in `refusals.md`. `clip-path` naming a `clipPath` or a basic shape,

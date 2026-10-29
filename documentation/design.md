@@ -379,7 +379,7 @@ nothing of it is half drawn. A `polyline` is stroked open and filled closed; a `
 stroke and no area; a subpath of no length is kept for a stroke, whose cap draws it.
 
 **K3 Paint.** A stroke's paint is read as a fill's, with `stroke-opacity` as the alpha. `context-fill` and `context-stroke`
-are the paints of the element a marker is drawn for (K8); outside a marker they are refused with `context-paint`.
+are the paints of the element a marker is drawn for (K8) or of the `use` whose referent they are in (P8); anywhere else they are refused with `context-paint`.
 
 **K4 `vector-effect`.** `non-scaling-stroke` is the waist's device width space. Any other value is refused with
 `vector-effect`: the others change what the picture is, not how a stroke is drawn.

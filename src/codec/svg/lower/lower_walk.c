@@ -1117,12 +1117,28 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   }
   ctx->chain = gvec_svg_hash64(buf, sizeof buf);
   ctx->use_depth++;
-  r = push_use(ctx, e);
-  if (r == GVEC_OK) {
-    GSHGEOM_Map identity;
-    r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(ctx, clone, &identity, use) : GVEC_ERR_INTERNAL;
-    ctx->use_stack_count--;
+  /* `context-fill` and `context-stroke` in the referent are the paints of the `use`. */
+  bool saved_set = ctx->context_set;
+  GVEC_Svg_Paint saved_fill = ctx->context_fill, saved_stroke = ctx->context_stroke;
+  GVEC_Svg_Paint use_fill, use_stroke;
+  r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_FILL, &use_fill, &usable);
+  if (r == GVEC_OK && usable) {
+    r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_STROKE, &use_stroke, &usable);
   }
+  if (r == GVEC_OK && usable) {
+    ctx->context_set = true;
+    ctx->context_fill = use_fill;
+    ctx->context_stroke = use_stroke;
+    r = push_use(ctx, e);
+    if (r == GVEC_OK) {
+      GSHGEOM_Map identity;
+      r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(ctx, clone, &identity, use) : GVEC_ERR_INTERNAL;
+      ctx->use_stack_count--;
+    }
+  }
+  ctx->context_set = saved_set;
+  ctx->context_fill = saved_fill;
+  ctx->context_stroke = saved_stroke;
   ctx->use_depth--;
   ctx->chain = saved_chain;
   ctx->levels -= 2;

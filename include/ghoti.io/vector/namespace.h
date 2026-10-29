@@ -119,6 +119,7 @@
 #define gvec_lw_centerline_of GHOTIIO_VECTOR(gvec_lw_centerline_of)
 #define gvec_lw_children GHOTIIO_VECTOR(gvec_lw_children)
 #define gvec_lw_compose GHOTIIO_VECTOR(gvec_lw_compose)
+#define gvec_lw_context_paint GHOTIIO_VECTOR(gvec_lw_context_paint)
 #define gvec_lw_emit_edit GHOTIIO_VECTOR(gvec_lw_emit_edit)
 #define gvec_lw_emit_list GHOTIIO_VECTOR(gvec_lw_emit_list)
 #define gvec_lw_end GHOTIIO_VECTOR(gvec_lw_end)

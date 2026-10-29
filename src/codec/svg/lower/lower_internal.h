@@ -342,6 +342,10 @@ typedef struct gvec_lw_marker_set {
 GVEC_INTERNAL_API GVEC_Result gvec_lw_markers(
     gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * local, gvec_lw_marker_set * out);
 
+/** The paint of `property` (fill or stroke) of `inst` as a context paint names it: its own, or, inside a marker or a use, the one it takes from there. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_context_paint(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property, GVEC_Svg_Paint * out, bool * usable);
+
 //-----------------------------------------------------------------------------
 // Emitters (lower_emit_list.c, lower_emit_edit.c) and the trace (lower_trace.c)
 //-----------------------------------------------------------------------------

@@ -23,7 +23,7 @@ animation, and what SVG 2 does not define) are not refusals.
 | 8 `GVEC_LOWER_FILTER` | `filter` | G10 (V8) | `filter` naming anything, including an element the document does not have. | Filters are lowered in V8. |
 | 9 `GVEC_LOWER_TEXT` | `text` | G11 (V7) | A `text` element. | Text is lowered in V7, through the font library's layout and glyph runs. |
 | 10 `GVEC_LOWER_BLEND` | `blend` | G8 (V6) | `mix-blend-mode` other than `normal`. | Blend modes are lowered in V6. |
-| 11 `GVEC_LOWER_CONTEXT_PAINT` | `context-paint` | V3 | `context-fill` or `context-stroke` as a paint. | They name the paint of a marker's or a `use`'s context. A marker's is lowered; one outside a marker, and a `use`'s, are not. |
+| 11 `GVEC_LOWER_CONTEXT_PAINT` | `context-paint` | V3 | `context-fill` or `context-stroke` as a paint. | They name the paint of a marker's or a `use`'s context. Those in a marker or in a `use`'s referent are lowered; one anywhere else is not. |
 | 12 `GVEC_LOWER_UNSUPPORTED_COLOR_SPACE` | `unsupported-color-space` | G9 | A colour the shape waist cannot carry: a space it has no gamut for, or a colour that needs a conversion the waist does not define. | Converting would approximate the colour. The colour is reported where it was read, and the element using it is refused. |
 | 13 `GVEC_LOWER_FOREIGN_OBJECT` | `foreign-object` | never | A `foreignObject` that would be seen. | Its content is not SVG; this library does not render it. |
 | 14 `GVEC_LOWER_EXTERNAL_REFERENCE` | `external-reference` | never | A `use` of an element of another document, or of a `data:` URI. | Nothing is fetched, ever (the load never reads outside its input). |

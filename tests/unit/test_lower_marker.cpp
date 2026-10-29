@@ -288,6 +288,22 @@ TEST(LowerMarker, ContextPaintIsTheReferencingElementsAndMakesAPicturePerPair) {
   EXPECT_EQ(first[1].paint.rgba[1], 1.0);
 }
 
+TEST(LowerMarker, ContextPaintInAUseIsTheUsesPaint) {
+  Lowered l;
+  LowerSvg(Svg("width=\"60\" height=\"60\"",
+               "<defs><path id=\"p\" d=\"M0 0H4V4H0Z\" fill=\"context-fill\" stroke=\"context-stroke\"/></defs>"
+               "<use href=\"#p\" fill=\"#ff0000\" stroke=\"#00ff00\"/><use href=\"#p\" fill=\"#0000ff\" stroke=\"#00ff00\"/>"),
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  std::vector<GSHSCENE_Item> in = Instances(l);
+  ASSERT_EQ(in.size(), (size_t) 2);
+  EXPECT_NE(in[0].resource, in[1].resource);
+  std::vector<GSHSCENE_Item> first = Picture(in[0]);
+  ASSERT_GE(first.size(), (size_t) 2);
+  EXPECT_EQ(first[0].paint.rgba[0], 1.0);
+  EXPECT_EQ(first[1].paint.rgba[1], 1.0);
+}
+
 TEST(LowerMarker, ContextPaintOutsideAMarkerIsStillRefused) {
   Lowered l;
   LowerSvg(Svg("width=\"60\" height=\"60\"", "<path d=\"M10 10L30 10\" fill=\"context-fill\"/>"), l);
