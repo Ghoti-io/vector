@@ -35,6 +35,20 @@ std::string Num(double v) {
   return b;
 }
 
+// Field by field: the struct has padding, which a byte comparison would read.
+void ExpectSameArc(const GSHGEOM_Arc & a, const GSHGEOM_Arc & b) {
+  const GSHGEOM_Point pa[5] = {a.start, a.end, a.center, a.u, a.v};
+  const GSHGEOM_Point pb[5] = {b.start, b.end, b.center, b.u, b.v};
+  for (int i = 0; i < 5; i++) {
+    EXPECT_EQ(pa[i].x, pb[i].x);
+    EXPECT_EQ(pa[i].y, pb[i].y);
+  }
+  EXPECT_EQ(a.unit, b.unit);
+  EXPECT_EQ(a.t0, b.t0);
+  EXPECT_EQ(a.sweep, b.sweep);
+  EXPECT_EQ(a.flags, b.flags);
+}
+
 }  // namespace
 
 TEST(LowerArc, EveryReferenceVectorIsTheCentreFormTheReferenceGives) {
@@ -97,8 +111,8 @@ TEST(LowerArc, ARelativeArcAndTheCompactFlagSpellingAreTheSameArc) {
   ASSERT_TRUE(ArcOf("M10 10A5 5 0 1 1 20 10", absolute));
   ASSERT_TRUE(ArcOf("M10 10a5 5 0 1 1 10 0", relative));
   ASSERT_TRUE(ArcOf("M10 10A5 5 0 1120 10", compact));
-  EXPECT_EQ(std::memcmp(&absolute, &relative, sizeof absolute), 0);
-  EXPECT_EQ(std::memcmp(&absolute, &compact, sizeof absolute), 0);
+  ExpectSameArc(absolute, relative);
+  ExpectSameArc(absolute, compact);
 }
 
 TEST(LowerArc, AZeroRadiusIsALineAndEqualEndsDrawNothing) {
@@ -116,7 +130,7 @@ TEST(LowerArc, ANegativeRadiusIsItsAbsoluteValueAndASmallOneIsScaledUp) {
   GSHGEOM_Arc positive, negative, scaled;
   ASSERT_TRUE(ArcOf("M0 0A4 4 0 0 1 6 0", positive));
   ASSERT_TRUE(ArcOf("M0 0A-4 -4 0 0 1 6 0", negative));
-  EXPECT_EQ(std::memcmp(&positive, &negative, sizeof positive), 0);
+  ExpectSameArc(positive, negative);
   ASSERT_TRUE(ArcOf("M0 0A1 1 0 0 1 6 0", scaled));
   EXPECT_NEAR(scaled.center.x, 3.0, 1e-15);
   EXPECT_NEAR(scaled.center.y, 0.0, 1e-15);
