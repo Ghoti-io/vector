@@ -134,6 +134,7 @@
 #define gvec_lw_paint_of GHOTIIO_VECTOR(gvec_lw_paint_of)
 #define gvec_lw_paint_order GHOTIIO_VECTOR(gvec_lw_paint_order)
 #define gvec_lw_path_of GHOTIIO_VECTOR(gvec_lw_path_of)
+#define gvec_lw_primitive_of GHOTIIO_VECTOR(gvec_lw_primitive_of)
 #define gvec_lw_read_property GHOTIIO_VECTOR(gvec_lw_read_property)
 #define gvec_lw_rect_path GHOTIIO_VECTOR(gvec_lw_rect_path)
 #define gvec_lw_refuse GHOTIIO_VECTOR(gvec_lw_refuse)

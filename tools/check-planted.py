@@ -38,6 +38,8 @@ W = "src/codec/svg/lower/lower_walk.c"
 S = "src/codec/svg/lower/lower_stroke.c"
 # The markers.
 M = "src/codec/svg/lower/lower_marker.c"
+PR = "src/codec/svg/lower/lower_primitive.c"
+LP = "src/codec/svg/lower/lower_path.c"
 
 # (rule, source file, text, replacement, what the defect is)
 PLANTS = [
@@ -175,8 +177,18 @@ PLANTS = [
      "  if (ctx->levels + 3 > ctx->caps.node_depth) {\n    w->refused = true;", "marker pictures nest without a bound"),
     ("K9", W, "    ctx->context_set = true;\n    ctx->context_fill = use_fill;", "    ctx->context_set = false;\n    ctx->context_fill = use_fill;",
      "a use's referent does not see the use's paint"),
-    ("P7", "src/codec/svg/lower/lower_path.c", "    if (s->kind == GVEC_SVG_SEGMENT_ARC) {\n      *kind = GVEC_LW_GEOMETRY_ARC;\n      return GVEC_OK;\n    }",
-     "    if (0) {\n      return GVEC_OK;\n    }", "an arc is not refused"),
+    ("X1", LP, "s->large_arc,\n          s->sweep, NULL);", "s->sweep,\n          s->large_arc, NULL);", "an arc's two flags are exchanged"),
+    ("X1", LP, "s->rx, s->ry, s->rotation, GSHGEOM_ANGLE_DEGREES", "s->rx, s->ry, -s->rotation, GSHGEOM_ANGLE_DEGREES",
+     "an arc's rotation turns the other way"),
+    ("X1", LP, "s->rx, s->ry, s->rotation, GSHGEOM_ANGLE_DEGREES", "s->ry, s->rx, s->rotation, GSHGEOM_ANGLE_DEGREES", "an arc's radii are exchanged"),
+    ("X1", LP, "    case GVEC_SVG_SEGMENT_ARC: /* An arc to its own start adds nothing (SVG 2, 9.5.1). */\n",
+     "    case GVEC_SVG_SEGMENT_ARC:\n      drawn = true;\n", "an arc to its own start is drawn"),
+    ("X2", PR, "  if (rx > w / 2) {", "  if (rx > w) {", "a horizontal corner radius is not clamped to half the width"),
+    ("X2", PR, "  if (ry > h / 2) {", "  if (ry > h) {", "a vertical corner radius is not clamped to half the height"),
+    ("X2", PR, "    rx = ry; /* Both `auto` leaves both at 0: square. */", "    rx = 0;", "an auto rx does not take ry"),
+    ("X2", PR, "  if (!(w > 0) || !(h > 0)) {", "  if (!(w > 0) && !(h > 0)) {", "a rect of no width or no height is drawn"),
+    ("X2", PR, "      p.r[i].rx = rx;\n      p.r[i].ry = ry;", "      p.r[i].rx = ry;\n      p.r[i].ry = rx;", "a corner's radii are exchanged"),
+    ("X3", PR, "      ry = rx;\n      ry_auto = rx_auto;", "      ry = rx * 2;\n      ry_auto = rx_auto;", "a circle is an ellipse of unequal radii"),
     ("P7", W, '  *rule = gvec_lw_keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;', "  *rule = GSHGEOM_FILL_NONZERO;",
      "evenodd is nonzero"),
     ("P7", S, "    double alpha = paint->color.color.rgba[3] * opacity;", "    double alpha = paint->color.color.rgba[3] * (opacity * 0 + 1);",
@@ -205,8 +217,18 @@ PLANTS = [
     ("K6", W, "    else if (order[i] == GVEC_LW_PART_MARKERS) {", "    else if (0) {", "markers are not drawn"),
     ("K10", W, "  bool marked = kind == GVEC_SVG_KIND_PATH || kind == GVEC_SVG_KIND_LINE", "  bool marked = kind == GVEC_SVG_KIND_RECT || kind == GVEC_SVG_KIND_PATH || kind == GVEC_SVG_KIND_LINE",
      "a rect has markers"),
-    ("P7", "src/codec/svg/lower/lower_path.c", "    if (s->kind == GVEC_SVG_SEGMENT_ARC) {\n      *kind = GVEC_LW_GEOMETRY_ARC;\n      return GVEC_OK;\n    }",
-     "    if (0) {\n      return GVEC_OK;\n    }", "an arc is not refused"),
+    ("X1", LP, "s->large_arc,\n          s->sweep, NULL);", "s->sweep,\n          s->large_arc, NULL);", "an arc's two flags are exchanged"),
+    ("X1", LP, "s->rx, s->ry, s->rotation, GSHGEOM_ANGLE_DEGREES", "s->rx, s->ry, -s->rotation, GSHGEOM_ANGLE_DEGREES",
+     "an arc's rotation turns the other way"),
+    ("X1", LP, "s->rx, s->ry, s->rotation, GSHGEOM_ANGLE_DEGREES", "s->ry, s->rx, s->rotation, GSHGEOM_ANGLE_DEGREES", "an arc's radii are exchanged"),
+    ("X1", LP, "    case GVEC_SVG_SEGMENT_ARC: /* An arc to its own start adds nothing (SVG 2, 9.5.1). */\n",
+     "    case GVEC_SVG_SEGMENT_ARC:\n      drawn = true;\n", "an arc to its own start is drawn"),
+    ("X2", PR, "  if (rx > w / 2) {", "  if (rx > w) {", "a horizontal corner radius is not clamped to half the width"),
+    ("X2", PR, "  if (ry > h / 2) {", "  if (ry > h) {", "a vertical corner radius is not clamped to half the height"),
+    ("X2", PR, "    rx = ry; /* Both `auto` leaves both at 0: square. */", "    rx = 0;", "an auto rx does not take ry"),
+    ("X2", PR, "  if (!(w > 0) || !(h > 0)) {", "  if (!(w > 0) && !(h > 0)) {", "a rect of no width or no height is drawn"),
+    ("X2", PR, "      p.r[i].rx = rx;\n      p.r[i].ry = ry;", "      p.r[i].rx = ry;\n      p.r[i].ry = rx;", "a corner's radii are exchanged"),
+    ("X3", PR, "      ry = rx;\n      ry_auto = rx_auto;", "      ry = rx * 2;\n      ry_auto = rx_auto;", "a circle is an ellipse of unequal radii"),
     ("P7", W, '  *rule = gvec_lw_keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;', "  *rule = GSHGEOM_FILL_NONZERO;",
      "evenodd is nonzero"),
     ("P7", S, "    double alpha = paint->color.color.rgba[3] * opacity;", "    double alpha = paint->color.color.rgba[3] * (opacity * 0 + 1);",

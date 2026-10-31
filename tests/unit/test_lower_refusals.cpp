@@ -30,10 +30,6 @@ struct Case {
 TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
   static const char * const square = "<path d=\"M0 0H4V4H0Z\"/>";
   const Case cases[] = {
-      {"arc", GVEC_LOWER_ARC, "\n<path d=\"M0 0A5 5 0 0 1 9 9\"/>", "path", 2, 0},
-      {"rect", GVEC_LOWER_RECT, "\n<rect width=\"4\" height=\"4\"/>", "rect", 2, 0},
-      {"circle", GVEC_LOWER_RECT, "\n<circle r=\"4\"/>", "circle", 2, 0},
-      {"ellipse", GVEC_LOWER_RECT, "\n<ellipse rx=\"4\" ry=\"2\"/>", "ellipse", 2, 0},
       {"vector-effect", GVEC_LOWER_VECTOR_EFFECT, "\n<path d=\"M0 0H4V4H0Z\" stroke=\"red\" style=\"vector-effect: non-scaling-size\"/>", "path", 2, 0},
       {"gradient", GVEC_LOWER_GRADIENT, "<defs><linearGradient id=\"g\"/></defs>\n<path d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/>", "path", 2, 0},
       {"pattern", GVEC_LOWER_PATTERN, "<defs><pattern id=\"p\"/></defs>\n<path d=\"M0 0H4V4H0Z\" fill=\"url(#p)\"/>", "path", 2, 0},
@@ -91,7 +87,7 @@ TEST(LowerRefusals, TheExpansionLimitIsReportedAtTheUse) {
 TEST(LowerRefusals, ASinkSeenElementIsRefusedOnceHoweverOftenItIsDrawn) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><path id=\"a\" d=\"M0 0A1 1 0 0 1 2 2\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
+               "<defs><linearGradient id=\"g\"/><path id=\"a\" d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
       l);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
 }
@@ -123,10 +119,8 @@ TEST(LowerRefusals, ADanglingClipPathIsIgnoredAndADanglingMaskOrFilterIsNot) {
 }
 
 TEST(LowerRefusals, EachReasonHasANameAndTheNumbersAreStable) {
-  EXPECT_EQ(GVEC_LOWER_ARC, 1);
-  EXPECT_EQ(GVEC_LOWER_RECT, 2);
-  EXPECT_EQ(GVEC_LOWER_GRADIENT, 3);
-  EXPECT_STREQ(gvec_lower_reason_string(GVEC_LOWER_ARC), "arc");
+  EXPECT_EQ(GVEC_LOWER_GRADIENT, 1);
+  EXPECT_STREQ(gvec_lower_reason_string(GVEC_LOWER_GRADIENT), "gradient");
   EXPECT_STREQ(gvec_lower_reason_string(GVEC_LOWER_CLIP_PATH), "clip-path");
   EXPECT_STREQ(gvec_lower_reason_string((GVEC_Lower_Reason) 0), "unknown");
   EXPECT_STREQ(gvec_lower_reason_string(GVEC_LOWER_REASON_COUNT), "unknown");

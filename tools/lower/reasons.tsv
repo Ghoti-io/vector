@@ -1,8 +1,6 @@
 # The reasons an element is refused when it is lowered (GVEC_Lower_Reason), in the order of the enum.
 # Columns, separated by TAB: constant (after GVEC_LOWER_), name (gvec_lower_reason_string), lifted by (the phase or shape-family id whose work draws it, or 'never'), what is refused, why.
 # tools/lower/gen-reasons.py reads this and writes documentation/refusals.md and src/codec/svg/lower/lower_reason_table.h; `make check-test-data` fails if either is stale.
-ARC	arc	G1	An elliptical arc (`A`, `a`) in path data.	The arc is the shape family's exact primitive. Converting it to Bézier curves would approximate it, so the element is refused until the primitive is lowered.
-RECT	rect	G2	`rect`, `circle` or `ellipse` that would be painted.	These are the shape family's exact named shapes. Drawing them as polygons or curves would approximate them.
 GRADIENT	gradient	V4	A `linearGradient` or `radialGradient` paint.	Gradients are lowered in V4.
 PATTERN	pattern	G7 (V6)	A `pattern` paint.	Patterns are lowered in V6.
 CLIP_PATH	clip-path	G4 (V4)	`clip-path` naming a `clipPath` or a basic shape.	Clips are lowered in V4. A reference that names nothing is not a refusal: SVG 2 treats the property as if it were not specified.

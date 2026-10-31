@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- The chiral fixture (AD-6): nothing here is symmetric, so a mirrored, reversed or rotated rendering differs from the golden.
+     An F-shaped path, the four flag combinations of an arc from the same two points, a rotated elliptical arc and a rounded
+     rectangle with unequal radii. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120">
+  <path d="M8 8H34V16H18V26H30V34H18V50H8Z" fill="#268bd2"/>
+  <g fill="none" stroke-width="2">
+    <path d="M50 20A14 8 0 0 0 78 28" stroke="#dc322f"/>
+    <path d="M50 20A14 8 0 0 1 78 28" stroke="#859900"/>
+    <path d="M50 20A14 8 0 1 0 78 28" stroke="#b58900"/>
+    <path d="M50 20A14 8 0 1 1 78 28" stroke="#6c71c4"/>
+    <path d="M100 20A18 7 35 0 1 140 44" stroke="#2aa198"/>
+  </g>
+  <path d="M10 70A16 12 0 0 1 40 62A12 16 0 1 0 60 100L10 100Z" fill="#cb4b16" fill-opacity=".8"/>
+  <rect x="80" y="64" width="66" height="44" rx="20" ry="8" fill="#eee8d5" stroke="#073642" stroke-width="2"/>
+  <circle cx="100" cy="86" r="9" fill="#d33682"/>
+  <ellipse cx="126" cy="88" rx="12" ry="5" fill="#586e75"/>
+</svg>

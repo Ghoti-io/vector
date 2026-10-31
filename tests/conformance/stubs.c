@@ -77,7 +77,7 @@ static GVEC_Result lower_exact_refused(const GVEC_Doc * doc, const GVEC_Lower_Op
     GSHSCENE_List * list, GVEC_Diagnostics * diagnostics) {
   GVEC_Result r = lower_exact(doc, options, list, diagnostics);
   if (r == GVEC_OK && diagnostics) {
-    r = gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED, GVEC_LOWER_ARC, 1, 1, 0,
+    r = gvec_diag_add(diagnostics, GVEC_DIAG_ERROR, GVEC_DIAG_LOWER_REFUSED, GVEC_LOWER_GRADIENT, 1, 1, 0,
         "rect", "refused by the planted lowering");
   }
   return r;

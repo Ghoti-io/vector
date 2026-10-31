@@ -89,9 +89,7 @@ extern "C" {
  * documentation/refusals.md.
  */
 typedef enum GVEC_Lower_Reason {
-  GVEC_LOWER_ARC = 1,                  ///< An elliptical arc in path data (the shape family's G1).
-  GVEC_LOWER_RECT,                     ///< `rect`, `circle` or `ellipse` (G2: the named shapes).
-  GVEC_LOWER_GRADIENT,                 ///< A gradient paint.
+  GVEC_LOWER_GRADIENT = 1,                 ///< A gradient paint.
   GVEC_LOWER_PATTERN,                  ///< A pattern paint (G7).
   GVEC_LOWER_CLIP_PATH,                ///< `clip-path` (G4).
   GVEC_LOWER_MASK,                     ///< `mask` (G5).
@@ -113,7 +111,7 @@ typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_REASON_COUNT              ///< One past the last reason; not a reason.
 } GVEC_Lower_Reason;
 
-/** The name of a reason, for example "arc"; "unknown" for a value outside the enum. Static. */
+/** The name of a reason, for example "gradient"; "unknown" for a value outside the enum. Static. */
 GVEC_API const char * gvec_lower_reason_string(GVEC_Lower_Reason reason);
 
 /** Which element, drawn how, each item of a lowering came from (see the file's description). Free with gvec_lower_trace_free(). */

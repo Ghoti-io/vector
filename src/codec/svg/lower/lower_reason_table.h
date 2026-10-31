@@ -31,8 +31,6 @@ static const struct {
   const char * name;
 } gvec_lower_reason_rows[] = {
   {NULL}, /* 0 is no reason */
-  {"arc"}, /* ARC */
-  {"rect"}, /* RECT */
   {"gradient"}, /* GRADIENT */
   {"pattern"}, /* PATTERN */
   {"clip-path"}, /* CLIP_PATH */

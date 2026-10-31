@@ -688,7 +688,11 @@ GVEC_Result gvec_lw_centerline_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   *path = NULL;
   *usable = true;
-  if (gvec_svg_element_kind(e) != GVEC_SVG_KIND_LINE) {
+  GVEC_Svg_Kind kind = gvec_svg_element_kind(e);
+  if (kind == GVEC_SVG_KIND_RECT || kind == GVEC_SVG_KIND_CIRCLE || kind == GVEC_SVG_KIND_ELLIPSE) {
+    return gvec_lw_primitive_of(ctx, inst, geometry, path, usable);
+  }
+  if (kind != GVEC_SVG_KIND_LINE) {
     return gvec_lw_path_of(ctx, e, true, geometry, path);
   }
   double x1, y1, x2, y2;
@@ -753,25 +757,22 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (!filled && !stroked && !marked) {
     return GVEC_OK;
   }
-  switch (kind) {
-  case GVEC_SVG_KIND_RECT:
-  case GVEC_SVG_KIND_CIRCLE:
-  case GVEC_SVG_KIND_ELLIPSE:
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_RECT, "rect, circle and ellipse wait for the shape family's exact primitives");
-  default:
-    break;
-  }
   gvec_lw_node * fill_node = NULL;
   gvec_lw_node * stroke_node = NULL;
   gvec_lw_geometry geometry;
   const GSHSCENE_Resource * path = NULL;
   if (filled) {
-    r = gvec_lw_path_of(ctx, e, false, &geometry, &path);
-    if (r != GVEC_OK) {
-      return r;
-    }
-    if (geometry == GVEC_LW_GEOMETRY_ARC) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_ARC, "an elliptical arc waits for the shape family's exact primitive");
+    if (kind == GVEC_SVG_KIND_RECT || kind == GVEC_SVG_KIND_CIRCLE || kind == GVEC_SVG_KIND_ELLIPSE) {
+      bool usable;
+      r = gvec_lw_primitive_of(ctx, inst, &geometry, &path, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+    } else {
+      r = gvec_lw_path_of(ctx, e, false, &geometry, &path);
+      if (r != GVEC_OK) {
+        return r;
+      }
     }
     if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
@@ -788,9 +789,6 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
     r = gvec_lw_centerline_of(ctx, inst, &geometry, &path, &usable);
     if (r != GVEC_OK || !usable) {
       return r;
-    }
-    if (geometry == GVEC_LW_GEOMETRY_ARC) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_ARC, "an elliptical arc waits for the shape family's exact primitive");
     }
     if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");

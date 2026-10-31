@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include <ghoti.io/shape-geometry/arc.h>
 #include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/shape-scene.h>
 
@@ -175,12 +176,24 @@ inline std::string Describe(const GSHSCENE_Resource * resource) {
   std::string out;
   char buffer[128];
   for (size_t i = 0; i < gshgeom_path_element_count(path); i++) {
+    if (!out.empty()) {
+      out += ' ';
+    }
+    GSHGEOM_Verb verb = GSHGEOM_VERB_MOVE;
+    if (gshgeom_path_verb(path, i, &verb) == GSHGEOM_OK && verb == GSHGEOM_VERB_ARC) {
+      // An arc is read through the arc API: `A` end, centre, the half-diameters u and v, and the signed sweep.
+      GSHGEOM_Arc a;
+      if (gshgeom_path_arc(path, i, &a) != GSHGEOM_OK) {
+        return out + " (unreadable arc)";
+      }
+      std::snprintf(buffer, sizeof(buffer), "A%g,%g c%g,%g u%g,%g v%g,%g s%g", a.end.x, a.end.y, a.center.x, a.center.y, a.u.x, a.u.y,
+          a.v.x, a.v.y, a.sweep);
+      out += buffer;
+      continue;
+    }
     GSHGEOM_Element e;
     if (gshgeom_path_element(path, i, &e) != GSHGEOM_OK) {
       return out + " (unreadable)";
-    }
-    if (!out.empty()) {
-      out += ' ';
     }
     switch (e.verb) {
     case GSHGEOM_VERB_MOVE:

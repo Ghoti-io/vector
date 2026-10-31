@@ -69,10 +69,14 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element
     if (!ctx->context_set) {
       return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "context-fill and context-stroke are lowered only inside a marker");
     }
-    /* The paint of the element the marker is drawn for, which was resolved when the marker was entered, so it is never itself a
-     * context paint. The opacity is the content's own. */
-    return gvec_lw_paint_of(
-        ctx, element, paint->kind == GVEC_SVG_PAINT_CONTEXT_FILL ? &ctx->context_fill : &ctx->context_stroke, opacity, out, decision);
+    /* The paint of the element the marker (or `use`) is drawn for. It was resolved when that was entered, but an element that
+     * is not itself inside a context has a context paint of its own that names nothing, and following it would not end. The
+     * opacity is the content's own. */
+    const GVEC_Svg_Paint * named = paint->kind == GVEC_SVG_PAINT_CONTEXT_FILL ? &ctx->context_fill : &ctx->context_stroke;
+    if (named->kind == GVEC_SVG_PAINT_CONTEXT_FILL || named->kind == GVEC_SVG_PAINT_CONTEXT_STROKE) {
+      return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "the context element's own paint is a context paint that names nothing");
+    }
+    return gvec_lw_paint_of(ctx, element, named, opacity, out, decision);
   default:
     return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "this paint is not lowered");
   }

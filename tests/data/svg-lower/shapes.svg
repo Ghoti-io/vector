@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- The named shapes (X2, X3): rect with the auto rule, clamps and percentages, circle, ellipse, strokes, a dashed outline,
+     shapes that are not rendered, and a marker on a path that follows a rounded rect. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="90" viewBox="0 0 120 90">
+  <rect x="4" y="4" width="30" height="20" fill="#268bd2"/>
+  <rect x="40" y="4" width="30" height="20" rx="6" fill="#2aa198"/>
+  <rect x="76" y="4" width="30" height="20" ry="4" rx="auto" fill="#859900"/>
+  <rect x="4" y="30" width="30" height="20" rx="99" fill="#b58900" stroke="#073642" stroke-width="2"/>
+  <rect x="40" y="30" width="30" height="20" rx="-3" ry="2" fill="#dc322f"/>
+  <rect x="76%" y="34%" width="20%" height="20%" rx="10%" fill="#6c71c4"/>
+  <circle cx="20" cy="70" r="12" fill="#d33682" stroke="#fdf6e3" stroke-width="3"/>
+  <ellipse cx="56" cy="70" rx="14" ry="8" fill="none" stroke="#cb4b16" stroke-width="2" stroke-dasharray="6 3"/>
+  <ellipse cx="90" cy="70" rx="10" fill="#586e75"/>
+  <circle cx="110" cy="70" r="0" fill="red"/>
+  <rect width="0" height="10" fill="red"/>
+  <rect width="10" height="-4" fill="red"/>
+</svg>

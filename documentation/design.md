@@ -416,8 +416,29 @@ at most half the nodes a version of the scene may hold); the element that would 
 nested past the scene's depth is refused where it is. A marker whose content refers back to it is cut by the document's
 reference graph, which says so when it loads: nothing recurses.
 
-**K10 What is not a marker.** A `rect`, a `circle` and an `ellipse` have no markers, as SVG 2 says. A marker on a shape with
-an elliptical arc is refused with `arc` until the arc is the shape family's primitive.
+**K10 What is not a marker.** A `rect`, a `circle` and an `ellipse` have no markers, as SVG 2 says. A marker on a path with an
+elliptical arc is placed like any other: an arc is one segment that ends one vertex, at its authoritative end.
+
+**X1 Arcs.** Path data holds an arc in endpoint form and the lowering gives it, as written, to the geometry library's
+endpoint constructor with the current point, the end, the radii, the rotation in degrees and the two flags. The library owns
+SVG 2's radius correction (a zero radius is a line, a negative radius its absolute value, radii too small scaled up) and the
+degenerate cases (equal ends add nothing). Nothing in this library computes a centre, an angle or a conic, and a path with
+arcs stays a path with arcs all the way to the sink. The reference vectors of the tests are made by a script that shares no
+code with either library (`tools/lower/gen-arc-vectors.py`, 80-digit decimal arithmetic).
+
+**X2 `rect`.** The style layer gives `x`, `y`, `width`, `height`, `rx` and `ry` as used lengths in user units (a percentage
+is already of its basis). A width or height that is zero, negative or `auto` is not rendered. `rx` and `ry` take each
+other's value when one is `auto` (a negative value is an error and is dropped by the style layer, so it is `auto`); both
+`auto` is square; each is then clamped to half its side; a zero radius is a plain rectangle. The waist is handed the resolved
+radii, equal in the four corners, because the rule that clamps each radius alone is SVG's, not the waist's.
+
+**X3 `circle` and `ellipse`.** `r` (or `rx` and `ry`, each taking the other's value when `auto`) of zero or less is not
+rendered; otherwise the ellipse primitive, which starts at three o'clock and turns the positive way, as SVG 2 says, so dashes
+and markers begin where a browser's do. A circle is an ellipse of equal radii.
+
+**X4 A shape is its tag.** The path of a `rect`, `circle` or `ellipse` is interned through the waist's primitive constructor,
+so the resource carries the tag a document writer or an analytic sink reads; the renderer ignores it and draws the path. A
+stroke of one of them is a stroke of the tagged path.
 
 ## Threads
 

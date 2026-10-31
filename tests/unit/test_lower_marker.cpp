@@ -310,6 +310,18 @@ TEST(LowerMarker, ContextPaintOutsideAMarkerIsStillRefused) {
   EXPECT_NE(l.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
 }
 
+// A `use` that is itself outside any context has a context paint that names nothing; following it from the referent
+// used to loop for ever.
+TEST(LowerMarker, AUseWhoseOwnPaintIsAContextPaintOutsideAContextIsRefusedNotFollowedForEver) {
+  Lowered l;
+  LowerSvg(Svg("width=\"60\" height=\"60\"",
+               "<defs><rect id=\"r\" width=\"10\" height=\"10\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs>"
+               "<use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>"
+               "<use href=\"#u2\" stroke=\"green\" fill=\"blue\"/>"),
+      l);
+  EXPECT_NE(l.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
+}
+
 TEST(LowerMarker, AMissingMarkerAndAnElementThatIsNoMarkerDrawNoneAndTheSecondIsSaid) {
   Lowered missing;
   LowerSvg(OnlyMarkers("", "<path d=\"M10 10L30 10\" fill=\"none\" marker-start=\"url(#nothing)\"/>"), missing);
@@ -449,10 +461,10 @@ TEST(LowerMarker, TheElementsOpacityIsOneGroupOverItsFillStrokeAndMarkers) {
 }
 
 TEST(LowerMarker, ADegenerateAndAnArcPathAreHandledByTheirRules) {
-  Lowered arc;  // an arc cannot be placed until the shape family has its exact primitive
-  LowerSvg(OnlyMarkers(Marker("orient=\"0\""), "<path d=\"M10 10A5 5 0 0 1 20 10\" fill=\"none\" marker-start=\"url(#m)\"/>"), arc);
-  EXPECT_NE(arc.Refusal(GVEC_LOWER_ARC), nullptr);
-  EXPECT_EQ(Instances(arc).size(), (size_t) 0);
+  Lowered arc;  // an arc is one segment that ends one vertex, at its authoritative end
+  LowerSvg(OnlyMarkers(Marker("orient=\"0\""), "<path d=\"M10 10A5 5 0 0 1 20 10\" fill=\"none\" marker-start=\"url(#m)\" marker-end=\"url(#m)\"/>"), arc);
+  EXPECT_EQ(arc.Refusals(), (size_t) 0);
+  EXPECT_EQ(Instances(arc).size(), (size_t) 2);
   Lowered point;  // a path of one point has no marker position to speak of
   LowerSvg(OnlyMarkers(Marker("orient=\"0\""), "<path d=\"M10 10\" fill=\"none\" marker-start=\"url(#m)\"/>"), point);
   EXPECT_EQ(Instances(point).size(), (size_t) 0);

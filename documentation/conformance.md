@@ -87,39 +87,41 @@ case that draws something can be compared with its reference.
 
 ## The score today
 
-The lowering draws structure, solid fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline` and `line`, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **4 of 1,679
-(0.24%)**, with the tolerance at zero.
+The lowering draws structure, solid fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **6 of 1,679
+(0.36%)**, with the tolerance at zero.
 
 | directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
-| `masking` | 93 | 0 | 0 | 54 | 0 | 39 | 0 |
+| `masking` | 93 | 0 | 2 | 52 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 0 | 0 | 118 | 0 | 31 | 0 |
-| `painting` | 304 | 1 | 0 | 278 | 0 | 25 | 0 |
-| `shapes` | 133 | 0 | 0 | 133 | 0 | 0 | 0 |
-| `structure` | 247 | 3 | 0 | 178 | 1 | 65 | 0 |
+| `painting` | 304 | 1 | 217 | 61 | 0 | 25 | 0 |
+| `shapes` | 133 | 0 | 130 | 3 | 0 | 0 | 0 |
+| `structure` | 247 | 5 | 141 | 35 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **4** | **0** | **761** | **1** | **913** | **0** |
+| **all** | **1679** | **6** | **490** | **269** | **1** | **913** | **0** |
 
-The four that pass are `painting/display/none-on-svg`, `structure/svg/no-children`, `structure/svg/zero-size` and
-`structure/systemLanguage/on-svg`: each is a document that draws nothing, and the library draws nothing for it. They
-are real passes (the document loaded, the lowering refused nothing, and the render equals the reference), and they are
-the whole of what this version can score.
+The six that pass are `painting/display/none-on-svg`, `structure/svg/no-children`,
+`structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
+`structure/systemLanguage/on-svg`. Five draw nothing and the library draws nothing for them; `preserveAspectRatio=xMaxYMax-slice`
+is the first that draws something and is equal to its reference at zero tolerance.
 
-Almost nothing else can pass yet, for one reason that is easy to read off the report. The first element refused in each
-of the 761 refused cases is a `rect` in 628 of them (the corpus draws an "image frame", a `rect` with a stroke, in
-almost every file), a `circle` in 52, `text` in 26, a `path` in 23 (an arc), an `ellipse` in 12, a `use` in 8 and a `line`
-in 5. Strokes and markers moved the `path` count from 172 to 23 and the `line` count from 16 to 5 and did not move the score,
-because the frame that is refused first in nearly every file is a `rect`. The named shapes are the next phase of the plan, and
-they decide how much of this table moves.
-No case has been seen to **fail**: every case that is drawn at all is one that draws nothing.
+The named shapes moved 492 cases out of REFUSED, which was the finding of the previous measurement, and almost all of
+them went to **FAIL**: 490 cases are now drawn and differ from the reference at a tolerance of zero. They are not a
+count of wrong drawings. The difference is small in most of them: the median case has 0.14% of its pixels different, and 436 of
+the 490 have under 1%, which is the signature of anti-aliasing at the edges of a shape, not of a shape in the wrong place.
+The largest per-channel difference has a median of 25 of 255 and a maximum of 255.
 
-The tolerance is therefore still zero, and that is the finding, not an omission. The only passing cases are blank, so
-their distance to the references and to both oracles is zero and says nothing about how shape-cpu's anti-aliasing
-differs from the references'; the table above (the oracles' distances) is measured over the cases the oracles draw, and
-no case that the library draws is among them. `TOLERANCE` stays at `max-diff 0`, `max-bad-ppm 0` and `evidence none`
-until a case that draws something passes or fails against a reference, which is the first evidence it can be set from.
+The remaining refusals are led by cases whose first refused element is a `rect` that carries something the lowering
+refuses (a gradient, a clip or a filter), then `text`, then `g` and `use`.
+No case has been seen to **error**; the two that timed out in the previous run (`painting/color/recursive-nested-context*`)
+were an endless walk of a `context-fill` that named nothing, which is now a refusal.
+
+The tolerance is still zero, and that is now a decision waiting on evidence rather than an omission: cases that draw
+something fail against the references at zero, and the distances of those cases are the first data a tolerance can be
+set from. `TOLERANCE` stays at `max-diff 0`, `max-bad-ppm 0` and `evidence none` until that is done from the
+oracles' distances over the cases they draw, not from this library's own output.
 
 The one case that does not load is `structure/svg/not-UTF-8-encoding.svg`, whose declaration is
 `encoding="Windows-1251"`: the XML parser reads UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII, and not that

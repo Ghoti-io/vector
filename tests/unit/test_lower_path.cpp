@@ -115,20 +115,6 @@ TEST(LowerPath, PathDataWithNoValidPrefixOrNoDataDrawsNothing) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerPath, AnArcRefusesTheWholeElementAtItsLine) {
-  Lowered l;
-  LowerSvg(Svg("width=\"100\" height=\"100\"",
-               "\n<path d=\"M0 0 L5 5 A5 5 0 0 1 10 0\"/>\n<path d=\"M0 0 a5 5 0 0 1 10 0\"/>\n<path d=\"M0 0H4V4H0Z\"/>"),
-      l);
-  EXPECT_EQ(l.Refusals(), (size_t) 2);
-  EXPECT_EQ(l.Items(), (size_t) 1);  // only the arcless path; neither arc is partly drawn
-  const GVEC_Diagnostic * d = l.Refusal(GVEC_LOWER_ARC);
-  ASSERT_NE(d, nullptr);
-  EXPECT_EQ(d->line, (size_t) 2);
-  EXPECT_STREQ(d->element, "path");
-  EXPECT_EQ(d->severity, GVEC_DIAG_ERROR);
-}
-
 TEST(LowerPath, ACoordinatePastTheWaistsRangeIsALimitNotAClamp) {
   Lowered l;
   LowerSvg(Svg("width=\"100\" height=\"100\"", "<path d=\"M0 0 L1e200 0 L0 1e200 Z\"/><polygon points=\"0 0 1e200 0 0 1e200\"/>"), l);

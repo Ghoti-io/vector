@@ -296,7 +296,6 @@ GVEC_INTERNAL_API bool gvec_lw_viewbox_map(const GVEC_Svg_View_Box * box, const 
 typedef enum gvec_lw_geometry {
   GVEC_LW_GEOMETRY_EMPTY = 0, ///< Nothing to fill.
   GVEC_LW_GEOMETRY_PATH,      ///< `*out_resource` is a path (the context holds it).
-  GVEC_LW_GEOMETRY_ARC,       ///< The path has an arc: refuse the element.
   GVEC_LW_GEOMETRY_LIMIT      ///< A coordinate or a count the waist cannot carry: refuse the element.
 } gvec_lw_geometry;
 
@@ -308,6 +307,13 @@ typedef enum gvec_lw_geometry {
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, bool for_stroke,
     gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
+
+/**
+ * The named primitive of a `rect`, `circle` or `ellipse` instance, interned in the store with its tag. `*usable` is false when a
+ * property had no usable value (the element was refused); a shape that is not rendered (a zero size) is `EMPTY`.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_primitive_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_geometry * out_kind,
+    const GSHSCENE_Resource ** out_resource, bool * usable);
 
 /** The centerline from (`x1`, `y1`) to (`x2`, `y2`), interned in the store. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, double y1, double x2, double y2,

@@ -129,7 +129,10 @@ line when the document is built.
   SVG 2 has them. The content inherits from the marker's place in the document, and `context-fill` and `context-stroke` are the
   paints of the shape the marker is for (and, in the referent of a `use`, of the `use`), so one marker used with two paints is two pictures. Marker instances are counted over
   the lowering and bounded by `GVEC_Lower_Options.max_marker_instances`; a marker length in a unit that needs the cascade (`em`,
-  `%`) is refused. A marker on a shape with an elliptical arc is refused with `arc`.
+  `%`) is refused. A path with an elliptical arc has markers like any other.
+* **Arcs and the named shapes**: an elliptical arc is the geometry library's exact arc, built in endpoint form from the segment as
+  written (SVG 2, 9.5.1 owns the radius correction). `rect`, `circle` and `ellipse` are its named primitives: SVG 2's rules for
+  `auto`, negative and over-large `rx` and `ry`, and for a size of zero, are applied here and the resolved numbers are handed on.
 * **Refusals** are listed, with what lifts each, in `refusals.md`. `clip-path` naming a `clipPath` or a basic shape,
   `mask`, `filter` and `mix-blend-mode` refuse the element that carries them, whole; `clip-path: url(#nothing)` is ignored, as
   SVG 2 says (a reference that names nothing leaves the property unspecified), and a `mask` or `filter` that names nothing is

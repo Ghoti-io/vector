@@ -593,6 +593,7 @@ check-test-data: ## Fail unless the fixtures, the fuzz seeds, the vectors and th
 	@python3 tools/gen-lower-vectors.py --check
 	@python3 tools/gen-lower-fixtures.py --check
 	@python3 tools/lower/gen-reasons.py --check
+	@python3 tools/lower/gen-arc-vectors.py --check
 
 check-front-end: $(APP_DIR)/$(STATIC_TARGET) ## Fail on a scene.h include or a symbol that reads the environment, locale or clock
 	@tools/check-front-end.sh --includes . --lowering $(OBJ_DIR)/codec/svg/lower --symbols $(APP_DIR)/$(STATIC_TARGET)

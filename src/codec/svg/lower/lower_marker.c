@@ -462,11 +462,9 @@ GVEC_Result gvec_lw_markers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
     out->refused = !usable;
     return r;
   }
-  if (geometry == GVEC_LW_GEOMETRY_ARC || geometry == GVEC_LW_GEOMETRY_LIMIT) {
+  if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
     out->refused = true;
-    return geometry == GVEC_LW_GEOMETRY_ARC
-               ? gvec_lw_refuse(ctx, e, GVEC_LOWER_ARC, "an elliptical arc waits for the shape family's exact primitive")
-               : gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
   }
   if (geometry != GVEC_LW_GEOMETRY_PATH) {
     return GVEC_OK;

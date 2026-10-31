@@ -22,14 +22,18 @@
  * @file lower_path.c
  *
  * The geometry of `path`, `polygon` and `polyline` as a model path (P7), made once for both emitters and interned in the store.
- * Arcs are not converted: they are the shape family's exact primitive and the element is refused until it draws them.
+ * An arc is handed to the geometry library in endpoint form, as the document holds it: the library owns the radius correction and
+ * the degenerate cases, and nothing here computes a centre, an angle or a conic.
  */
 
 #include <ghoti.io/vector/macros.h>
 
 #include <string.h>
 
+#include <ghoti.io/shape-geometry/arc.h>
 #include <ghoti.io/shape-geometry/path.h>
+#include <ghoti.io/shape-geometry/shapes.h>
+#include <ghoti.io/shape-scene/primitive.h>
 #include <ghoti.io/shape-scene/resource.h>
 
 #include "lower_internal.h"
@@ -86,8 +90,8 @@ static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment 
   bool drawn = false;
   for (size_t i = 0; i < count; i++) {
     const GVEC_Svg_Path_Segment * s = &segments[i];
-    if (s->kind == GVEC_SVG_SEGMENT_ARC) {
-      *kind = GVEC_LW_GEOMETRY_ARC;
+    if (s->kind == GVEC_SVG_SEGMENT_ARC && (!finite(s->rx) || !finite(s->ry) || !finite(s->rotation))) {
+      *kind = GVEC_LW_GEOMETRY_LIMIT;
       return GVEC_OK;
     }
     if (!finite(s->x0) || !finite(s->y0) || !finite(s->x1) || !finite(s->y1) || !finite(s->x2) || !finite(s->y2) || !finite(s->x) ||
@@ -101,6 +105,7 @@ static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment 
     }
     switch (s->kind) {
     case GVEC_SVG_SEGMENT_LINE:
+    case GVEC_SVG_SEGMENT_ARC: /* An arc to its own start adds nothing (SVG 2, 9.5.1). */
       drawn = drawn || s->x != s->x0 || s->y != s->y0;
       break;
     case GVEC_SVG_SEGMENT_QUAD:
@@ -137,6 +142,14 @@ static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment 
       break;
     case GVEC_SVG_SEGMENT_CUBIC:
       g = gshgeom_path_cubic_to(path, point(s->x1, s->y1), point(s->x2, s->y2), point(s->x, s->y));
+      break;
+    case GVEC_SVG_SEGMENT_ARC:
+      g = gshgeom_path_arc_endpoint_to(path, point(s->x, s->y), s->rx, s->ry, s->rotation, GSHGEOM_ANGLE_DEGREES, s->large_arc,
+          s->sweep, NULL);
+      if (g == GSHGEOM_ERR_INVALID) {
+        /* The flags are 0 or 1 by the grammar, so a refused arc has a radius or an end the waist's range cannot hold. */
+        g = GSHGEOM_ERR_LIMIT;
+      }
       break;
     case GVEC_SVG_SEGMENT_CLOSE:
       g = gshgeom_path_close(path);
