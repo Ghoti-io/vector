@@ -355,7 +355,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     const void * bytes = NULL;
     size_t length = 0;
     gvec_stream_output_buffer(out, &bytes, &length);
-    check(length >= 15 && memcmp(bytes, "css-computed 1\n", 15) == 0, "a dump begins with its versioned header");
+    check(length >= 13 && memcmp(bytes, "css-computed ", 13) == 0, "a dump begins with its versioned header");
   }
   gvec_stream_destroy(out);
 

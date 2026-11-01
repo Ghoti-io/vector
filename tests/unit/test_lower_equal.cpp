@@ -6,6 +6,11 @@
  * target whose arithmetic differs fails here.
  */
 
+/* A 32-bit readdir fails on a directory whose entries carry 64-bit cookies unless the file offset is 64 bits wide. */
+#ifndef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
 #include "../lower_helpers.h"
 
 #include <dirent.h>

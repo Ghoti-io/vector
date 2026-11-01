@@ -405,7 +405,7 @@ TEST(SvgStyleColor, WideGamutsAreCarriedAsTheyAre) {
 
 TEST(SvgStyleColor, SpacesTheWaistCannotCarryAreRefusedAndReported) {
   Styled s(Svg("", "<rect id=\"lab\" fill=\"lab(50% 40 59)\"/><rect id=\"oklch\" fill=\"oklch(60% 0.15 50)\"/>"
-                   "<rect id=\"mix\" fill=\"color-mix(in srgb, red, blue)\"/><rect id=\"xyz\" fill=\"color(xyz 0.2 0.3 0.4)\"/>"
+                   "<rect id=\"mix\" fill=\"color-mix(in oklab, red, blue)\"/><rect id=\"xyz\" fill=\"color(xyz 0.2 0.3 0.4)\"/>"
                    "<rect id=\"ok\" fill=\"red\"/>"));
   EXPECT_EQ(s.Get("lab", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED).kind, GVEC_SVG_STYLE_PAINT);
   s.Get("oklch", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
@@ -620,6 +620,15 @@ TEST(SvgStyleCascade, CustomPropertiesAndVar) {
   EXPECT_EQ(FillOf(s, "cyc").color.rgba[1], 128.0 / 255.0);  /* a cycle is invalid, so the fallback */
 }
 
+TEST(SvgStyleColor, AMixInSrgbIsComputedToAnSrgbColorTheWaistCarries) {
+  Styled s(Svg("", "<rect id=\"mix\" fill=\"color-mix(in srgb, red, blue)\"/>"));
+  GVEC_Svg_Color c = FillOf(s, "mix");
+  EXPECT_NEAR(c.color.rgba[0], 0.5, 1e-12);
+  EXPECT_EQ(c.color.rgba[1], 0.0);
+  EXPECT_NEAR(c.color.rgba[2], 0.5, 1e-12);
+  EXPECT_EQ(s.Count(GVEC_DIAG_UNSUPPORTED_COLOR_SPACE), 0u);
+}
+
 TEST(SvgStyleDump, ACanonicalTextAndAHash) {
   Styled s(Svg("", "<g fill=\"red\"><rect id=\"r\" stroke-width=\"2\"/></g>"));
   GVEC_Stream * out = nullptr;
@@ -630,7 +639,7 @@ TEST(SvgStyleDump, ACanonicalTextAndAHash) {
   gvec_stream_output_buffer(out, &data, &size);
   std::string text((const char *) data, size);
   gvec_stream_destroy(out);
-  EXPECT_EQ(text.rfind("css-computed 1\n", 0), 0u);
+  EXPECT_EQ(text.rfind("css-computed ", 0), 0u);  /* the version after it is the text library's */
   EXPECT_NE(text.find("\nfill: red\n"), std::string::npos);
   EXPECT_NE(text.find("\nstroke-width: 2px\n"), std::string::npos);
   uint64_t a = 0, b = 0;
