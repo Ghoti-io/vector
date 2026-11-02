@@ -285,6 +285,20 @@ TEST(LowerViewport, ATransformOnTheRootIsAppliedAndAnEmptyViewportIsNoGroup) {
   EXPECT_EQ(l.Items(), (size_t) 0);
 }
 
+TEST(LowerViewport, ASymbolHasNoTransformOfItsOwn) {
+  Lowered with, without;
+  LowerSvg(Svg("width=\"100\" height=\"100\"",
+      "<symbol id=\"s\" transform=\"scale(3)\"><rect width=\"10\" height=\"10\" fill=\"red\"/></symbol>"
+      "<use href=\"#s\"/>"), with);
+  LowerSvg(Svg("width=\"100\" height=\"100\"",
+      "<symbol id=\"s\"><rect width=\"10\" height=\"10\" fill=\"red\"/></symbol><use href=\"#s\"/>"), without);
+  ASSERT_EQ(with.Items(), without.Items());
+  ASSERT_GE(with.Items(), (size_t) 1);
+  // The drawing is the same: the transform of a symbol is SVG 2's, and a use's own transform is what moves it.
+  EXPECT_EQ(Describe(with.Item(0).resource), Describe(without.Item(0).resource));
+  EXPECT_EQ(with.Item(0).map.m[0][0], without.Item(0).map.m[0][0]);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

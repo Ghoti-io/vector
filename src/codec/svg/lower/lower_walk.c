@@ -453,7 +453,10 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   if (v.transform.depends_on_box) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box is not lowered yet");
   }
-  if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {
+  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_SYMBOL) {
+    c->local = *frame; /* A symbol has no transform in SVG 1.1, and the reference corpus follows that. */
+  }
+  else if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);

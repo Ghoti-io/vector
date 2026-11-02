@@ -135,7 +135,7 @@ PLANTS = [
      "a group is made for every element"),
     ("P5", W, "  c->draw = c->opacity > 0; /* Opacity zero draws nothing, whatever is inside. */", "  c->draw = true;",
      "an element with opacity zero is drawn"),
-    ("P5", W, "  if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {", "  if (!gvec_lw_compose(&v.transform.map, frame, &c->local)) {",
+    ("P5", W, "  else if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {", "  else if (!gvec_lw_compose(&v.transform.map, frame, &c->local)) {",
      "a transform composes the wrong way round"),
     ("P6", W, "  if (leaf && !c->visible) {", "  if (leaf && 0 && !c->visible) {",
      "visibility: hidden does not remove a shape"),
