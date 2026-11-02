@@ -29,6 +29,7 @@
 #include <ghoti.io/vector/macros.h>
 
 #include <string.h>
+#include <strings.h>
 
 #include <ghoti.io/cutil/safemath.h>
 
@@ -1244,7 +1245,77 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   return r;
 }
 
+GVEC_Result gvec_lw_root_size(gvec_lw_ctx * ctx, double * width, double * height) {
+  const GVEC_Svg_Instance * root = gvec_svg_instance_root(ctx->style);
+  if (!root) {
+    return GVEC_ERR_OOM;
+  }
+  double vw, vh;
+  gvec_svg_instance_viewport(root, &vw, &vh);
+  bool usable;
+  GVEC_Result r = read_length(ctx, root, GVEC_SVG_PROP_WIDTH, vw, width, &usable);
+  if (r == GVEC_OK && usable) {
+    r = read_length(ctx, root, GVEC_SVG_PROP_HEIGHT, vh, height, &usable);
+  }
+  if (r == GVEC_OK && !usable) {
+    *width = vw;
+    *height = vh;
+  }
+  return r;
+}
+
+/* Whether this `style` element holds a sheet the library would have to apply: a type of `text/css` (or none) and anything but white space. */
+static bool style_has_rules(const GVEC_Svg_Element * e) {
+  const GVEC_Svg_Attribute * type = gvec_svg_element_find_attribute(e, "type");
+  if (type) {
+    size_t n;
+    const char * t = gvec_svg_attribute_raw(type, &n);
+    if (t && n > 0 && !(n == 8 && strncasecmp(t, "text/css", 8) == 0)) {
+      return false;
+    }
+  }
+  for (const GVEC_Svg_Node * node = gvec_svg_element_first_node(e); node; node = gvec_svg_node_next(node)) {
+    size_t n;
+    const char * t = gvec_svg_node_text(node, &n);
+    for (size_t i = 0; t && i < n; i++) {
+      if (t[i] != ' ' && t[i] != '\t' && t[i] != '\n' && t[i] != '\r' && t[i] != '\f') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/* Every `style` element of the document, wherever it sits: a sheet applies to the whole document, drawn or not. */
+static GVEC_Result refuse_stylesheets(gvec_lw_ctx * ctx) {
+  const GVEC_Svg_Element * e = gvec_svg_root(ctx->document);
+  while (e) {
+    if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_STYLE && style_has_rules(e)) {
+      GVEC_Result r = gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLESHEET, "style sheets are not applied yet");
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+    const GVEC_Svg_Element * next = gvec_svg_element_first_child(e);
+    while (!next) {
+      next = gvec_svg_element_next_sibling(e);
+      if (!next) {
+        e = gvec_svg_element_parent(e);
+        if (!e) {
+          return GVEC_OK;
+        }
+      }
+    }
+    e = next;
+  }
+  return GVEC_OK;
+}
+
 GVEC_Result gvec_lw_walk(gvec_lw_ctx * ctx) {
+  GVEC_Result sheets = refuse_stylesheets(ctx);
+  if (sheets != GVEC_OK) {
+    return sheets;
+  }
   const GVEC_Svg_Instance * root = gvec_svg_instance_root(ctx->style);
   if (!root) {
     return GVEC_ERR_OOM;

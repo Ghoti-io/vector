@@ -177,6 +177,9 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * 
 /** Free the context: the tree, the sites, the held resources and the style context. */
 GVEC_INTERNAL_API void gvec_lw_end(gvec_lw_ctx * ctx);
 
+/** The outermost `svg`'s used width and height. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_root_size(gvec_lw_ctx * ctx, double * width, double * height);
+
 /** Walk the document, building the tree under `ctx->root`. Refusals are diagnostics; the result is an error only for OOM. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_walk(gvec_lw_ctx * ctx);
 

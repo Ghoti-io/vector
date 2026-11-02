@@ -72,6 +72,9 @@ typedef GVEC_Result (*gvec_codec_lower_edit_fn)(const GVEC_Doc * doc, const GVEC
 typedef GVEC_Result (*gvec_codec_lower_list_fn)(const GVEC_Doc * doc, const GVEC_Lower_Options * options,
     GSHSCENE_List * list, GVEC_Diagnostics * diagnostics);
 
+/** The document's own size, in user units. */
+typedef GVEC_Result (*gvec_codec_size_fn)(const GVEC_Doc * doc, double * width, double * height);
+
 /** Free the codec's document. */
 typedef void (*gvec_codec_free_fn)(GVEC_Doc * doc);
 
@@ -84,6 +87,7 @@ struct GVEC_Codec {
   gvec_codec_dump_fn dump;
   gvec_codec_lower_edit_fn lower_edit;
   gvec_codec_lower_list_fn lower_list;
+  gvec_codec_size_fn size;
   void (*save)(void); ///< Reserved for the writer; NULL in every codec yet.
   gvec_codec_free_fn free_private;
 };

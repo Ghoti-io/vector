@@ -141,6 +141,32 @@ TEST(LowerViewport, WithoutAViewBoxTheMapIsTheIdentityAndNothingIsGrouped) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
+TEST(LowerViewport, TheDocumentSizeIsTheOutermostSvgsUsedSize) {
+  struct Case {
+    const char * attributes;
+    double viewport;
+    double width;
+    double height;
+  } const cases[] = {
+      {"width=\"200\" height=\"100\" viewBox=\"0 0 200 200\"", 0, 200, 100},
+      {"viewBox=\"0 0 10 10\"", 0, 300, 150},                  // the default viewport
+      {"viewBox=\"0 0 10 10\"", 500, 500, 500},                // the load's viewport
+      {"width=\"50%\" height=\"auto\"", 400, 200, 400},       // a percentage is of the viewport
+      {"width=\"2in\"", 0, 192, 150},
+  };
+  for (const Case & c : cases) {
+    Loaded loaded;
+    LoadSvg(Svg(c.attributes, ""), loaded, c.viewport, c.viewport);
+    ASSERT_EQ(loaded.result, GVEC_OK) << c.attributes;
+    double w = -1, h = -1;
+    ASSERT_EQ(gvec_doc_size(loaded.doc, &w, &h), GVEC_OK) << c.attributes;
+    EXPECT_EQ(w, c.width) << c.attributes;
+    EXPECT_EQ(h, c.height) << c.attributes;
+  }
+  double w, h;
+  EXPECT_EQ(gvec_doc_size(nullptr, &w, &h), GVEC_ERR_INVALID);
+}
+
 TEST(LowerViewport, ASizeNeedsNoBoxAndAMissingSizeIsTheOptionsViewport) {
   {
     Lowered l;

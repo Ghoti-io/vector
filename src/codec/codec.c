@@ -349,3 +349,13 @@ GVEC_Result gvec_doc_lower_list(
   }
   return doc->codec->lower_list(doc, options, list, diagnostics);
 }
+
+GVEC_Result gvec_doc_size(const GVEC_Doc * doc, double * width, double * height) {
+  if (!doc || !width || !height) {
+    return GVEC_ERR_INVALID;
+  }
+  if (!doc->codec->size) {
+    return GVEC_ERR_UNSUPPORTED;
+  }
+  return doc->codec->size(doc, width, height);
+}

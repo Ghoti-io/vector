@@ -99,6 +99,9 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_lower_edit(const GVEC_Doc * doc, const GV
 GVEC_INTERNAL_API GVEC_Result gvec_svg_lower_list(const GVEC_Doc * doc, const GVEC_Lower_Options * options,
     GSHSCENE_List * list, GVEC_Diagnostics * diagnostics);
 
+/** The outermost `svg`'s used width and height. */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_doc_size(const GVEC_Doc * doc, double * width, double * height);
+
 #ifdef __cplusplus
 }
 #endif

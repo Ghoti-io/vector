@@ -24,7 +24,7 @@
  * The conformance runner: scores each case of a list through the final path,
  * and prints one line per case.
  *
- *     runner --corpus DIR --list FILE --max-diff N --max-bad-ppm N [--stub NAME] [--timeout SECONDS]
+ *     runner --corpus DIR --list FILE --max-diff N --max-bad-ppm N [--stub NAME] [--timeout SECONDS] [--dump DIR]
  *     runner --compare A.png B.png
  *
  * A case is DIR/tests/<case>, an SVG file, with its reference at the same path
@@ -48,6 +48,9 @@
  * equal whatever their colour channels hold. The runner reads no environment
  * variable and no clock, so its output is a function of the case's bytes and
  * the arguments.
+ *
+ * The picture is the document at the size the reference was rendered at: the document's own size (gvec_doc_size) is mapped to the
+ * reference's. --dump DIR also writes each rendered raster, as a PAM file, to look at a case that failed.
  *
  * --compare prints the two numbers of the comparison for two PNG files:
  * the largest per-channel difference and the count of pixels differing by more
@@ -223,6 +226,26 @@ static Diff compare_rasters(const GIMG_Raster * a, const GIMG_Raster * b) {
   return d;
 }
 
+/** Write the rendered raster as DIR/<case with / as _>.pam, for looking at a drawing that failed. */
+static void dump_raster(const char * dir, const char * name, const GIMG_Raster * raster) {
+  char path[4096];
+  int n = snprintf(path, sizeof path, "%s/", dir);
+  for (const char * c = name; *c && n < (int) sizeof path - 5; c++) {
+    path[n++] = *c == '/' ? '_' : *c;
+  }
+  snprintf(path + n, sizeof path - (size_t) n, ".pam");
+  FILE * f = fopen(path, "wb");
+  if (!f) {
+    return;
+  }
+  uint32_t w = gimg_raster_width(raster), h = gimg_raster_height(raster);
+  fprintf(f, "P7\nWIDTH %u\nHEIGHT %u\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n", w, h);
+  for (uint32_t y = 0; y < h; y++) {
+    fwrite((const uint8_t *) gimg_raster_pixels_const(raster) + y * gimg_raster_stride_bytes(raster), 4, w, f);
+  }
+  fclose(f);
+}
+
 typedef struct Options {
   const char * corpus;
   const char * list;
@@ -230,6 +253,7 @@ typedef struct Options {
   uint64_t max_bad_ppm;
   Conf_Lower_Fn lower;
   int timeout_s;
+  const char * dump;
 } Options;
 
 static const char * diag_first_refusal(const GVEC_Diagnostics * d, char * buf, size_t n) {
@@ -323,6 +347,13 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   memset(&target, 0, sizeof target);
   target.kind = GSHSCENE_TARGET_RASTER;
   target.surface = raster;
+  /* The reference is the document at the size its renderer was asked for: the document's own size scaled to the raster. */
+  double doc_w = 0, doc_h = 0;
+  if (gvec_doc_size(doc, &doc_w, &doc_h) == GVEC_OK && doc_w > 0 && doc_h > 0 &&
+      gshgeom_map_scale(2, (double) w / doc_w, (double) h / doc_h, 1, &target.map) != GSHGEOM_OK) {
+    say(v, "ERROR", "render setup");
+    goto done;
+  }
   GSHSCENE_Render_Request request;
   memset(&request, 0, sizeof request);
   request.list = list;
@@ -356,6 +387,9 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
     }
     say(v, "REFUSED", "sink-report=%zu first=%s", unsound, where);
     goto done;
+  }
+  if (o->dump) {
+    dump_raster(o->dump, name, raster);
   }
   Diff d = compare_rasters(raster, reference);
   int pass = d.max_diff <= o->max_diff && d.bad * 1000000u <= o->max_bad_ppm * d.total;
@@ -493,7 +527,7 @@ static int usage(void) {
 }
 
 int main(int argc, char ** argv) {
-  Options o = {NULL, NULL, 0, 0, gvec_doc_lower_list, DEFAULT_TIMEOUT_S};
+  Options o = {NULL, NULL, 0, 0, gvec_doc_lower_list, DEFAULT_TIMEOUT_S, NULL};
   int have_diff = 0, have_ppm = 0;
   for (int i = 1; i < argc; i++) {
     const char * arg = argv[i];
@@ -514,6 +548,8 @@ int main(int argc, char ** argv) {
     } else if (strcmp(arg, "--max-bad-ppm") == 0) {
       o.max_bad_ppm = strtoull(value, NULL, 10);
       have_ppm = 1;
+    } else if (strcmp(arg, "--dump") == 0) {
+      o.dump = value;
     } else if (strcmp(arg, "--timeout") == 0) {
       o.timeout_s = atoi(value);
     } else if (strcmp(arg, "--stub") == 0) {

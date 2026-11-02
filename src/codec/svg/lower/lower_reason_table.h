@@ -50,6 +50,7 @@ static const struct {
   {"transform-box"}, /* TRANSFORM_BOX */
   {"embedded-content"}, /* EMBEDDED_CONTENT */
   {"vector-effect"}, /* VECTOR_EFFECT */
+  {"stylesheet"}, /* STYLESHEET */
 };
 
 #endif // GHOTI_IO_GVEC_LOWER_REASON_TABLE_H

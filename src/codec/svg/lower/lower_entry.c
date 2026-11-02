@@ -108,3 +108,20 @@ GVEC_Result gvec_svg_lower_list(const GVEC_Doc * doc, const GVEC_Lower_Options *
   gvec_lw_end(&ctx);
   return r;
 }
+
+GVEC_Result gvec_svg_doc_size(const GVEC_Doc * doc, double * width, double * height) {
+  /* The size is a style question, so it needs the lowering's context; a store is all that context asks of a caller. */
+  GSHSCENE_Store * store = NULL;
+  GSHSCENE_Result sr = gshscene_store_create(NULL, NULL, &store);
+  if (sr != GSHSCENE_OK) {
+    return sr == GSHSCENE_ERR_OOM ? GVEC_ERR_OOM : GVEC_ERR_INTERNAL;
+  }
+  gvec_lw_ctx ctx;
+  GVEC_Result r = gvec_lw_begin(&ctx, doc, NULL, store, NULL);
+  if (r == GVEC_OK) {
+    r = gvec_lw_root_size(&ctx, width, height);
+    gvec_lw_end(&ctx);
+  }
+  gshscene_store_destroy(store);
+  return r;
+}

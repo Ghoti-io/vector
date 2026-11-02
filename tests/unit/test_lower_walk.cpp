@@ -163,7 +163,7 @@ TEST(LowerWalk, WhatIsNeverRenderedIsNotARefusal) {
                "<pattern id=\"p\"><path d=\"M0 0H1V1Z\"/></pattern>"
                "<linearGradient id=\"g\"><stop offset=\"0\"/></linearGradient><radialGradient id=\"r\"/>"
                "<filter id=\"f\"><feFlood/></filter>"
-               "<style>path { fill: red }</style><script>1</script><title>t</title><desc>d</desc><metadata/>"
+               "<style type=\"text/x-other\">path { fill: red }</style><style> \n</style><script>1</script><title>t</title><desc>d</desc><metadata/>"
                "<animate attributeName=\"x\"/><set attributeName=\"x\"/><view id=\"v\"/>"
                "<unknown-thing><path d=\"M0 0H1V1Z\"/></unknown-thing><x:thing xmlns:x=\"urn:other\"><path d=\"M0 0H1V1Z\"/></x:thing>"),
       l);

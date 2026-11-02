@@ -45,6 +45,7 @@ const GVEC_Codec gvec_svg_codec = {
     .dump = gvec_svg_dump,
     .lower_edit = gvec_svg_lower_edit,
     .lower_list = gvec_svg_lower_list,
+    .size = gvec_svg_doc_size,
     .save = NULL,
     .free_private = gvec_svg_free,
 };

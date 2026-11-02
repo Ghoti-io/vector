@@ -108,6 +108,7 @@ typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_TRANSFORM_BOX,            ///< A `transform` whose percentages are of a bounding box.
   GVEC_LOWER_EMBEDDED_CONTENT,         ///< `audio`, `video`, `canvas` or `iframe`.
   GVEC_LOWER_VECTOR_EFFECT,            ///< A `vector-effect` the static rendering model does not have.
+  GVEC_LOWER_STYLESHEET,               ///< A `style` element with rules in it: the library applies no style sheet yet.
   GVEC_LOWER_REASON_COUNT              ///< One past the last reason; not a reason.
 } GVEC_Lower_Reason;
 
@@ -209,6 +210,16 @@ GVEC_API GVEC_Result gvec_doc_lower_edit(const GVEC_Doc * doc, const GVEC_Lower_
  */
 GVEC_API GVEC_Result gvec_doc_lower_list(const GVEC_Doc * doc, const GVEC_Lower_Options * options,
     GSHSCENE_List * list, GVEC_Diagnostics * diagnostics);
+
+/**
+ * The size the document draws at, in the user units its drawing is lowered in: for an SVG, the used width and height of the
+ * outermost `svg` (a missing or `auto` size is the load's viewport, a percentage is of it). A renderer that wants the picture at
+ * another size maps this one to it.
+ *
+ * @return GVEC_OK; GVEC_ERR_INVALID for a NULL argument; GVEC_ERR_UNSUPPORTED when the codec has no size;
+ *   GVEC_ERR_OOM. A document whose size is zero or negative returns GVEC_OK with that size: it draws nothing.
+ */
+GVEC_API GVEC_Result gvec_doc_size(const GVEC_Doc * doc, double * width, double * height);
 
 #ifdef __cplusplus
 }

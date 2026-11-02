@@ -20,3 +20,4 @@ STYLE	style	never	A property of the element has no value that can be used (the s
 TRANSFORM_BOX	transform-box	V4	A `transform` whose percentages are of a bounding box (`transform-box: fill-box` or `stroke-box`) on an element that has a percentage.	The bounding box is computed with the exact primitives.
 EMBEDDED_CONTENT	embedded-content	never	`audio`, `video`, `canvas` or `iframe` that would be seen.	This library renders none of them.
 VECTOR_EFFECT	vector-effect	never	A `vector-effect` other than `none` and `non-scaling-stroke` on an element that would be stroked.	The other values (`fixed-position`, `non-scaling-size`, `non-rotation`, `screen`) are not part of SVG 2's rendering model for a static document.
+STYLESHEET	stylesheet	V5	A `style` element (of type `text/css`, or of none) that holds anything but whitespace.	The sheet's rules would change elements the lowering draws, and rules are not applied yet; drawing without them would be drawing the wrong picture.
