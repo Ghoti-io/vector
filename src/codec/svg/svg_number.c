@@ -253,8 +253,13 @@ static gvec_svg_parse_status number_list(const char * s, size_t n, const gvec_sv
     gvec_svg_numbers * out, gvec_svg_parse_error * err) {
   size_t count = 0;
   gvec_svg_parse_status status = scan_numbers(s, n, ctx->max_list_items, multiple == 2, NULL, &count, err);
+  /* The coordinates of `points` before an error are kept (SVG 2, 9.8.1: render up to the error); any other list is dropped whole. */
+  bool stopped = false;
   if (status == GVEC_SVG_PARSE_INVALID) {
-    return status;
+    if (multiple != 2 || count < 2) {
+      return status;
+    }
+    stopped = true;
   }
   size_t keep = count - (count % multiple);
   gvec_svg_parse_error again;
@@ -269,6 +274,9 @@ static gvec_svg_parse_status number_list(const char * s, size_t n, const gvec_sv
   out->count = keep;
   if (status == GVEC_SVG_PARSE_LIMIT) {
     return GVEC_SVG_PARSE_LIMIT;
+  }
+  if (stopped) {
+    return GVEC_SVG_PARSE_PARTIAL; /* `err` is the first pass's, which says where it stopped. */
   }
   if (keep != count) {
     fail(err, n, "an odd number of coordinates; the last one has no partner");

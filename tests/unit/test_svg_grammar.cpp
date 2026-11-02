@@ -231,7 +231,12 @@ TEST(Points, PairsOfNumbersAndAnOddCountKeepsTheCompletePairs) {
   EXPECT_EQ(Join(out), "0,0,10,0");
   ASSERT_EQ(gvec_svg_parse_points("10-5", 4, &c.ctx, &out, &err), GVEC_SVG_PARSE_OK) << "SVG 2: coordinate negative-coordinate";
   EXPECT_EQ(Join(out), "10,-5");
-  EXPECT_EQ(gvec_svg_parse_points("1 x", 3, &c.ctx, &out, &err), GVEC_SVG_PARSE_INVALID);
+  EXPECT_EQ(gvec_svg_parse_points("1 x", 3, &c.ctx, &out, &err), GVEC_SVG_PARSE_INVALID) << "no complete pair before the error";
+  ASSERT_EQ(gvec_svg_parse_points("0 1 2 3 text", 12, &c.ctx, &out, &err), GVEC_SVG_PARSE_PARTIAL) << "SVG 2: render up to the error";
+  EXPECT_EQ(Join(out), "0,1,2,3");
+  ASSERT_EQ(gvec_svg_parse_points("0 1 2 x", 7, &c.ctx, &out, &err), GVEC_SVG_PARSE_PARTIAL);
+  EXPECT_EQ(Join(out), "0,1");
+  EXPECT_EQ(gvec_svg_parse_number_list("0 1 x", 5, &c.ctx, &out, &err), GVEC_SVG_PARSE_INVALID) << "another list is dropped whole";
   ASSERT_EQ(gvec_svg_parse_points("", 0, &c.ctx, &out, &err), GVEC_SVG_PARSE_OK);
   EXPECT_EQ(out.count, 0u);
 }

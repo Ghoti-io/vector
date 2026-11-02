@@ -177,6 +177,9 @@ def list_items(s, read, adjacent_negative=False):
 def parse_numbers(s, pairs=False):
     items, ok = list_items(s, number_at, adjacent_negative=pairs)
     if not ok:
+        # SVG 2, 9.8.1: the coordinate pairs of `points` before an error are kept; any other list is dropped whole.
+        if pairs and len(items) >= 2:
+            return ("partial", items[:len(items) - len(items) % 2])
         return None
     if pairs and len(items) % 2:
         return ("partial", items[:-1])
