@@ -6,13 +6,13 @@
 # evidence     the row of the oracle tolerance table that supports the pair
 #              (documentation/conformance.md), or "none" while it is zero
 #
-# The tolerance is a finding, not a guess: shape-cpu's coverage is exact area and
-# each oracle anti-aliases differently, so the pair is set from what
-# `make oracle-tolerance` measures. Until a case that draws something can be
-# compared with its reference (the cases that pass today draw nothing, so their
-# distance is zero and says nothing about anti-aliasing), it is zero, which only
-# an exact match meets, so nothing passes by being loosely close. score.py fails
-# on a nonzero pair whose evidence is "none".
-max-diff	0
-max-bad-ppm	0
-evidence	none
+# The tolerance is a finding, not a guess: shape-cpu's coverage is exact area, the
+# references are palette-reduced PNGs, and each oracle anti-aliases differently, so no
+# renderer matches them to the bit. The pair is where the planted defects of
+# tolerance_planted.py (a shift of a tenth of a pixel, a 0.2% growth, a 2% fade) are
+# all still refused; documentation/conformance.md, "The tolerance pair", has the
+# sweep. `make tolerance-planted` shows it refuse them. score.py fails on a nonzero
+# pair whose evidence is "none".
+max-diff	32
+max-bad-ppm	2000
+evidence	conformance.md, "The tolerance pair"

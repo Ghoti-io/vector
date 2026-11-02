@@ -53,8 +53,9 @@ refused or approximated.
 
 `shape-cpu` computes exact area coverage; `resvg` and Inkscape each anti-alias in their own way, and the
 reference PNGs are the suite's own, not the output of any renderer used here. So how close is close enough is a finding,
-not a choice, and `TOLERANCE` holds zero (which only an exact match meets) until a pair is set from this table.
-A nonzero pair with no named evidence is refused by the scorer.
+not a choice. `TOLERANCE` held zero (which only an exact match meets) until a pair was set from this table and from the
+planted defects below; it is now `max-diff 32` and `max-bad-ppm 2000`. A nonzero pair with no named evidence is refused
+by the scorer.
 
 `make oracle-tolerance` renders every in-scope case with each oracle in its pinned image, at the reference's size,
 and compares each render with the reference and the oracles with each other. The oracles are `resvg` 0.45.1 and
@@ -85,43 +86,77 @@ each other can separate a correct drawing from a wrong one. The pair for this li
 set from its measured distance to the references over the cases it draws, and from this table, not before a
 case that draws something can be compared with its reference.
 
+## The tolerance pair
+
+`max-diff 32` and `max-bad-ppm 2000`: a case passes when no channel of any pixel differs from the reference by more than 32
+of 255, and no more than 2,000 in a million pixels differ by more than 1.
+
+Why a pair at all. The references are not any renderer's exact output: most are palette-reduced PNGs (518 of the 766 in-scope
+ones are indexed, 155 grayscale with alpha, 93 RGBA), so even `resvg`, which is the closest, reproduces only 44 of the 494
+cases this library draws bit for bit, and the pixel it gets wrong is typically wrong by the palette's rounding. Inkscape's
+median largest difference from the references over the same cases is 147 of 255, ours 25 and `resvg`'s 16.
+
+Why this pair. Each number does a different job. The count of differing pixels (`max-bad-ppm`) refuses anything that moves
+much of the picture: every planted defect below changes many pixels by more than one level, so a limit of 2,000 in a million
+(500 pixels of a 500 by 500 reference) refuses them. The largest difference (`max-diff`) refuses a small element that is
+missing or badly wrong, which moves few pixels by a lot. The pair was chosen on the cases this library draws (494 compared
+with both oracles): it accepts 227 of them in the sweep (the scorer counts 228 passes in all), `resvg` 248 and Inkscape 195, and a looser limit (48 levels, 5,000 in a million)
+started to accept the smallest planted shift.
+
+How it is shown to refuse. `make tolerance-planted` (`tools/resvg-tests/tolerance_planted.py`) takes the in-scope cases that
+`resvg` draws within the pair (405 of 766), renders each again with its content wrapped in a slightly wrong group, and
+compares that render with the same reference. Over the cases where the defect changed `resvg`'s own picture by more than one
+level, the pair refused all of them:
+
+```
+defect         cases  refused  accepted
+shift-0.04        36       35         1   (reported, not required)
+shift-0.08       396      396         0
+shift-0.2        396      396         0
+grow-0.2pct      396      396         0
+grow-0.5pct      396      396         0
+fade-2pct        396      396         0
+fade-5pct        396      396         0
+```
+
+The amounts are in user units (the references are 2.5 times the viewBox of most cases): 0.08 is a fifth of a pixel, 0.2 half a
+pixel, and the growth and fade are of the whole picture. The smallest shift, 0.04 (a tenth of a pixel), is the limit of what
+the pair sees: on a smooth gradient (`painting/stroke/linear-gradient`) it moves a pixel by one or two levels, which no pixel
+tolerance can tell from rounding, so it is reported and not required.
+
+What the pair does not claim. A wrong color of up to 32 levels over up to about 500 pixels passes, because no such defect was
+planted. The planted defects move or fade a whole picture; none is local. The pair is a first setting and is expected to be
+refined as the oracle tables and the planted defects grow.
+
 ## The score today
 
 The lowering draws structure, solid fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **6 of 1,679
-(0.36%)**, with the tolerance at zero.
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **228 of 1,679
+(13.58%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
 
 | directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
 | `masking` | 93 | 0 | 2 | 52 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 0 | 0 | 118 | 0 | 31 | 0 |
-| `painting` | 304 | 1 | 217 | 61 | 0 | 25 | 0 |
-| `shapes` | 133 | 0 | 130 | 3 | 0 | 0 | 0 |
-| `structure` | 247 | 5 | 141 | 35 | 1 | 65 | 0 |
+| `painting` | 304 | 105 | 113 | 61 | 0 | 25 | 0 |
+| `shapes` | 133 | 39 | 91 | 3 | 0 | 0 | 0 |
+| `structure` | 247 | 82 | 64 | 35 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **6** | **490** | **269** | **1** | **913** | **0** |
+| **all** | **1679** | **228** | **268** | **269** | **1** | **913** | **0** |
 
-The six that pass are `painting/display/none-on-svg`, `structure/svg/no-children`,
+The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
-`structure/systemLanguage/on-svg`. Five draw nothing and the library draws nothing for them; `preserveAspectRatio=xMaxYMax-slice`
-is the first that draws something and is equal to its reference at zero tolerance.
+`structure/systemLanguage/on-svg`; five draw nothing. The other 222 draw something and are within the pair of their reference.
 
-The named shapes moved 492 cases out of REFUSED, which was the finding of the previous measurement, and almost all of
-them went to **FAIL**: 490 cases are now drawn and differ from the reference at a tolerance of zero. They are not a
-count of wrong drawings. The difference is small in most of them: the median case has 0.14% of its pixels different, and 436 of
-the 490 have under 1%, which is the signature of anti-aliasing at the edges of a shape, not of a shape in the wrong place.
-The largest per-channel difference has a median of 25 of 255 and a maximum of 255.
+The named shapes moved 492 cases out of REFUSED, and most of them were **FAIL** at a tolerance of zero. At the pair 222 of them
+pass and 268 still fail, which is the part of the score that is a measurement of drawings that differ from the reference by more
+than anti-aliasing and rounding. Those are the cases to read next; they have not been classified yet.
 
 The remaining refusals are led by cases whose first refused element is a `rect` that carries something the lowering
 refuses (a gradient, a clip or a filter), then `text`, then `g` and `use`.
 No case has been seen to **error**; the two that timed out in the previous run (`painting/color/recursive-nested-context*`)
 were an endless walk of a `context-fill` that named nothing, which is now a refusal.
-
-The tolerance is still zero, and that is now a decision waiting on evidence rather than an omission: cases that draw
-something fail against the references at zero, and the distances of those cases are the first data a tolerance can be
-set from. `TOLERANCE` stays at `max-diff 0`, `max-bad-ppm 0` and `evidence none` until that is done from the
-oracles' distances over the cases they draw, not from this library's own output.
 
 The one case that does not load is `structure/svg/not-UTF-8-encoding.svg`, whose declaration is
 `encoding="Windows-1251"`: the XML parser reads UTF-8, UTF-16, UTF-32, ISO-8859-1 and US-ASCII, and not that

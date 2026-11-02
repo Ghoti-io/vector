@@ -491,7 +491,7 @@ check-tables: ## Fail unless the committed SVG tables are what tools/svg2 genera
 		printf 'check-tables: SKIPPED (run tools/svg2/fetch.sh); nothing was checked\n'; \
 	fi
 
-.PHONY: conformance check-conformance check-conformance-planted oracle-images oracle-tolerance
+.PHONY: conformance check-conformance check-conformance-planted oracle-images oracle-tolerance tolerance-planted
 
 conformance: $(CONF_RUNNER) ## Score the resvg test suite (fetches it first if it is not there); writes build/*/conformance/score
 	@tools/resvg-tests/fetch.sh $(CONF_CORPUS)
@@ -516,6 +516,10 @@ oracle-images: ## Build the pixel oracle images (resvg, inkscape) named in tools
 oracle-tolerance: $(CONF_RUNNER) ## Render the in-scope cases with each oracle and write the distance tables to build/*/conformance/oracle
 	@tools/resvg-tests/fetch.sh $(CONF_CORPUS)
 	@LD_LIBRARY_PATH="$(conf_ld_path)" python3 tools/resvg-tests/oracle_tolerance.py --corpus $(CONF_CORPUS) --runner $(CONF_RUNNER) --out $(CONF_OUT)/oracle
+
+tolerance-planted: $(CONF_RUNNER) ## Fail unless the tolerance in tools/resvg-tests/TOLERANCE refuses every slightly wrong drawing planted in the oracle's renders
+	@tools/resvg-tests/fetch.sh $(CONF_CORPUS)
+	@LD_LIBRARY_PATH="$(conf_ld_path)" python3 tools/resvg-tests/tolerance_planted.py --corpus $(CONF_CORPUS) --runner $(CONF_RUNNER) --out $(CONF_OUT)/tolerance
 
 # The dependencies' library directories, from the -L words pkg-config gave, so
 # a test run finds them when they are installed in a prefix of their own.
