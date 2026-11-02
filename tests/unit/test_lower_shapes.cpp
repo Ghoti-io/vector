@@ -49,6 +49,19 @@ TEST(LowerShapes, APlainRectIsTheRectPrimitive) {
   EXPECT_EQ(p.flip_y, 0);
 }
 
+TEST(LowerShapes, APositionMayBeNegativeAndASizeMayNot) {
+  GSHSCENE_Primitive p = Tag("<rect x=\"-40\" y=\"-2.5\" width=\"20\" height=\"10\"/>");
+  ASSERT_EQ(p.kind, GSHSCENE_PRIMITIVE_RECT);
+  EXPECT_EQ(p.x, -40.0);
+  EXPECT_EQ(p.y, -2.5);
+  size_t items = 0;
+  Tag("<circle cx=\"-3\" cy=\"-4\" r=\"5\"/>", &items);
+  EXPECT_EQ(items, (size_t) 1);
+  items = 9;
+  Tag("<rect width=\"-20\" height=\"10\"/>", &items);
+  EXPECT_EQ(items, (size_t) 0);
+}
+
 TEST(LowerShapes, RoundedCornersFollowTheAutoRule) {
   ExpectCorners(Tag("<rect width=\"20\" height=\"10\" rx=\"3\"/>"), 3, 3);       // ry takes rx
   ExpectCorners(Tag("<rect width=\"20\" height=\"10\" ry=\"4\"/>"), 4, 4);       // rx takes ry

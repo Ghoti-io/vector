@@ -100,7 +100,7 @@ Why this pair. Each number does a different job. The count of differing pixels (
 much of the picture: every planted defect below changes many pixels by more than one level, so a limit of 2,000 in a million
 (500 pixels of a 500 by 500 reference) refuses them. The largest difference (`max-diff`) refuses a small element that is
 missing or badly wrong, which moves few pixels by a lot. The pair was chosen on the cases this library draws (494 compared
-with both oracles): it accepts 227 of them in the sweep (the scorer counts 228 passes in all), `resvg` 248 and Inkscape 195, and a looser limit (48 levels, 5,000 in a million)
+with both oracles): it accepts 227 of them in the sweep (the scorer counted 228 passes in all before the fixes below, 244 after), `resvg` 248 and Inkscape 195, and a looser limit (48 levels, 5,000 in a million)
 started to accept the smallest planted shift.
 
 How it is shown to refuse. `make tolerance-planted` (`tools/resvg-tests/tolerance_planted.py`) takes the in-scope cases that
@@ -131,27 +131,35 @@ refined as the oracle tables and the planted defects grow.
 ## The score today
 
 The lowering draws structure, solid fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **228 of 1,679
-(13.58%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **244 of 1,679
+(14.53%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
 
 | directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
-| `masking` | 93 | 0 | 2 | 52 | 0 | 39 | 0 |
+| `masking` | 93 | 2 | 0 | 52 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 0 | 0 | 118 | 0 | 31 | 0 |
-| `painting` | 304 | 105 | 113 | 61 | 0 | 25 | 0 |
+| `painting` | 304 | 105 | 111 | 63 | 0 | 25 | 0 |
 | `shapes` | 133 | 39 | 91 | 3 | 0 | 0 | 0 |
-| `structure` | 247 | 82 | 64 | 35 | 1 | 65 | 0 |
+| `structure` | 247 | 98 | 47 | 36 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **228** | **268** | **269** | **1** | **913** | **0** |
+| **all** | **1679** | **244** | **249** | **272** | **1** | **913** | **0** |
 
 The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
 `structure/systemLanguage/on-svg`; five draw nothing. The other 222 draw something and are within the pair of their reference.
 
-The named shapes moved 492 cases out of REFUSED, and most of them were **FAIL** at a tolerance of zero. At the pair 222 of them
-pass and 268 still fail, which is the part of the score that is a measurement of drawings that differ from the reference by more
-than anti-aliasing and rounding. Those are the cases to read next; they have not been classified yet.
+The named shapes moved cases out of REFUSED, and most of them were **FAIL** at a tolerance of zero. The failures were read one
+by one. Three were this library's own defects and are fixed: a negative `x`, `y`, `cx` or `cy` was read as absent (a size or
+radius may not be negative, a position may); the document's size was not used to scale the render to the reference (the runner
+now asks `gvec_doc_size` for it); and a `<style>` element with rules was ignored silently, which is now a refusal
+(`GVEC_LOWER_STYLESHEET`) until selectors exist. A malformed `points` list now keeps its complete pairs, as the
+specification's error handling says.
+
+Of the 249 that remain, most agree with `resvg` in being unlike the reference, or differ from it by palette rounding and
+anti-aliasing over a tail of pixels; the rest are features the lowering does not do yet: the `transform` of a `symbol`,
+SVG 2 units and geometry given in style, markers on `rect`, `circle` and `ellipse`, `shape-rendering="crispEdges"`, and the
+direction of a marker at a degenerate vertex. They stay in the score as failures.
 
 The remaining refusals are led by cases whose first refused element is a `rect` that carries something the lowering
 refuses (a gradient, a clip or a filter), then `text`, then `g` and `use`.

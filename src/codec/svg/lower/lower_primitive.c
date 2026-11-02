@@ -46,7 +46,12 @@ static bool finite(double v) {
   return v - v == 0;
 }
 
-/* A geometry property as a used length; `auto` and a negative value are reported as `automatic`. */
+/* The position of a shape may be negative; its size and radii may not. */
+static bool signed_ok(GVEC_Svg_Property property) {
+  return property == GVEC_SVG_PROP_X || property == GVEC_SVG_PROP_Y || property == GVEC_SVG_PROP_CX || property == GVEC_SVG_PROP_CY;
+}
+
+/* A geometry property as a used length; `auto` is reported as `automatic`, and so is a negative value of a property that may not be one. */
 static GVEC_Result length_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property, double * out,
     bool * automatic, bool * usable) {
   GVEC_Svg_Style_Value v;
@@ -56,7 +61,7 @@ static GVEC_Result length_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
   if (r != GVEC_OK || !*usable) {
     return r;
   }
-  if (v.kind != GVEC_SVG_STYLE_LENGTH || v.length_auto || v.number < 0) {
+  if (v.kind != GVEC_SVG_STYLE_LENGTH || v.length_auto || (v.number < 0 && !signed_ok(property))) {
     *automatic = true;
     return GVEC_OK;
   }
