@@ -124,9 +124,15 @@ pixel, and the growth and fade are of the whole picture. The smallest shift, 0.0
 the pair sees: on a smooth gradient (`painting/stroke/linear-gradient`) it moves a pixel by one or two levels, which no pixel
 tolerance can tell from rounding, so it is reported and not required.
 
-What the pair does not claim. A wrong color of up to 32 levels over up to about 500 pixels passes, because no such defect was
-planted. The planted defects move or fade a whole picture; none is local. The pair is a first setting and is expected to be
-refined as the oracle tables and the planted defects grow.
+The patches are local: one rectangle laid over the picture. `patch-strong` is 4 by 4 user units (about 100 pixels of a
+500 by 500 reference) of black at 30% and is wrong by more than the largest difference allows; `patch-wide` is 16 by 16
+(about 1,600 pixels) at 3%, wrong by a few levels over more pixels than the count allows. A patch counts only where it moved
+`resvg`'s own picture by more than twice the limit it is meant to break, so that `resvg`'s distance from the reference,
+which the pair allows, cannot account for the result; on a dark gradient the same patch is no defect and is left out.
+`patch-faint` (4 by 4 at 3%) is under both limits and is accepted by design: it shows where the pair stops seeing.
+
+What the pair does not claim. A wrong color of up to 32 levels over up to about 500 pixels passes, and the `patch-faint`
+row is that case. The pair is a first setting and is expected to be refined as the oracle tables and the planted defects grow.
 
 ## The score today
 

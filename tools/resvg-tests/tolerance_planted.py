@@ -17,7 +17,7 @@ tested the way the other gates are: a defect is planted and the pair must refuse
 The pixel oracle `resvg` renders each in-scope case that it already draws within the
 tolerance. Each such case is then rendered again with its whole content wrapped in a
 group that is slightly wrong (a shift of a tenth of a user unit and more, a growth of
-0.2% and more, a fade of 2% and more), and that render is compared with the same
+0.2% and more, a fade of 2% and more), or with one small patch laid over it, and that render is compared with the same
 reference. A defect only counts where it changed the oracle's own picture by more
 than one level; the pair has to refuse every one of those, in every required kind,
 and every kind needs enough cases to mean something. The smallest shift (a tenth of
@@ -52,6 +52,16 @@ DEFECTS = (
     ("grow-0.5pct", '<g transform="translate(-0.5 -0.5) scale(1.005)">', True),
     ("fade-2pct", '<g opacity="0.98">', True),
     ("fade-5pct", '<g opacity="0.95">', True),
+    # A local defect is one patch laid over the picture, in user units: a patch of 4 by 4 is about 100 pixels of a
+    # 500 by 500 reference and one of 16 by 16 about 1,600. The first is wrong by more than the largest difference
+    # allows, the second by little over more pixels than the count allows; the third is under both limits, which is
+    # what the pair accepts by design, so it is reported and not required. A patch counts only where it moved the oracle's
+    # picture by more than twice the limit it is meant to break (so that the oracle's own distance from the reference,
+    # which the pair allows, cannot account for the difference): over twice the largest difference, or over twice the
+    # count of differing pixels. The patch on a dark gradient moves it by little, and is no defect there.
+    ("patch-strong", '+<rect x="50" y="50" width="4" height="4" fill="#000" opacity="0.3"/>', True),
+    ("patch-wide", '+<rect x="50" y="50" width="16" height="16" fill="#000" opacity="0.03"/>', True),
+    ("patch-faint", '+<rect x="50" y="50" width="4" height="4" fill="#000" opacity="0.03"/>', False),
 )
 MIN_CASES = 20
 
@@ -65,6 +75,8 @@ def wrap(source, opening):
     end = source.rfind("</svg>")
     if not start or end < 0 or re.search(r'href\s*=\s*"(?!#)', source):
         return None
+    if opening.startswith("+"):  # an element laid over the content, not a group around it
+        return source[:end] + opening[1:] + source[end:]
     return source[:start.end()] + opening + source[start.end():end] + "</g>" + source[end:]
 
 
@@ -140,6 +152,10 @@ def main(argv):
                 continue
             moved = ot.compare(args.runner, png, clean_png)
             if not isinstance(moved, tuple) or moved[0] <= 1:
+                continue
+            if kind == "patch-strong" and moved[0] <= 2 * max_diff:
+                continue
+            if kind == "patch-wide" and moved[1] * 1000000 // moved[2] <= 2 * max_ppm:
                 continue
             counted += 1
             if within(ot.compare(args.runner, png, ref(case))):
