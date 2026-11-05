@@ -74,7 +74,8 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_CONTAINER, ///< The hidden group that holds a picture's content in an edit.
   GVEC_LW_ROLE_INSTANCE,
   GVEC_LW_ROLE_DRAWING,   ///< The group all the drawing is under.
-  GVEC_LW_ROLE_STROKE     ///< The stroke of a shape (its fill is the SHAPE role).
+  GVEC_LW_ROLE_STROKE,    ///< The stroke of a shape (its fill is the SHAPE role).
+  GVEC_LW_ROLE_CLIP_PATH  ///< The clip a `clip-path` makes around an element's content.
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;
@@ -260,6 +261,33 @@ typedef struct gvec_lw_stroke {
 
 /** Read the stroke properties of an instance and make the style and the paint; refuses the element whole when it cannot. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_stroke * out);
+
+/** The instance of an element of the document, made through its ancestors so that a property inherits as it does in the tree. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_instance_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Instance ** out);
+
+/** What `clip-path` makes of an element. */
+typedef enum gvec_lw_clip_state {
+  GVEC_LW_CLIP_NONE = 0, ///< The element is not clipped: draw it as it is.
+  GVEC_LW_CLIP_NODE,     ///< `out` holds the clip nodes, outermost first: draw the element under the last.
+  GVEC_LW_CLIP_ALL,      ///< The clip holds nothing, so nothing of the element is seen.
+  GVEC_LW_CLIP_REFUSED   ///< The element is refused (already reported).
+} gvec_lw_clip_state;
+
+/** The most clip nodes one element's `clip-path` makes: a clip that is clipped is a nested clip, to this depth. */
+#define GVEC_LW_CLIP_MAX 8
+
+/**
+ * The clips of an element's `clip-path` (lower_clip.c): a `clipPath` of one shape becomes one clip node whose path is the shape's
+ * and whose map takes the clipPath's and the shape's transforms and `clipPathUnits` into account, in the element's own space; a
+ * clip that is itself clipped, on the clipPath or on its shape, is a nested clip, whose region is the intersection. The walk draws
+ * the element under the last node and attaches the nodes inwards when anything was drawn. Several shapes, a basic shape and a
+ * `use` child are refused until they are lowered; a reference to nothing is no clip.
+ *
+ * @param out Room for GVEC_LW_CLIP_MAX nodes.
+ * @param count The nodes made, when the state is GVEC_LW_CLIP_NODE.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_clip_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame,
+    gvec_lw_clip_state * state, gvec_lw_node ** out, size_t * count);
 
 /** What an element draws, for `paint-order`. */
 typedef enum gvec_lw_part { GVEC_LW_PART_FILL = 0, GVEC_LW_PART_STROKE, GVEC_LW_PART_MARKERS } gvec_lw_part;

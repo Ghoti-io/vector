@@ -77,14 +77,14 @@ static const GVEC_Svg_Attribute * chain_attribute(const GVEC_Svg_Element * start
 }
 
 /* The instance of an element of the document: the chain from the root, so that a property inherits as it does in the tree. */
-static GVEC_Result instance_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GVEC_Svg_Instance ** out) {
+GVEC_Result gvec_lw_instance_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GVEC_Svg_Instance ** out) {
   const GVEC_Svg_Element * parent = gvec_svg_element_parent(e);
   if (!parent) {
     *out = gvec_svg_instance_root(ctx->style);
     return GVEC_OK;
   }
   const GVEC_Svg_Instance * above;
-  GVEC_Result r = instance_of(ctx, parent, &above);
+  GVEC_Result r = gvec_lw_instance_of(ctx, parent, &above);
   if (r != GVEC_OK) {
     return r;
   }
@@ -165,7 +165,7 @@ static GVEC_Result chain_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Element * start
       continue;
     }
     const GVEC_Svg_Instance * inst;
-    GVEC_Result r = instance_of(ctx, c, &inst);
+    GVEC_Result r = gvec_lw_instance_of(ctx, c, &inst);
     if (r != GVEC_OK) {
       return r;
     }
@@ -233,7 +233,7 @@ static gradient_cache * cache_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * ser
       continue;
     }
     const GVEC_Svg_Instance * inst;
-    GVEC_Result r = instance_of(ctx, e, &inst);
+    GVEC_Result r = gvec_lw_instance_of(ctx, e, &inst);
     if (r != GVEC_OK) {
       *result = r;
       return NULL;
@@ -257,7 +257,7 @@ static gradient_cache * cache_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * ser
   double det = c->transform.m[0][0] * c->transform.m[1][1] - c->transform.m[0][1] * c->transform.m[1][0];
   c->singular = !(det != 0) || det - det != 0;
   const GVEC_Svg_Instance * inst;
-  GVEC_Result r = instance_of(ctx, server, &inst);
+  GVEC_Result r = gvec_lw_instance_of(ctx, server, &inst);
   if (r != GVEC_OK) {
     *result = r;
     return NULL;

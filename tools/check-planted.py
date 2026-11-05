@@ -43,6 +43,8 @@ PR = "src/codec/svg/lower/lower_primitive.c"
 LP = "src/codec/svg/lower/lower_path.c"
 # Gradients.
 GR = "src/codec/svg/lower/lower_gradient.c"
+# Clips.
+CL = "src/codec/svg/lower/lower_clip.c"
 
 # (rule, source file, text, replacement, what the defect is)
 PLANTS = [
@@ -249,6 +251,24 @@ PLANTS = [
      'strncasecmp(value->text.data, "currentcolor", value->text.length) != 0) {', "a property valued currentColor is not its color"),
     ("H5", "src/codec/svg/svg_api.c", "return e->href_target ? e->href_target : e->cut_target;", "return e->href_target;",
      "the chain of a paint server stops at a reference cycle's cut"),
+    ("H9", CL, '"evenodd") ? GSHGEOM_FILL_EVEN_ODD', '"evenoddx") ? GSHGEOM_FILL_EVEN_ODD', "a clip-rule of evenodd is nonzero"),
+    ("H9", CL, "gvec_svg_attribute_keyword(units, &index, &word) && index == 1) {", "gvec_svg_attribute_keyword(units, &index, &word) && index == 0) {",
+     "clipPathUnits are exchanged"),
+    ("H9", CL, "!gvec_lw_compose(&map, &placed, &map)", "!gvec_lw_compose(&placed, &map, &map)", "the bounding box is applied after the clip's own transform"),
+    ("H9", CL, "!(box.max.y > box.min.y)) {\n      *state = GVEC_LW_CLIP_ALL;", "!(box.max.y > box.min.y - 1)) {\n      *state = GVEC_LW_CLIP_ALL;",
+     "a box of no height is a place for a clip"),
+    ("H9", CL, "  if (shapes > 1) {", "  if (shapes > 99) {", "a clipPath of several shapes is clipped to the last"),
+    ("H9", CL, "bool drawn = !gvec_lw_keyword_is(&v, \"none\") && !gvec_svg_element_conditional_false(child);", "bool drawn = !gvec_svg_element_conditional_false(child);",
+     "a shape of display none is part of the clip"),
+    ("H9", CL, "    *state = GVEC_LW_CLIP_ALL; /* A clip of nothing lets nothing through. */", "    *state = GVEC_LW_CLIP_NONE;",
+     "a clip of nothing lets everything through"),
+    ("H9", CL, "if (kind == 0 || gvec_svg_element_kind(clip_path) != GVEC_SVG_KIND_CLIP_PATH) {", "if (kind == 0) {", "a reference to what is no clipPath is a clip"),
+    ("H10", CL, "gvec_svg_element_kind(nested_target) == GVEC_SVG_KIND_CLIP_PATH && !seen_before(c, nested_target)) {",
+     "gvec_svg_element_kind(nested_target) == GVEC_SVG_KIND_CLIP_PATH && 0) {", "a clipPath's own clip-path is ignored"),
+    ("H10", CL, "gvec_svg_element_kind(own_target) == GVEC_SVG_KIND_CLIP_PATH && !seen_before(c, own_target)) {",
+     "gvec_svg_element_kind(own_target) == GVEC_SVG_KIND_CLIP_PATH && 0) {", "a clip shape's own clip-path is ignored"),
+    ("H10", CL, "    if (c->seen[i] == clip_path) {\n      return true;", "    if (c->seen[i] == clip_path) {\n      return false;", "a clip chain that comes back is followed again"),
+    ("H10", W, "    r = gvec_lw_attach(ctx, clips[i - 1], clips[i]);", "    r = GVEC_OK;", "the nested clips are not attached to each other"),
     ("K10", W, "  bool marked = true; /* Every shape has markers (SVG 2, 13.7). */",
      "  bool marked = kind != GVEC_SVG_KIND_RECT;", "a rect has no markers"),
     ("X1", LP, "s->large_arc,\n          s->sweep, NULL);", "s->sweep,\n          s->large_arc, NULL);", "an arc's two flags are exchanged"),

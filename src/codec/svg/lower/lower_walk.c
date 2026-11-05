@@ -417,14 +417,7 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     return GVEC_OK;
   }
   /* The features of the later stories refuse the element whole, so that nothing is half drawn. */
-  bool refuse = false;
-  r = references_refuse(ctx, inst, GVEC_SVG_PROP_CLIP_PATH, false, &refuse, &usable);
-  if (r != GVEC_OK || !usable) {
-    return r;
-  }
-  if (refuse) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "clip-path is not lowered yet");
-  }
+  bool refuse = false; /* `clip-path` is lowered by the wrapper around the element (lower_clip.c). */
   r = references_refuse(ctx, inst, GVEC_SVG_PROP_MASK, true, &refuse, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
@@ -1232,7 +1225,7 @@ static GVEC_Result lw_refused_kind(
   return gvec_lw_refuse(ctx, e, reason, message);
 }
 
-static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+static GVEC_Result lw_content(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   if (ctx->depth >= ctx->max_depth) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the drawing nests deeper than the limit allows once references are expanded");
@@ -1293,6 +1286,46 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   /* The element and everything under it are done: its style is not read again. */
   gvec_svg_instance_release(ctx->style, inst);
   return r;
+}
+
+/* An element: its content, under the clips its `clip-path` makes when it has one (SVG 2, 14.3; the clips are outside the element's own
+ * opacity group, which composes the same way, a clip and an opacity commuting). */
+static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+  gvec_lw_clip_state state;
+  gvec_lw_node * clips[GVEC_LW_CLIP_MAX];
+  size_t count = 0;
+  GVEC_Result r = gvec_lw_clip_begin(ctx, inst, frame, &state, clips, &count);
+  if (r != GVEC_OK || state == GVEC_LW_CLIP_REFUSED || state == GVEC_LW_CLIP_ALL) {
+    gvec_svg_instance_release(ctx->style, inst);
+    return r;
+  }
+  if (state == GVEC_LW_CLIP_NONE) {
+    return lw_content(ctx, inst, frame, parent);
+  }
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  size_t entered = 0;
+  for (; entered < count; entered++) {
+    bool ok;
+    r = gvec_lw_wrap_enter(ctx, e, &ok);
+    if (r != GVEC_OK || !ok) {
+      break;
+    }
+  }
+  if (entered < count) {
+    while (entered--) {
+      gvec_lw_wrap_leave(ctx);
+    }
+    gvec_svg_instance_release(ctx->style, inst);
+    return r;
+  }
+  r = lw_content(ctx, inst, frame, clips[count - 1]);
+  for (size_t i = 0; i < count; i++) {
+    gvec_lw_wrap_leave(ctx);
+  }
+  for (size_t i = count; r == GVEC_OK && i-- > 1;) {
+    r = gvec_lw_attach(ctx, clips[i - 1], clips[i]);
+  }
+  return r == GVEC_OK ? gvec_lw_attach(ctx, parent, clips[0]) : r;
 }
 
 GVEC_Result gvec_lw_root_size(gvec_lw_ctx * ctx, double * width, double * height) {

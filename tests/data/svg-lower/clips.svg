@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- A clip-path of one shape is one clip around the element; a clip that is clipped is nested (H9, H10). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="64" viewBox="0 0 96 64">
+  <defs>
+    <clipPath id="a"><circle cx="16" cy="16" r="12"/></clipPath>
+    <clipPath id="b" clipPathUnits="objectBoundingBox" clip-rule="evenodd"><path d="M0 0H1V1H0Z M0.25 0.25H0.75V0.75H0.25Z"/></clipPath>
+    <clipPath id="c" transform="translate(4 0)" clip-path="url(#d)"><rect width="30" height="20" transform="rotate(10)"/></clipPath>
+    <clipPath id="d"><ellipse cx="48" cy="12" rx="30" ry="10"/></clipPath>
+    <clipPath id="e"><rect x="0" y="0" width="0" height="4"/></clipPath>
+  </defs>
+  <rect x="4" y="4" width="24" height="24" fill="#c0392b" clip-path="url(#a)"/>
+  <rect x="34" y="4" width="26" height="26" fill="#2980b9" clip-path="url(#b)"/>
+  <g clip-path="url(#c)" opacity="0.8"><rect x="36" y="2" width="30" height="24" fill="#27ae60"/><circle cx="60" cy="20" r="9" fill="#f39c12"/></g>
+  <rect x="68" y="4" width="24" height="24" fill="#8e44ad" clip-path="url(#e)"/>
+  <path d="M8 40 L40 40 L24 60 Z" fill="#16a085" stroke="#2c3e50" stroke-width="3" clip-path="url(#a)" transform="translate(0 0)"/>
+  <rect x="50" y="36" width="40" height="24" fill="#d35400" clip-path="url(#nowhere)"/>
+</svg>
