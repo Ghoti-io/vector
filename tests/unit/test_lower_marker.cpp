@@ -110,21 +110,22 @@ TEST(LowerMarker, AClosedSubpathHasAVertexForTheCloseAtItsStart) {
   EXPECT_EQ(in[3].map.t[1], 10.0);
 }
 
-TEST(LowerMarker, LinePolylineAndPolygonHaveMarkersAndRectHasNone) {
+TEST(LowerMarker, EveryShapeHasMarkersAtItsVertices) {
   const char * shapes[] = {"<line x1=\"10\" y1=\"10\" x2=\"30\" y2=\"10\" stroke=\"none\"",
-      "<polyline points=\"10,10 30,10 30,30\" fill=\"none\"", "<polygon points=\"10,10 30,10 30,30\" fill=\"none\""};
-  const size_t expected[] = {2, 3, 4};  // a polygon is closed
-  for (int i = 0; i < 3; i++) {
+      "<polyline points=\"10,10 30,10 30,30\" fill=\"none\"", "<polygon points=\"10,10 30,10 30,30\" fill=\"none\"",
+      "<rect x=\"10\" y=\"10\" width=\"20\" height=\"20\" fill=\"none\"",
+      "<circle cx=\"20\" cy=\"20\" r=\"10\" fill=\"none\""};
+  // A polygon and a rect are closed. A circle's path is four arcs and a close, so the start, three arc ends, the fourth arc's
+  // end and the close's, which are all the start point (SVG 2, 13.7 and the equivalent path of a circle in 9.2).
+  const size_t expected[] = {2, 3, 4, 5, 6};
+  for (int i = 0; i < 5; i++) {
     Lowered l;
     LowerSvg(OnlyMarkers(Marker("orient=\"0\""),
                  std::string(shapes[i]) + " marker-start=\"url(#m)\" marker-mid=\"url(#m)\" marker-end=\"url(#m)\"/>"),
         l);
     EXPECT_EQ(Instances(l).size(), expected[i]) << shapes[i];
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << shapes[i];
   }
-  Lowered rect;
-  LowerSvg(OnlyMarkers(Marker(""), "<rect width=\"4\" height=\"4\" fill=\"none\" marker-start=\"url(#m)\"/>"), rect);
-  EXPECT_EQ(Instances(rect).size(), (size_t) 0);
-  EXPECT_EQ(rect.Refusals(), (size_t) 0);
 }
 
 TEST(LowerMarker, AutoTakesTheDirectionOfTheVertexFromTheGeometry) {

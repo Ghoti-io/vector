@@ -757,7 +757,7 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   bool filled = fill_decision == GVEC_LW_PAINT_DRAW; /* A line has no area: its fill path is empty. */
   bool stroked = stroke.decision == GVEC_LW_PAINT_DRAW;
-  bool marked = kind == GVEC_SVG_KIND_PATH || kind == GVEC_SVG_KIND_LINE || kind == GVEC_SVG_KIND_POLYLINE || kind == GVEC_SVG_KIND_POLYGON;
+  bool marked = true; /* Every shape has markers (SVG 2, 13.7). */
   if (!filled && !stroked && !marked) {
     return GVEC_OK;
   }

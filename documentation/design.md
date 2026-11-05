@@ -416,7 +416,7 @@ at most half the nodes a version of the scene may hold); the element that would 
 nested past the scene's depth is refused where it is. A marker whose content refers back to it is cut by the document's
 reference graph, which says so when it loads: nothing recurses.
 
-**K10 What is not a marker.** A `rect`, a `circle` and an `ellipse` have no markers, as SVG 2 says. A marker on a path with an
+**K10 Which shapes have markers.** Every shape does, a `rect`, a `circle` and an `ellipse` included (SVG 2, 13.7: markers are painted along "any shape element"); the vertices are those of the shape's path, so the start and end markers of a closed shape are at its first vertex. A marker on a path with an
 elliptical arc is placed like any other: an arc is one segment that ends one vertex, at its authoritative end.
 
 **X1 Arcs.** Path data holds an arc in endpoint form and the lowering gives it, as written, to the geometry library's

@@ -137,19 +137,19 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **245 of 1,679
-(14.59%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **246 of 1,679
+(14.65%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
 
 | directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
 | `masking` | 93 | 2 | 0 | 52 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 0 | 0 | 118 | 0 | 31 | 0 |
-| `painting` | 304 | 105 | 111 | 63 | 0 | 25 | 0 |
+| `painting` | 304 | 106 | 110 | 63 | 0 | 25 | 0 |
 | `shapes` | 133 | 39 | 91 | 3 | 0 | 0 | 0 |
 | `structure` | 247 | 99 | 46 | 36 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **245** | **248** | **272** | **1** | **913** | **0** |
+| **all** | **1679** | **246** | **247** | **272** | **1** | **913** | **0** |
 
 The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
@@ -162,11 +162,11 @@ now asks `gvec_doc_size` for it); and a `<style>` element with rules was ignored
 (`GVEC_LOWER_STYLESHEET`) until selectors exist. A malformed `points` list now keeps its complete pairs, as the
 specification's error handling says.
 
-Of the 248 that remain, most agree with `resvg` in being unlike the reference, or differ from it by palette rounding and
+Of the 247 that remain, most agree with `resvg` in being unlike the reference, or differ from it by palette rounding and
 anti-aliasing over a tail of pixels (`painting/marker/orient=auto-start-reverse` is 107 pixels over the
 tolerance, all along the strokes); a few follow the reference's own conventions, which the lowering does not (a negative
 `width` on the root `svg` renders nothing, and an `svg` with no size takes its size from the content's bounding box), and
-`painting/marker/with-viewBox-1` is marked undefined behavior in the corpus. The rest are features the lowering does not do yet: SVG 2 units and geometry given in style, markers on `rect`, `circle` and `ellipse`, `shape-rendering="crispEdges"`, and the
+`painting/marker/with-viewBox-1` is marked undefined behavior in the corpus. The rest are features the lowering does not do yet: SVG 2 units and geometry given in style, `shape-rendering="crispEdges"`, and the
 direction of a marker at a degenerate vertex. They stay in the score as failures.
 
 The remaining refusals are led by cases whose first refused element is a `rect` that carries something the lowering
