@@ -927,20 +927,63 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_RENDERING_DISABLED, 0, e->node.line, e->node.column,
         e->node.offset, e->name, "a viewport or viewBox of no size disables the rendering of the element");
   }
-  GSHGEOM_Map inner;
-  if (gshgeom_map_translate(2, x, y, 0, &inner) != GSHGEOM_OK) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewport is past the range the waist can carry");
-  }
+  GSHGEOM_Map view;
+  bool has_view = false;
   if (has_box) {
     GVEC_Svg_Preserve_Aspect_Ratio par = {GVEC_SVG_ALIGN_X_MID_Y_MID, 0, 0};
     const GVEC_Svg_Attribute * p = gvec_svg_element_find_attribute(e, "preserveAspectRatio");
     if (p && gvec_svg_attribute_class(p) == GVEC_SVG_ATTR_TYPED) {
       gvec_svg_attribute_preserve_aspect_ratio(p, &par);
     }
-    GSHGEOM_Map view;
-    if (!gvec_lw_viewbox_map(&box, &par, w, h, &view) || !gvec_lw_compose(&inner, &view, &inner)) {
+    if (!gvec_lw_viewbox_map(&box, &par, w, h, &view)) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewBox is past the range the waist can carry");
     }
+    has_view = true;
+  }
+  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_SYMBOL) {
+    /* A symbol's reference point is placed at its x, y instead of the corner of its viewport; one that is not given moves
+     * nothing in its direction (SVG 2, 5.5.1). The point is in the content's coordinates, after the viewBox. */
+    for (int axis = 0; axis < 2; axis++) {
+      const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, axis ? "refY" : "refX");
+      GVEC_Svg_Length length;
+      if (!attribute || gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(attribute, &length)) {
+        continue;
+      }
+      double v;
+      if (length.unit == GVEC_SVG_UNIT_PERCENT) { /* the keywords: 0%, 50% and 100% of the viewBox, or of the viewport without one */
+        double origin = has_box ? (axis ? box.y : box.x) : 0;
+        double extent = has_box ? (axis ? box.height : box.width) : (axis ? h : w);
+        v = origin + extent * length.value / 100.0;
+      }
+      else if (!gvec_lw_absolute_length(&length, &v)) {
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a symbol reference point in a unit that needs the cascade is not lowered");
+      }
+      GSHGEOM_Point at, ref;
+      memset(&ref, 0, sizeof ref);
+      ref.x = axis ? 0 : v;
+      ref.y = axis ? v : 0;
+      if (has_view) {
+        if (gshgeom_map_apply_point(&view, ref, &at) != GSHGEOM_OK) {
+          return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the reference point is past the range the waist can carry");
+        }
+      }
+      else {
+        at = ref;
+      }
+      if (axis) {
+        y -= at.y;
+      }
+      else {
+        x -= at.x;
+      }
+    }
+  }
+  GSHGEOM_Map inner;
+  if (gshgeom_map_translate(2, x, y, 0, &inner) != GSHGEOM_OK) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewport is past the range the waist can carry");
+  }
+  if (has_view && !gvec_lw_compose(&inner, &view, &inner)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewBox is past the range the waist can carry");
   }
   GSHGEOM_Map children_frame;
   if (!gvec_lw_compose(&c.local, &inner, &children_frame)) {

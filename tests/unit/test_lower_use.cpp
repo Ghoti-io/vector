@@ -122,6 +122,44 @@ TEST(LowerUse, ASymbolWithVisibleOverflowIsNotClipped) {
   EXPECT_EQ(gshscene_list_count(gshscene_resource_picture(l.Item(0).resource)), (size_t) 1);
 }
 
+TEST(LowerUse, ASymbolsReferencePointIsPlacedAtItsPositionAndAMissingOneMovesNothing) {
+  struct Case {
+    const char * attributes;
+    double tx, ty;  // the translation of the content under the viewBox's scale of 2
+  } const cases[] = {
+      {"", 0, 0},                          // none given: the corner of the viewport is at x, y
+      {"refX=\"5\" refY=\"5\"", -10, -10},   // the point (5, 5) of the content is at x, y: 10 units of viewport
+      {"refX=\"5\"", -10, 0},                // only one axis moves
+      {"refX=\"right\" refY=\"center\"", -20, -10},
+      {"refX=\"0\" refY=\"0\"", 0, 0},
+  };
+  for (const Case & c : cases) {
+    Lowered l;
+    LowerSvg(Svg("width=\"100\" height=\"100\"",
+                 std::string("<symbol id=\"s\" viewBox=\"0 0 10 10\" style=\"overflow: visible\" ") + c.attributes +
+                     "><path d=\"M0 0H10V10Z\"/></symbol><use href=\"#s\" width=\"20\" height=\"20\"/>"),
+        l);
+    ASSERT_EQ(l.Items(), (size_t) 1) << c.attributes;
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << c.attributes;
+    const GSHSCENE_Item & fill = PictureItem(l.Item(0).resource, 0);
+    EXPECT_EQ(fill.map.m[0][0], 2.0) << c.attributes;
+    EXPECT_EQ(fill.map.t[0], c.tx) << c.attributes;
+    EXPECT_EQ(fill.map.t[1], c.ty) << c.attributes;
+  }
+}
+
+TEST(LowerUse, AMissingReferencePointIsNotTheContentsOriginWhenTheViewBoxIsOffset) {
+  Lowered l;
+  LowerSvg(Svg("width=\"100\" height=\"100\"",
+               "<symbol id=\"s\" viewBox=\"5 5 10 10\" refX=\"5\" style=\"overflow: visible\"><path d=\"M5 5H15V15Z\"/></symbol>"
+               "<use href=\"#s\" width=\"20\" height=\"20\"/>"),
+      l);
+  ASSERT_EQ(l.Items(), (size_t) 1);
+  const GSHSCENE_Item & fill = PictureItem(l.Item(0).resource, 0);
+  EXPECT_EQ(fill.map.t[0], -10.0);  // refX 5 is the box's own left side: the viewport's corner stays at x
+  EXPECT_EQ(fill.map.t[1], -10.0);  // refY is not given: nothing moves, the box's origin is still mapped to the corner
+}
+
 TEST(LowerUse, ASymbolOutsideAUseIsNeverDrawn) {
   Lowered l;
   LowerSvg(Svg("width=\"100\" height=\"100\"", "<symbol id=\"s\"><path d=\"M0 0H10V10Z\"/></symbol><g><symbol><path d=\"M0 0H1V1Z\"/></symbol></g>"), l);
