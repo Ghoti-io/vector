@@ -34,8 +34,9 @@
 
 #include "lower_internal.h"
 
-GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Paint * paint, double opacity,
+GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
     GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
+  const GVEC_Svg_Element * element = gvec_svg_instance_element(inst);
   *decision = GVEC_LW_PAINT_REFUSED;
   switch (paint->kind) {
   case GVEC_SVG_PAINT_NONE:
@@ -60,9 +61,10 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element
     return GVEC_OK;
   }
   case GVEC_SVG_PAINT_SERVER: {
-    bool pattern = gvec_svg_element_kind(paint->server) == GVEC_SVG_KIND_PATTERN;
-    return gvec_lw_refuse(ctx, element, pattern ? GVEC_LOWER_PATTERN : GVEC_LOWER_GRADIENT,
-        pattern ? "a pattern paint is not lowered yet" : "a gradient paint is not lowered yet");
+    if (gvec_svg_element_kind(paint->server) == GVEC_SVG_KIND_PATTERN) {
+      return gvec_lw_refuse(ctx, element, GVEC_LOWER_PATTERN, "a pattern paint is not lowered yet");
+    }
+    return gvec_lw_gradient_paint(ctx, inst, paint, opacity, out, decision);
   }
   case GVEC_SVG_PAINT_CONTEXT_FILL:
   case GVEC_SVG_PAINT_CONTEXT_STROKE:
@@ -76,7 +78,11 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element
     if (named->kind == GVEC_SVG_PAINT_CONTEXT_FILL || named->kind == GVEC_SVG_PAINT_CONTEXT_STROKE) {
       return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "the context element's own paint is a context paint that names nothing");
     }
-    return gvec_lw_paint_of(ctx, element, named, opacity, out, decision);
+    if (named->kind == GVEC_SVG_PAINT_SERVER) {
+      /* A gradient is placed in the box of the context element, which is not the element that is being drawn. */
+      return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "a context paint that names a gradient is not lowered yet");
+    }
+    return gvec_lw_paint_of(ctx, inst, named, opacity, out, decision);
   default:
     return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "this paint is not lowered");
   }
@@ -137,7 +143,7 @@ GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     out->decision = GVEC_LW_PAINT_NONE;
     return GVEC_OK;
   }
-  r = gvec_lw_paint_of(ctx, e, &paint, opacity, &out->paint, &out->decision);
+  r = gvec_lw_paint_of(ctx, inst, &paint, opacity, &out->paint, &out->decision);
   if (r != GVEC_OK || out->decision != GVEC_LW_PAINT_DRAW) {
     return r;
   }

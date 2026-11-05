@@ -27,6 +27,7 @@
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -40,6 +41,8 @@ S = "src/codec/svg/lower/lower_stroke.c"
 M = "src/codec/svg/lower/lower_marker.c"
 PR = "src/codec/svg/lower/lower_primitive.c"
 LP = "src/codec/svg/lower/lower_path.c"
+# Gradients.
+GR = "src/codec/svg/lower/lower_gradient.c"
 
 # (rule, source file, text, replacement, what the defect is)
 PLANTS = [
@@ -219,6 +222,33 @@ PLANTS = [
     ("P4", W, "      if (!attribute || gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(attribute, &length)) {\n        continue;",
      "      if (!attribute || gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(attribute, &length)) {\n        length.value = 0;\n        length.unit = GVEC_SVG_UNIT_NONE;",
      "a symbol reference point that is not given is taken as zero"),
+    ("H1", GR, "  if (cache->bounding_box) {\n    gvec_lw_geometry geometry;", "  if (!cache->bounding_box) {\n    gvec_lw_geometry geometry;",
+     "a gradient in user-space units is placed in the bounding box"),
+    ("H1", GR, "!gvec_lw_compose(&placed, &cache->transform, &map)", "!gvec_lw_compose(&cache->transform, &placed, &map)",
+     "the gradient transform is applied after the bounding box"),
+    ("H1", GR, "!(box.max.y > box.min.y)) {", "!(box.max.y > box.min.y - 1)) {", "a bounding box of no height is a place for a gradient"),
+    ("H2", GR, "c->singular = !(det != 0) || det - det != 0;", "c->singular = det - det != 0;", "a gradient transform with no inverse is drawn"),
+    ("H3", GR, "c->extend = index == 1 ? GSHSCENE_EXTEND_REFLECT : index == 2 ? GSHSCENE_EXTEND_REPEAT : GSHSCENE_EXTEND_PAD;",
+     "c->extend = index == 1 ? GSHSCENE_EXTEND_REPEAT : index == 2 ? GSHSCENE_EXTEND_REFLECT : GSHSCENE_EXTEND_PAD;", "reflect and repeat are exchanged"),
+    ("H4", GR, "    offset = clamp01(offset);\n", "    offset = offset + 0;\n", "a stop offset is not clamped"),
+    ("H4", GR, "    if (offset < previous) {", "    if (0) {", "a stop offset may go backwards"),
+    ("H4", GR, "  if (cache->stop_count == 1) {", "  if (cache->stop_count == 99) {", "a gradient of one stop is drawn as a gradient"),
+    ("H4", GR, "out->rgba[3] *= opacity;\n  *decision", "out->rgba[3] *= opacity > 0 ? 1 : 0;\n  *decision", "the opacity of the fill is not applied to a solid stop"),
+    ("H5", GR, "for (int hops = 0; e && hops < CHAIN_LIMIT && is_gradient(e); hops++, e = gvec_svg_element_href_target_uncut(e)) {\n    if (same_kind",
+     "for (int hops = 0; e && hops < CHAIN_LIMIT && is_gradient(e); hops++, e = NULL) {\n    if (same_kind", "an attribute is read from the gradient itself only"),
+    ("H5", GR, "gvec_svg_element_href_target_uncut(e)) {\n    for (const GVEC_Svg_Element * c", "NULL) {\n    for (const GVEC_Svg_Element * c",
+     "the stops of a referenced gradient are not inherited"),
+    ("H6", GR, "  if (cache->linear_rgb) {", "  if (0) {", "linearRGB interpolation is drawn in sRGB"),
+    ("H7", GR, "    g.r0 = fr;", "    g.r0 = 0;", "the start circle has no radius"),
+    ("H7", GR, "      fx = cx;", "      fx = 0;", "the focal point does not default to the center"),
+    ("H7", GR, "    if (rr == 0) {", "    if (rr == -99) {", "a radius of zero is a radial gradient"),
+    ("H7", GR, "    if (rr < 0 || fr < 0) {", "    if (fr < 0) {", "a negative radius is a gradient"),
+    ("H8", GR, "  out->rgba[3] = opacity;\n  *decision = opacity > 0", "  out->rgba[3] = opacity > 0 ? 1 : 0;\n  *decision = opacity > 0",
+     "the opacity of the fill is not applied to a gradient"),
+    ("H8", "src/codec/svg/style/svg_color.c", 'strncasecmp(value->text.data, "currentcolor", value->text.length) == 0) {',
+     'strncasecmp(value->text.data, "currentcolor", value->text.length) != 0) {', "a property valued currentColor is not its color"),
+    ("H5", "src/codec/svg/svg_api.c", "return e->href_target ? e->href_target : e->cut_target;", "return e->href_target;",
+     "the chain of a paint server stops at a reference cycle's cut"),
     ("K10", W, "  bool marked = true; /* Every shape has markers (SVG 2, 13.7). */",
      "  bool marked = kind != GVEC_SVG_KIND_RECT;", "a rect has no markers"),
     ("X1", LP, "s->large_arc,\n          s->sweep, NULL);", "s->sweep,\n          s->large_arc, NULL);", "an arc's two flags are exchanged"),
@@ -447,13 +477,21 @@ def env(name):
     return value
 
 
-def run(cmd, **kw):
+def run(cmd, timeout=None, **kw):
+    # Its own process group, so that a run that is cut off at the timeout takes everything it started with it: killing only the
+    # shell leaves the runaway test spinning on a core for as long as the machine is up.
+    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True, **kw)
     try:
-        return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kw)
-    except subprocess.TimeoutExpired as e:
+        out, _ = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, None)
+    except subprocess.TimeoutExpired:
         # A planted defect that makes a test or a replay run away has been caught: it is a failure, not a crash of this script.
-        out = e.stdout.decode() if isinstance(e.stdout, bytes) else (e.stdout or "")
-        return subprocess.CompletedProcess(cmd, 124, out + "\ntimed out", None)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        out, _ = proc.communicate()
+        return subprocess.CompletedProcess(cmd, 124, (out or "") + "\ntimed out", None)
 
 
 def build_and_test(work, edits):

@@ -440,6 +440,30 @@ and markers begin where a browser's do. A circle is an ellipse of equal radii.
 so the resource carries the tag a document writer or an analytic sink reads; the renderer ignores it and draws the path. A
 stroke of one of them is a stroke of the tagged path.
 
+**H1 Gradients.** A `linearGradient` or `radialGradient` paint is one gradient resource of the waist (interned, so equal content is
+one handle however many shapes it paints), with a map from gradient space to the element's own space. With `objectBoundingBox`
+units, the default, the map is the box of the element's fill geometry (the stroke left out, from the geometry library's bounds;
+a line's is its extent) composed with `gradientTransform`, and a coordinate is a fraction of the box; with `userSpaceOnUse` the
+map is `gradientTransform` and a percentage is of the viewport (of its normalized diagonal for a radius). A box with no width or no
+height, a `gradientTransform` with no inverse and a negative radius make the paint `none` with a notice, as SVG 2 says a paint server
+that cannot be rendered is not. `spreadMethod` is the waist's extend mode.
+
+**H2 Stops and inheritance.** The stops are the `stop` children of the first gradient of an `href` chain that has any; each
+offset is clamped to `[0, 1]` and never goes below the one before it. A stop's color is its `stop-color` with `stop-opacity`
+multiplied in, and `currentColor` is the `color` of the stop as the cascade gives it (the waist's foreground when none is set). No
+stops is `none`; one stop, a radius of zero and a gradient with both ends at one point are the last stop's color as a solid paint.
+The attributes the two kinds share (`gradientUnits`, `gradientTransform`, `spreadMethod`) come from the first gradient of the chain
+that has them, and the geometry (`x1`, `cx`, `fr` and the rest) from the first of the same kind; a chain that comes back to itself is
+followed until it repeats, through `gvec_svg_element_href_target_uncut()`, because the document cuts the edges of a cycle and a
+gradient on one still has what the chain gave it before it returned. What of a gradient does not depend on the element painted
+with it (its stops, transform, units and spread) is read once.
+
+**H3 Radial, and what is not lowered.** A radial gradient is the waist's two circles, the focal point and `fr` the start and the
+center and `r` the end, with the focal point defaulting to the center; where they do not contain one another the waist's two-circle
+rule decides, not a clamp in this library. A gradient that interpolates in `linearRGB`, and a gradient named by `context-fill` or
+`context-stroke` (whose box is the context element's, not the element drawn), are refused whole with `gradient` and `context-paint`
+until they are lowered. Colors are interpolated straight, as the waist's `premultiplied` field says.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a

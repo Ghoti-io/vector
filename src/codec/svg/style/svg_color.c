@@ -34,6 +34,7 @@
 #include <ghoti.io/vector/macros.h>
 
 #include <string.h>
+#include <strings.h>
 
 #include <ghoti.io/color/color.h>
 #include <ghoti.io/color/math.h>
@@ -419,6 +420,19 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
 
 GVEC_Result gvec_svg_used_color(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * value,
     const GVEC_Svg_Element * where, GVEC_Svg_Color * out) {
+  /* A property whose value is `currentColor` computes to the keyword, not to the color: it is the element's `color`. */
+  if (value && value->kind == GTEXT_CSS_VAL_KEYWORD && value->text.length == strlen("currentcolor") &&
+      strncasecmp(value->text.data, "currentcolor", value->text.length) == 0) {
+    const GTEXT_CSS_Value * current = NULL;
+    GVEC_Result r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_COLOR, NULL, &current);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (!current || current->kind != GTEXT_CSS_VAL_COLOR || !current->color) {
+      return refuse(context, where, 0, "the color property has no color value");
+    }
+    return color_of(context, instance, current->color, where, false, out);
+  }
   if (!value || value->kind != GTEXT_CSS_VAL_COLOR || !value->color) {
     return refuse(context, where, 0, "the value is not a color");
   }

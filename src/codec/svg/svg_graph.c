@@ -76,6 +76,9 @@ static void mark_cycle(GVEC_Diagnostics * diag, GVEC_Svg_Element * e) {
     e->flags |= GVEC_SVG_ELEMENT_ON_CYCLE;
     diag_cycle(diag, e);
   }
+  if (e->href_target) {
+    e->cut_target = e->href_target;
+  }
   e->href_target = NULL;
 }
 

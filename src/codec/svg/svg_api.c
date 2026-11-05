@@ -153,6 +153,13 @@ const GVEC_Svg_Element * gvec_svg_element_href_target(const GVEC_Svg_Element * e
   return e->href_target;
 }
 
+const GVEC_Svg_Element * gvec_svg_element_href_target_uncut(const GVEC_Svg_Element * e) {
+  if (!e || (e->flags & GVEC_SVG_ELEMENT_EXPANSION_LIMITED)) {
+    return NULL;
+  }
+  return e->href_target ? e->href_target : e->cut_target;
+}
+
 size_t gvec_svg_element_attribute_count(const GVEC_Svg_Element * e) {
   return e ? e->attribute_count : 0;
 }

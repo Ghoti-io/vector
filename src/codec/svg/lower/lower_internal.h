@@ -164,6 +164,7 @@ typedef struct gvec_lw_ctx {
   bool tracing;
   gvec_lw_table * tables;
   size_t table_count, table_capacity;
+  struct gradient_cache * gradients; ///< What of each paint server does not depend on the element that uses it (lower_gradient.c).
   gvec_lw_node root;                 ///< The root of the tree: only its children are drawn.
 } gvec_lw_ctx;
 
@@ -237,8 +238,17 @@ typedef enum gvec_lw_paint_decision {
   GVEC_LW_PAINT_REFUSED   ///< The element is refused (already reported).
 } gvec_lw_paint_decision;
 
-/** The paint of `paint` with its alpha multiplied by `opacity` (AD-23); a server or a context paint refuses the element. */
-GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Paint * paint,
+/** The paint of `paint` for the element of `inst` with its alpha multiplied by `opacity` (AD-23); a pattern or a context paint of a pattern refuses the element. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
+    double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
+/**
+ * A `linearGradient` or `radialGradient` paint for the element of `inst` (lower_gradient.c): the gradient resource, with the
+ * bounding box of the element's fill geometry when the units are `objectBoundingBox`. A gradient that is not rendered (a box of
+ * no area, a transform with no inverse, a negative radius) is `NONE` with a notice; one of no stops is `NONE`, of one stop or of
+ * no extent a solid paint.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
     double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
 
 /** What the stroke of an element amounts to. */

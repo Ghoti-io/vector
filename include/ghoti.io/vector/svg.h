@@ -173,6 +173,12 @@ GVEC_API uint64_t gvec_svg_element_expansion(const GVEC_Svg_Element * element);
  * none, it is missing, or the edge was cut by a cycle or the expansion limit.
  */
 GVEC_API const GVEC_Svg_Element * gvec_svg_element_href_target(const GVEC_Svg_Element * element);
+/**
+ * The element an `href` resolves to even when a reference cycle cut the edge (gvec_svg_element_href_target() is NULL there), or NULL
+ * when there is none or the expansion limit cut it. A chain of paint servers is followed with it until it repeats, so that a
+ * gradient on a cycle still has the attributes and stops the chain gives it before it comes back.
+ */
+GVEC_API const GVEC_Svg_Element * gvec_svg_element_href_target_uncut(const GVEC_Svg_Element * element);
 
 //-----------------------------------------------------------------------------
 // Attributes

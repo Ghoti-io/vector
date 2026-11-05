@@ -612,7 +612,6 @@ static GVEC_Result lw_switch(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
 /* The paint of a fill and its rule, or the reason there is none. */
 static GVEC_Result fill_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHSCENE_Paint * paint, GSHGEOM_Fill_Rule * rule,
     gvec_lw_paint_decision * decision) {
-  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   GVEC_Svg_Style_Value v, n;
   bool usable;
   *decision = GVEC_LW_PAINT_REFUSED;
@@ -631,7 +630,7 @@ static GVEC_Result fill_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GS
     return r;
   }
   *rule = gvec_lw_keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
-  return gvec_lw_paint_of(ctx, e, &fill, fill_opacity, paint, decision);
+  return gvec_lw_paint_of(ctx, inst, &fill, fill_opacity, paint, decision);
 }
 
 bool gvec_lw_absolute_length(const GVEC_Svg_Length * length, double * out) {
@@ -829,7 +828,12 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
     return GVEC_ERR_OOM;
   }
   size_t n = 0;
+  bool used[3] = {false, false, false}; /* Each part once, whatever the order says: a node linked twice would close a loop. */
   for (int i = 0; i < 3; i++) {
+    if (order[i] >= 3 || used[order[i]]) {
+      continue;
+    }
+    used[order[i]] = true;
     if (order[i] == GVEC_LW_PART_FILL && fill_node) {
       sequence[n++] = fill_node;
     }

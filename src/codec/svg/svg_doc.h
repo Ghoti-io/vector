@@ -125,6 +125,7 @@ struct GVEC_Svg_Element {
   const char * id;
   const GVEC_Svg_Attribute * href;     ///< The `href` (or `xlink:href`) attribute when TYPED, else NULL.
   const GVEC_Svg_Element * href_target;
+  const GVEC_Svg_Element * cut_target; ///< The target a reference cycle cut: kept for a paint server's chain, which follows it until it repeats.
   const GVEC_Svg_Element * switch_selected;
   uint64_t expansion;
 };

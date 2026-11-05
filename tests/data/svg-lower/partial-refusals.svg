@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!-- What the library cannot draw yet is refused whole and reported; the rest of the document is drawn (P6, P9, AD-11). -->
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">
-  <defs><linearGradient id="g"><stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/></linearGradient></defs>
+  <defs><pattern id="g" width="4" height="4"><rect width="2" height="2"/></pattern></defs>
   <path d="M4 4H20V20H4Z" fill="#c0392b"/>
   <path d="M24 4 A 8 8 0 0 1 40 4 L 40 20 L 24 20 Z" fill="#2980b9"/>
   <rect x="44" y="4" width="16" height="16" fill="#27ae60"/>
