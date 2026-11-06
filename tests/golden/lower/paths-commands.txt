@@ -1,6 +1,6 @@
 fixture paths-commands
 list-hash 48c69a6c0ed139c4
-raster-hash f8925b61aec65be0
+raster-hash bfc41fcd1b6681c9
 diagnostics 0
 list
 gshscene.list 1 items=7 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=48c69a6c0ed139c4

@@ -116,24 +116,18 @@ static GVEC_Result lower_minus2(const GVEC_Doc * doc, const GVEC_Lower_Options *
   return draw_rect(list, 10.0, 253.0 / 255.0);
 }
 
-/* The rectangle inside a knockout group, which the sink refuses: a drawing the sink reports as not drawn. */
+/* The rectangle after a placeholder, which the sink reports as refused: a drawing the sink reports as not drawn, though the pixels
+ * agree. (A knockout group was this stub's refusal until the sink composited them.) */
 static GVEC_Result lower_sink_refused(const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_List * list,
     GVEC_Diagnostics * diagnostics) {
   (void) doc;
   (void) options;
   (void) diagnostics;
-  GSHSCENE_Group group;
-  memset(&group, 0, sizeof group);
-  group.opacity = 1.0;
-  group.knockout = 1;
-  if (gshscene_list_group_push(list, &group, 0, 0.0) != GSHSCENE_OK) {
+  if (gshscene_list_placeholder(list, GSHSCENE_PLACEHOLDER_SOURCE_COLR, GSHSCENE_PLACEHOLDER_COLR_UNBOUNDED, 0, NULL, NULL, 0, 0.0) !=
+      GSHSCENE_OK) {
     return GVEC_ERR_INTERNAL;
   }
-  GVEC_Result r = draw_rect(list, 10.0, 1.0);
-  if (r != GVEC_OK || gshscene_list_group_pop(list) != GSHSCENE_OK) {
-    return GVEC_ERR_INTERNAL;
-  }
-  return GVEC_OK;
+  return draw_rect(list, 10.0, 1.0);
 }
 
 static const struct {

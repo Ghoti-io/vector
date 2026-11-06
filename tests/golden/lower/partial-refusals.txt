@@ -1,6 +1,6 @@
 fixture partial-refusals
 list-hash 7a3684eff04923cd
-raster-hash fc4a016e7148b935
+raster-hash 530b27a27b272955
 diagnostics 3
 diagnostic code=7 detail=8 line=8 column=3 element=path
 diagnostic code=7 detail=2 line=9 column=3 element=path

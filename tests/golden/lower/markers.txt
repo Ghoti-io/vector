@@ -1,6 +1,6 @@
 fixture markers
 list-hash eccdc53c665da3d9
-raster-hash ee06018cbc056956
+raster-hash 1b9b8db3f8a58dce
 diagnostics 0
 list
 gshscene.list 1 items=23 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=eccdc53c665da3d9

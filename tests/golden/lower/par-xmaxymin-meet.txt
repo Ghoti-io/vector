@@ -1,6 +1,6 @@
 fixture par-xmaxymin-meet
 list-hash 9118b9ba9aac464b
-raster-hash 198bfcb6c8f6cb21
+raster-hash fc13358610e8bd12
 diagnostics 0
 list
 gshscene.list 1 items=4 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=9118b9ba9aac464b

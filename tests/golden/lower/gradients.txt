@@ -1,6 +1,6 @@
 fixture gradients
 list-hash 8544cad44997a1d6
-raster-hash 9ba0950ae36bcdd3
+raster-hash 6f2936107dfa59ab
 diagnostics 2
 diagnostic code=19 detail=0 line=5 column=5 element=linearGradient
 diagnostic code=19 detail=0 line=5 column=5 element=linearGradient

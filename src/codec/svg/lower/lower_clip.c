@@ -22,9 +22,9 @@
  * @file lower_clip.c
  *
  * `clip-path` naming a `clipPath` of one shape (H9, H10): one clip node of the waist around what the element draws, never an alpha
- * mask, and a clip that is itself clipped (on the clipPath or on its shape) a nested node, whose region is the intersection. What
- * needs several shapes in one clip is the union clip of the shape family and is refused until that exists; so is a basic shape and a
- * `use` child.
+ * mask, and a clip that is itself clipped (on the clipPath or on its shape) a nested node, whose region is the intersection. Several
+ * shapes are one union clip of the waist, each with its own transform and clip-rule; a basic shape, a `use` child, and a clip-path on
+ * one shape of several are refused.
  */
 
 #include <ghoti.io/vector/macros.h>
@@ -32,6 +32,7 @@
 #include <string.h>
 
 #include <ghoti.io/shape-geometry/path.h>
+#include <ghoti.io/shape-scene/clip_union.h>
 
 #include "lower_internal.h"
 
@@ -110,6 +111,158 @@ static bool seen_before(const chain * c, const GVEC_Svg_Element * clip_path) {
   return false;
 }
 
+/* Whether a child of a clipPath is a shape that contributes: `display` is not none, it is not conditional-false and `visibility` is
+ * not hidden or collapse. */
+static GVEC_Result child_drawn(gvec_lw_ctx * ctx, const GVEC_Svg_Element * child, const GVEC_Svg_Instance ** inst, bool * drawn) {
+  GVEC_Result r = gvec_lw_instance_of(ctx, child, inst);
+  *drawn = false;
+  if (r != GVEC_OK) {
+    return r;
+  }
+  GVEC_Svg_Style_Value v;
+  bool usable;
+  r = gvec_lw_read_property(ctx, *inst, GVEC_SVG_PROP_DISPLAY, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  bool shown = !gvec_lw_keyword_is(&v, "none") && !gvec_svg_element_conditional_false(child);
+  r = gvec_lw_read_property(ctx, *inst, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  *drawn = shown && !(gvec_lw_keyword_is(&v, "hidden") || gvec_lw_keyword_is(&v, "collapse"));
+  return GVEC_OK;
+}
+
+/* The geometry of a clip shape in its own space, and its clip-rule. *geometry is not PATH when it has no area; a refusal is returned
+ * through the refuse call and *geometry stays LIMIT. */
+static GVEC_Result region_of(chain * c, const GVEC_Svg_Element * shape, const GVEC_Svg_Instance * shape_inst, gvec_lw_geometry * geometry,
+    const GSHSCENE_Resource ** path, GSHGEOM_Fill_Rule * rule) {
+  gvec_lw_ctx * ctx = c->ctx;
+  bool usable;
+  GVEC_Result r;
+  GVEC_Svg_Kind sk = gvec_svg_element_kind(shape);
+  *path = NULL;
+  *geometry = GVEC_LW_GEOMETRY_LIMIT;
+  if (sk == GVEC_SVG_KIND_RECT || sk == GVEC_SVG_KIND_CIRCLE || sk == GVEC_SVG_KIND_ELLIPSE) {
+    r = gvec_lw_primitive_of(ctx, shape_inst, geometry, path, &usable);
+    if (r != GVEC_OK || !usable) {
+      *geometry = GVEC_LW_GEOMETRY_LIMIT;
+      return r;
+    }
+  }
+  else {
+    r = gvec_lw_path_of(ctx, shape, false, geometry, path);
+    if (r != GVEC_OK) {
+      return r;
+    }
+  }
+  if (*geometry == GVEC_LW_GEOMETRY_LIMIT) {
+    return gvec_lw_refuse(ctx, c->element, GVEC_LOWER_LIMIT, "the clip shape's geometry is past the range the waist can carry");
+  }
+  GVEC_Svg_Style_Value v;
+  r = gvec_lw_read_property(ctx, shape_inst, GVEC_SVG_PROP_CLIP_RULE, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    *geometry = GVEC_LW_GEOMETRY_LIMIT;
+    return r;
+  }
+  *rule = gvec_lw_keyword_is(&v, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
+  return GVEC_OK;
+}
+
+/* One clip node for a path or a union, appended to the chain. */
+static GVEC_Result push_node(chain * c, const GSHSCENE_Resource * resource, const GSHGEOM_Map * map, GSHGEOM_Fill_Rule rule,
+    gvec_lw_clip_state * state) {
+  gvec_lw_ctx * ctx = c->ctx;
+  gvec_lw_node * node = gvec_lw_new_node(ctx, GVEC_LW_CLIP);
+  if (!node) {
+    return GVEC_ERR_OOM;
+  }
+  node->map = *map;
+  node->resource = resource;
+  node->rule = rule;
+  node->key = gvec_lw_key(c->element->key, ctx->chain ^ (uint64_t) (c->count + 1) * UINT64_C(0x9E3779B97F4A7C15), GVEC_LW_ROLE_CLIP_PATH);
+  node->site = gvec_lw_new_site(ctx, c->element, node->key);
+  if (node->site == GVEC_LW_NO_SITE) {
+    return GVEC_ERR_OOM;
+  }
+  c->nodes[c->count++] = node;
+  *state = GVEC_LW_CLIP_NODE;
+  return GVEC_OK;
+}
+
+/* A clipPath of several shapes: one union of the shapes' regions, each with its own transform and clip-rule, placed by `base`. A
+ * `clip-path` on one of the shapes would clip that shape alone, which an intersection around the union cannot say: refused. */
+static GVEC_Result add_union(chain * c, const GVEC_Svg_Element * clip_path, const GSHGEOM_Map * base, size_t shapes, gvec_lw_clip_state * state) {
+  gvec_lw_ctx * ctx = c->ctx;
+  const GVEC_Svg_Element * e = c->element;
+  GSHSCENE_Clip_Member * members = gvec_arena_alloc(&ctx->arena, shapes * sizeof *members, sizeof(double));
+  if (!members) {
+    return GVEC_ERR_OOM;
+  }
+  size_t count = 0;
+  for (const GVEC_Svg_Element * child = gvec_svg_element_first_child(clip_path); child; child = gvec_svg_element_next_sibling(child)) {
+    if (!is_shape(gvec_svg_element_kind(child))) {
+      continue;
+    }
+    const GVEC_Svg_Instance * ci;
+    bool drawn;
+    GVEC_Result r = child_drawn(ctx, child, &ci, &drawn);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (!drawn) {
+      continue;
+    }
+    const GVEC_Svg_Element * own_target;
+    int own;
+    r = clip_reference(ctx, ci, &own, &own_target);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (own == -1 || (own == 1 && gvec_svg_element_kind(own_target) == GVEC_SVG_KIND_CLIP_PATH)) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a shape of a clipPath of several shapes that has a clip-path of its own is not lowered yet");
+    }
+    GSHGEOM_Map t;
+    bool usable;
+    r = own_transform(ctx, ci, e, &t, &usable);
+    if (r != GVEC_OK || !usable) {
+      return r;
+    }
+    gvec_lw_geometry geometry;
+    const GSHSCENE_Resource * path;
+    GSHGEOM_Fill_Rule rule;
+    r = region_of(c, child, ci, &geometry, &path, &rule);
+    if (r != GVEC_OK || geometry == GVEC_LW_GEOMETRY_LIMIT) {
+      return r;
+    }
+    if (geometry != GVEC_LW_GEOMETRY_PATH) {
+      continue; /* A shape with no area adds nothing to a union. */
+    }
+    members[count].resource = path;
+    members[count].map = t;
+    members[count].rule = rule;
+    count++;
+  }
+  if (count == 0) {
+    *state = GVEC_LW_CLIP_ALL;
+    return GVEC_OK;
+  }
+  const GSHSCENE_Resource * region = NULL;
+  GSHSCENE_Result g = gshscene_store_intern_clip_union(ctx->store, members, count, &region);
+  if (g == GSHSCENE_ERR_OOM) {
+    return GVEC_ERR_OOM;
+  }
+  if (g != GSHSCENE_OK) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the clip has more shapes than the waist's union holds");
+  }
+  GVEC_Result held = gvec_lw_hold(ctx, region);
+  if (held != GVEC_OK) {
+    return held;
+  }
+  return push_node(c, region, base, GSHGEOM_FILL_NONZERO, state);
+}
+
 /* Add the clip nodes of `clip_path`, in `space`: *state is NODE when they were added, ALL when nothing gets through, REFUSED when the
  * element is. */
 static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const GSHGEOM_Map * space, size_t depth, gvec_lw_clip_state * state) {
@@ -159,30 +312,16 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
       continue;
     }
     const GVEC_Svg_Instance * ci;
-    r = gvec_lw_instance_of(ctx, child, &ci);
+    bool drawn;
+    r = child_drawn(ctx, child, &ci, &drawn);
     if (r != GVEC_OK) {
       return r;
     }
-    GVEC_Svg_Style_Value v;
-    bool usable;
-    r = gvec_lw_read_property(ctx, ci, GVEC_SVG_PROP_DISPLAY, GVEC_LOWER_STYLE, &v, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
-    bool drawn = !gvec_lw_keyword_is(&v, "none") && !gvec_svg_element_conditional_false(child);
-    r = gvec_lw_read_property(ctx, ci, GVEC_SVG_PROP_VISIBILITY, GVEC_LOWER_STYLE, &v, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
-    drawn = drawn && !(gvec_lw_keyword_is(&v, "hidden") || gvec_lw_keyword_is(&v, "collapse"));
     if (drawn) {
       shape = child;
       shape_inst = ci;
       shapes++;
     }
-  }
-  if (shapes > 1) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clipPath of several shapes needs the union clip, which is not lowered yet");
   }
   if (shapes == 0) {
     *state = GVEC_LW_CLIP_ALL; /* A clip of nothing lets nothing through. */
@@ -227,6 +366,9 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the clip's map is past the range the waist can carry");
     }
   }
+  if (shapes > 1) {
+    return add_union(c, clip_path, &map, shapes, state);
+  }
   r = own_transform(ctx, shape_inst, e, &t, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
@@ -255,46 +397,16 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
   /* The shape's geometry, in its own space, and its clip-rule. */
   gvec_lw_geometry geometry;
   const GSHSCENE_Resource * path = NULL;
-  GVEC_Svg_Kind sk = gvec_svg_element_kind(shape);
-  if (sk == GVEC_SVG_KIND_RECT || sk == GVEC_SVG_KIND_CIRCLE || sk == GVEC_SVG_KIND_ELLIPSE) {
-    r = gvec_lw_primitive_of(ctx, shape_inst, &geometry, &path, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
-  }
-  else {
-    r = gvec_lw_path_of(ctx, shape, false, &geometry, &path);
-    if (r != GVEC_OK) {
-      return r;
-    }
-  }
-  if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the clip shape's geometry is past the range the waist can carry");
+  GSHGEOM_Fill_Rule rule;
+  r = region_of(c, shape, shape_inst, &geometry, &path, &rule);
+  if (r != GVEC_OK) {
+    return r;
   }
   if (geometry != GVEC_LW_GEOMETRY_PATH) {
     *state = GVEC_LW_CLIP_ALL; /* A shape with no area clips everything away. */
     return GVEC_OK;
   }
-  GVEC_Svg_Style_Value rule;
-  r = gvec_lw_read_property(ctx, shape_inst, GVEC_SVG_PROP_CLIP_RULE, GVEC_LOWER_STYLE, &rule, &usable);
-  if (r != GVEC_OK || !usable) {
-    return r;
-  }
-  gvec_lw_node * node = gvec_lw_new_node(ctx, GVEC_LW_CLIP);
-  if (!node) {
-    return GVEC_ERR_OOM;
-  }
-  node->map = map;
-  node->resource = path;
-  node->rule = gvec_lw_keyword_is(&rule, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
-  node->key = gvec_lw_key(e->key, ctx->chain ^ (uint64_t) (c->count + 1) * UINT64_C(0x9E3779B97F4A7C15), GVEC_LW_ROLE_CLIP_PATH);
-  node->site = gvec_lw_new_site(ctx, e, node->key);
-  if (node->site == GVEC_LW_NO_SITE) {
-    return GVEC_ERR_OOM;
-  }
-  c->nodes[c->count++] = node;
-  *state = GVEC_LW_CLIP_NODE;
-  return GVEC_OK;
+  return push_node(c, path, &map, rule, state);
 }
 
 GVEC_Result gvec_lw_clip_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_clip_state * state,

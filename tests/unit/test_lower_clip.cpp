@@ -3,7 +3,7 @@
  *
  * `clip-path` (H9, H10): a `clipPath` of one shape is one clip push around what the element draws, with the map the element's own
  * space, the clipPath's transform, the box when the units say so and the shape's transform make; a clip that is clipped is a nested
- * push; what needs a union of shapes, a basic shape and a `use` child are refused.
+ * push; several shapes are one union push; a basic shape, a `use` child and a clip on one of several shapes are refused.
  */
 
 #include "../lower_helpers.h"
@@ -85,6 +85,73 @@ TEST(LowerClip, TheClipRuleIsTheShapesAndInheritsFromTheClipPath) {
   EXPECT_EQ(fill_rule.Item(0).fill_rule, GSHGEOM_FILL_NONZERO);
 }
 
+TEST(LowerClip, SeveralShapesAreOneUnionPushWithEachShapesOwnTransformAndRule) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"c\" transform=\"translate(10 0)\"><rect width=\"5\" height=\"5\" transform=\"translate(0 7)\"/>"
+        "<path d=\"M0 0H5V5H0Z\" clip-rule=\"evenodd\" transform=\"translate(20 0)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" transform=\"translate(3 4)\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  const GSHSCENE_Item push = l.Item(0);
+  ASSERT_EQ(gshscene_resource_clip_union_count(push.resource), (size_t) 2);
+  EXPECT_EQ(push.map.t[0], 13.0) << "the element's 3 and the clipPath's 10: the shapes' own transforms are the members'";
+  bool shifted_up = false, shifted_right = false, even_odd = false;
+  for (size_t i = 0; i < 2; i++) {
+    GSHSCENE_Clip_Member m;
+    ASSERT_EQ(gshscene_resource_clip_union_member(push.resource, i, &m), GSHSCENE_OK);
+    shifted_up = shifted_up || m.map.t[1] == 7.0;
+    shifted_right = shifted_right || m.map.t[0] == 20.0;
+    even_odd = even_odd || m.rule == GSHGEOM_FILL_EVEN_ODD;
+  }
+  EXPECT_TRUE(shifted_up);
+  EXPECT_TRUE(shifted_right);
+  EXPECT_TRUE(even_odd);
+}
+
+TEST(LowerClip, TheOrderOfTheShapesDoesNotChangeTheUnion) {
+  Lowered ab, ba;
+  Lower("<defs><clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><circle cx=\"20\" cy=\"20\" r=\"4\"/></clipPath></defs><rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>", ab);
+  Lower("<defs><clipPath id=\"c\"><circle cx=\"20\" cy=\"20\" r=\"4\"/><rect width=\"5\" height=\"5\"/></clipPath></defs><rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>", ba);
+  EXPECT_EQ(gshscene_resource_hash(ab.Item(0).resource), gshscene_resource_hash(ba.Item(0).resource));
+}
+
+TEST(LowerClip, AShapeThatIsHiddenOrHasNoAreaAddsNothingToTheUnion) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" display=\"none\"/>"
+        "<rect x=\"20\" width=\"0\" height=\"5\"/><circle r=\"3\" visibility=\"hidden\"/></clipPath></defs>"
+        "<rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_NE(gshscene_resource_path(l.Item(0).resource), nullptr) << "one member left: the waist records it as the single clip of that path";
+  Lowered two;
+  Lower("<defs><clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" display=\"none\"/>"
+        "<rect x=\"20\" width=\"0\" height=\"5\"/><rect x=\"30\" width=\"5\" height=\"5\"/></clipPath></defs>"
+        "<rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>",
+      two);
+  ASSERT_EQ(Kinds(two), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(gshscene_resource_clip_union_count(two.Item(0).resource), (size_t) 2);
+}
+
+TEST(LowerClip, AUnionOfShapesWithNoAreaLetsNothingThrough) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"c\"><rect width=\"0\" height=\"5\"/><rect width=\"5\" height=\"0\"/></clipPath></defs><rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>", l);
+  EXPECT_EQ(l.Items(), (size_t) 0);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+}
+
+TEST(LowerClip, AUnionInTheUnitsOfTheBoundingBoxIsPlacedAsOneAndAClippedClipPathNestsAroundIt) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"o\"><rect width=\"500\" height=\"500\"/></clipPath>"
+        "<clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\" clip-path=\"url(#o)\"><rect width=\"0.5\" height=\"1\"/><rect x=\"0.75\" width=\"0.25\" height=\"1\"/></clipPath></defs>"
+        "<rect x=\"20\" y=\"20\" width=\"100\" height=\"40\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, PUSH, FILL, POP, POP}));
+  EXPECT_EQ(gshscene_resource_clip_union_count(l.Item(1).resource), (size_t) 2);
+  EXPECT_EQ(l.Item(1).map.m[0][0], 100.0);
+  EXPECT_EQ(l.Item(1).map.t[0], 20.0);
+}
+
 TEST(LowerClip, AGroupIsClippedAsOneAndItsOpacityGroupIsInsideTheClip) {
   Lowered g;
   Lower("<defs><clipPath id=\"c\"><rect width=\"50\" height=\"50\"/></clipPath></defs>"
@@ -147,12 +214,13 @@ TEST(LowerClip, ABoundingBoxOfNoAreaGivesNoClipToPlaceAndTheElementIsNotRendered
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerClip, WhatNeedsAUnionAShapeOrATextIsRefusedWhole) {
+TEST(LowerClip, WhatIsNotAShapeOrOneOfSeveralWithItsOwnClipIsRefusedWhole) {
   const struct {
     const char * clip;
     GVEC_Lower_Reason reason;
   } cases[] = {
-      {"<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
+      {"<clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" clip-path=\"url(#o)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
+      {"<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" style=\"clip-path: inset(1px)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
       {"<clipPath id=\"c\"><text>x</text></clipPath>", GVEC_LOWER_TEXT},
       {"<clipPath id=\"c\"><rect id=\"r\" width=\"5\" height=\"5\"/><use href=\"#r\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
   };

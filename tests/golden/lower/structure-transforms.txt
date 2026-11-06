@@ -1,6 +1,6 @@
 fixture structure-transforms
 list-hash 2111ec70eeb2aa1e
-raster-hash 250cac3a40ff4d14
+raster-hash 9ed84930b683f172
 diagnostics 0
 list
 gshscene.list 1 items=5 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=2111ec70eeb2aa1e

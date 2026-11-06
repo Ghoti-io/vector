@@ -1,6 +1,6 @@
 fixture par-xmidymid-meet
 list-hash cbf07fda285ff3e7
-raster-hash cea86a26c7870b21
+raster-hash ad812e112655ed12
 diagnostics 0
 list
 gshscene.list 1 items=4 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=cbf07fda285ff3e7

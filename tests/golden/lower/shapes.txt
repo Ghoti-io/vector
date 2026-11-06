@@ -1,6 +1,6 @@
 fixture shapes
 list-hash a4ea4d67318e3f17
-raster-hash d5583f31b78047f1
+raster-hash e431cf061b75cd91
 diagnostics 2
 diagnostic code=17 detail=0 line=9 column=46 element=rect
 diagnostic code=17 detail=0 line=16 column=20 element=rect
