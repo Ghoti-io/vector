@@ -464,6 +464,24 @@ rule decides, not a clamp in this library. A gradient that interpolates in `line
 `context-stroke` (whose box is the context element's, not the element drawn), are refused whole with `gradient` and `context-paint`
 until they are lowered. Colors are interpolated straight, as the waist's `premultiplied` field says.
 
+**H9 Clips.** `clip-path` naming a `clipPath` is a clip of the waist around what the element draws (never an alpha mask): one clip
+push, then the element's fill, stroke, markers and opacity group inside it, then the pop. The clip's map is the element's own space
+(its frame and its `transform`), then the `clipPath`'s `transform`, then, for `clipPathUnits="objectBoundingBox"`, the box of the
+element's fill geometry (a group has no box here and is refused; a box with no width or height gives nothing to place the clip in,
+so the element is not rendered), then the child's `transform`. A shape of `display: none`, `visibility: hidden` or no area adds
+nothing to a clip, and a clip of nothing lets nothing through. `clip-rule` is the child's own. A reference to nothing, or to what is
+no `clipPath`, draws the element unclipped.
+
+**H10 Clips that are clipped.** A `clip-path` on the `clipPath`, or on its one shape, is an intersection: a nested push, outermost
+first. A chain of references that comes back to a `clipPath` it has already made is followed until it repeats, through the same
+uncut reference as a gradient's, and stops there.
+
+**H11 Several shapes.** The shapes of a `clipPath` with more than one that draws are one union clip of the waist: its members are
+the shapes' paths, each with its own `transform` and `clip-rule`, and the clip's map places them as a whole, as H9 says. The region
+is the union of the members, quantized once, so abutting shapes leave no seam; overlapping members are the sink's work. A
+`clip-path` on one shape of several clips that shape alone, which an intersection around the union cannot say, so it is refused,
+as are a basic shape (`inset()`, `circle()` and the rest), a `use` child and text in a `clipPath`, with `clip-path` and `text`.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
