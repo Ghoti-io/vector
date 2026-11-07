@@ -266,7 +266,7 @@ lowering's, which holds the stack of the elements it is instantiating.
 
 **C11 Limits.** `max_style_bytes` (a longer `style` attribute is dropped and reported), `max_declarations` (a list with
 more is dropped and reported), `max_custom_expansion` (a value that expands past it is invalid at computed-value time,
-and reported). The engine's other bounds are its defaults.
+and reported), `max_gradient_stops` (a gradient with more stops is refused with `limit`). The engine's other bounds are its defaults.
 
 **C12 The accessor.** `gvec_svg_get()` is one generic read of a typed value over the generated enumeration, and
 `gvec_svg_get_specified()` the computed value as text with where the cascade got it. A value is owned by the context.
@@ -460,9 +460,12 @@ with it (its stops, transform, units and spread) is read once.
 
 **H3 Radial, and what is not lowered.** A radial gradient is the waist's two circles, the focal point and `fr` the start and the
 center and `r` the end, with the focal point defaulting to the center; where they do not contain one another the waist's two-circle
-rule decides, not a clamp in this library. A gradient that interpolates in `linearRGB`, and a gradient named by `context-fill` or
-`context-stroke` (whose box is the context element's, not the element drawn), are refused whole with `gradient` and `context-paint`
-until they are lowered. Colors are interpolated straight, as the waist's `premultiplied` field says.
+rule decides, not a clamp in this library. A gradient with `color-interpolation: linearRGB` names linear-light sRGB as the waist's interpolation space; its stops stay the
+document's sRGB colors and the waist converts each, so the ramp between them is walked in linear light (other renderers ignore the
+property on a gradient and walk sRGB; this follows the property). A gradient named by `context-fill` or `context-stroke` (whose box
+is the context element's, not the element drawn) is refused whole with `context-paint` until it is lowered. Colors are
+interpolated straight, as the waist's `premultiplied` field says. A gradient with more stops than `max_gradient_stops` (65,535,
+the most the scene carries) is refused with `limit`; the option can lower it.
 
 **H9 Clips.** `clip-path` naming a `clipPath` is a clip of the waist around what the element draws (never an alpha mask): one clip
 push, then the element's fill, stroke, markers and opacity group inside it, then the pop. The clip's map is the element's own space

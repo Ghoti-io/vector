@@ -264,14 +264,57 @@ TEST(LowerGradient, ABoundingBoxOfNoAreaAndATransformWithNoInverseDisableThePain
   EXPECT_EQ(singular.Refusals(), (size_t) 0);
 }
 
-TEST(LowerGradient, LinearRgbInterpolationIsRefusedAndNotDrawnInSRgb) {
+TEST(LowerGradient, LinearRgbInterpolationNamesLinearLightAsTheInterpolationSpace) {
+  Lowered srgb, linear;
+  ASSERT_TRUE(Lower(std::string("<linearGradient id=\"g\">") + kStops + "</linearGradient>", srgb));
+  ASSERT_TRUE(Lower(std::string("<linearGradient id=\"g\" color-interpolation=\"linearRGB\">") + kStops + "</linearGradient>", linear));
+  Gradient a, b;
+  ASSERT_TRUE(Read(srgb, a));
+  ASSERT_TRUE(Read(linear, b));
+  EXPECT_EQ(a.g.space.transfer, GCOL_TRANSFER_UNKNOWN);  // the target's own space
+  EXPECT_EQ(b.g.space.primaries, GCOL_PRIMARIES_SRGB);
+  EXPECT_EQ(b.g.space.transfer, GCOL_TRANSFER_LINEAR);
+  EXPECT_EQ(b.g.premultiplied, (uint32_t) 0);
+  // The stops are the document's colors, in sRGB, in both; only the ramp between them differs.
+  ASSERT_EQ(b.stops.size(), (size_t) 2);
+  EXPECT_EQ(b.stops[0].color.space.transfer, a.stops[0].color.space.transfer);
+  EXPECT_EQ(b.stops[1].color.rgba[2], a.stops[1].color.rgba[2]);
+  EXPECT_NE(srgb.Item(0).paint.resource, linear.Item(0).paint.resource);
+}
+
+TEST(LowerGradient, AGradientWhoseStopColorCannotBeCarriedRefusesTheElement) {
   Lowered l;
   LowerSvg(Svg("width=\"200\" height=\"200\"",
-               std::string("<defs><linearGradient id=\"g\" color-interpolation=\"linearRGB\">") + kStops +
-                   "</linearGradient></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/>"),
+               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/>"),
       l);
   EXPECT_EQ(l.Items(), (size_t) 0);
   EXPECT_NE(l.Refusal(GVEC_LOWER_GRADIENT), nullptr);
+}
+
+TEST(LowerGradient, TheStopLimitIsAssertedAtTheBoundAndOnePast) {
+  for (size_t extra = 0; extra < 2; extra++) {
+    GVEC_Limits limits;
+    gvec_limits_default(&limits);
+    limits.max_gradient_stops = 4;
+    std::string stops;
+    for (size_t i = 0; i < 4 + extra; i++) {
+      stops += "<stop offset=\"" + std::to_string(i) + "\" stop-color=\"red\"/>";
+    }
+    Lowered l;
+    LoadSvg(Svg("width=\"200\" height=\"200\"",
+                "<defs><linearGradient id=\"g\">" + stops + "</linearGradient></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/>"),
+        l.loaded, 0, 0, &limits);
+    ASSERT_EQ(l.loaded.result, GVEC_OK);
+    LowerBoth(l.loaded, l);
+    if (extra == 0) {
+      EXPECT_EQ(l.Items(), (size_t) 1);
+      EXPECT_EQ(l.Refusals(), (size_t) 0);
+    }
+    else {
+      EXPECT_EQ(l.Items(), (size_t) 0);
+      EXPECT_NE(l.Refusal(GVEC_LOWER_LIMIT), nullptr);
+    }
+  }
 }
 
 TEST(LowerGradient, TheSameGradientIsOneResourceHoweverOftenItPaints) {

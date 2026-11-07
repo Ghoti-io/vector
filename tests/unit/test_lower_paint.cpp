@@ -143,7 +143,7 @@ TEST(LowerPaint, AnInvalidForegroundIsRefusedBeforeAnythingIsDone) {
 TEST(LowerPaint, GradientAndPatternPaintsRefuseTheElementWhole) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><linearGradient id=\"g\" color-interpolation=\"linearRGB\"/><pattern id=\"p\"/></defs>"
+               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient><pattern id=\"p\"/></defs>"
                "<path d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/><path d=\"M0 0H4V4H0Z\" fill=\"url(#p) red\"/>"),
       l);
   EXPECT_EQ(l.Items(), (size_t) 0);

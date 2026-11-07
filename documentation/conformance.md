@@ -185,7 +185,8 @@ fail do so for a reason no renderer escapes: the references clip with hard edges
 shape in `clip-path`, a `use` child or text in a `clipPath`, and a `clip-path` on one shape of several.
 
 The remaining refusals are the basic-shape clips, `mask`, `text` that is not excluded, `image`, `pattern`, and gradients
-interpolated in `linearRGB` or named by `context-fill` and `context-stroke`.
+named by `context-fill` and `context-stroke`. Gradients interpolated in `linearRGB` are drawn; no case of the corpus covers
+them, since the reference renderer ignores the property on a gradient.
 No case has been seen to **error**; the two that timed out in the previous run (`painting/color/recursive-nested-context*`)
 were an endless walk of a `context-fill` that named nothing, which is now a refusal.
 

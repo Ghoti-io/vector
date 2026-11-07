@@ -13,7 +13,7 @@ animation, and what SVG 2 does not define) are not refusals.
 
 | Reason | Name | Lifted by | What is refused | Why |
 | --- | --- | --- | --- | --- |
-| 1 `GVEC_LOWER_GRADIENT` | `gradient` | V4 | A gradient that interpolates in `linearRGB` (`color-interpolation`), or one whose stops or transform cannot be read. | Gradients are lowered; interpolation in linear light is not yet. |
+| 1 `GVEC_LOWER_GRADIENT` | `gradient` | V4 | A gradient whose stops cannot be read (a stop color the waist cannot carry); the stop is reported with its own reason. | Gradients are lowered, in sRGB or in linear light. |
 | 2 `GVEC_LOWER_PATTERN` | `pattern` | G7 (V6) | A `pattern` paint. | Patterns are lowered in V6. |
 | 3 `GVEC_LOWER_CLIP_PATH` | `clip-path` | G4 (V4) | `clip-path` naming a basic shape, or a `clipPath` with a `use` child or a shape that has a `clip-path` of its own among several. | A `clipPath` of any number of shapes is lowered, as a union clip; what is refused is a basic shape, a `use` child and a clip on one of several shapes. A reference that names nothing is not a refusal: SVG 2 treats the property as if it were not specified. |
 | 4 `GVEC_LOWER_MASK` | `mask` | G5 (V6) | `mask` naming anything, including an element the document does not have. | Masks are lowered in V6. |

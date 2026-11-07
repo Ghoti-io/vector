@@ -149,7 +149,7 @@ static GVEC_Result chain_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Element * start
   for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(source); c; c = gvec_svg_element_next_sibling(c)) {
     count += gvec_svg_element_kind(c) == GVEC_SVG_KIND_STOP;
   }
-  size_t limit = 65535;
+  size_t limit = ctx->document->limits.max_gradient_stops;
   if (count > limit) {
     cache->usable = false;
     return gvec_lw_refuse(ctx, start, GVEC_LOWER_LIMIT, "the gradient has more stops than the waist allows");
@@ -311,9 +311,6 @@ GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
   if (r != GVEC_OK || !cache || !cache->usable) {
     return r != GVEC_OK ? r : gvec_lw_refuse(ctx, shape, GVEC_LOWER_GRADIENT, "a gradient whose stops or transform cannot be used");
   }
-  if (cache->linear_rgb) {
-    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_GRADIENT, "color-interpolation: linearRGB is not lowered yet");
-  }
   if (cache->singular) {
     return not_rendered(ctx, server, "a gradientTransform with no inverse disables the paint server", decision);
   }
@@ -359,6 +356,11 @@ GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
   g.extend = cache->extend;
   g.stop_count = cache->stop_count;
   g.stops = cache->stops;
+  if (cache->linear_rgb) {
+    /* The stops stay sRGB; the ramp between them is walked in linear light (the waist converts each stop, G3). */
+    g.space.primaries = GCOL_PRIMARIES_SRGB;
+    g.space.transfer = GCOL_TRANSFER_LINEAR;
+  }
   if (gvec_svg_element_kind(server) == GVEC_SVG_KIND_LINEAR_GRADIENT) {
     double x1, y1, x2, y2;
     if (!coordinate(chain_attribute(server, "x1", true), 0, bb, vw, &x1) || !coordinate(chain_attribute(server, "y1", true), 0, bb, vh, &y1) ||

@@ -127,7 +127,7 @@ TEST(LowerStroke, PaintIsAsAFillAndTheOpacityScalesTheAlphaWithoutAGroup) {
 TEST(LowerStroke, AGradientOrContextStrokeRefusesTheWholeElement) {
   Lowered g;
   LowerSvg(Svg("width=\"40\" height=\"40\"",
-               "<defs><linearGradient id=\"g\" color-interpolation=\"linearRGB\"/></defs><path d=\"M2 2L20 2\" stroke=\"url(#g)\"/>"),
+               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient></defs><path d=\"M2 2L20 2\" stroke=\"url(#g)\"/>"),
       g);
   EXPECT_NE(g.Refusal(GVEC_LOWER_GRADIENT), nullptr);
   EXPECT_EQ(g.Items(), (size_t) 0);  // not even its fill

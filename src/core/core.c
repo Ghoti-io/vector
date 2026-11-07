@@ -103,6 +103,7 @@ static const size_t gvec_limit_defaults[GVEC_LIMIT_FIELD_COUNT] = {
     GVEC_DEFAULT_MAX_STYLE_BYTES,
     GVEC_DEFAULT_MAX_DECLARATIONS,
     GVEC_DEFAULT_MAX_CUSTOM_EXPANSION,
+    GVEC_DEFAULT_MAX_GRADIENT_STOPS,
 };
 
 size_t gvec_limits_ceiling(GVEC_Limit_Field field) {
@@ -152,6 +153,8 @@ static size_t * gvec_limits_field(GVEC_Limits * limits, GVEC_Limit_Field field) 
     return &limits->max_declarations;
   case GVEC_LIMIT_CUSTOM_EXPANSION:
     return &limits->max_custom_expansion;
+  case GVEC_LIMIT_GRADIENT_STOPS:
+    return &limits->max_gradient_stops;
   case GVEC_LIMIT_FIELD_COUNT:
     break;
   }

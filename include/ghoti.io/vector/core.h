@@ -108,6 +108,7 @@ GVEC_API const char * gvec_result_string(GVEC_Result result);
  * | max_style_bytes | 64 MiB, one `style` attribute |
  * | max_declarations | 4,194,304, the declarations of one `style` attribute |
  * | max_custom_expansion | 1,048,576 tokens, what one value may grow to by `var()` and the other functions |
+ * | max_gradient_stops | 65,535 stops in one gradient, the most the scene can carry; a gradient with more is refused when it is lowered |
  *
  * The default of every field but max_diagnostics is also its ceiling: it is
  * the XML parser's own limit for the same quantity.
@@ -130,6 +131,7 @@ typedef struct GVEC_Limits {
   size_t max_style_bytes;           ///< Bytes of one `style` attribute; a longer one is dropped and reported.
   size_t max_declarations;          ///< Declarations in one `style` attribute; a longer list is dropped and reported.
   size_t max_custom_expansion;      ///< Tokens one value may expand to by `var()` and the other functions; past it the value is invalid at computed-value time.
+  size_t max_gradient_stops;        ///< Stops one gradient may have, after `href` inheritance; an element painted by a gradient with more is refused (`LIMIT`).
   uint8_t _reserved[8];             ///< Zero.
 } GVEC_Limits;
 
@@ -152,6 +154,7 @@ typedef enum GVEC_Limit_Field {
   GVEC_LIMIT_STYLE_BYTES,
   GVEC_LIMIT_DECLARATIONS,
   GVEC_LIMIT_CUSTOM_EXPANSION,
+  GVEC_LIMIT_GRADIENT_STOPS,
   GVEC_LIMIT_FIELD_COUNT ///< The number of fields; not a field.
 } GVEC_Limit_Field;
 

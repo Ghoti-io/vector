@@ -44,14 +44,14 @@ TEST(Results, TheNumbersAreTheVocabularysOrder) {
 static size_t Field(const GVEC_Limits & l, int f) {
   const size_t v[] = {l.max_input_bytes, l.max_inflated_bytes, l.max_elements, l.max_depth, l.max_attributes,
       l.max_entity_expanded_bytes, l.max_entity_depth, l.max_entity_references, l.max_entity_amplification, l.max_path_segments, l.max_list_items,
-      l.max_reference_expansion, l.max_text_bytes, l.max_diagnostics, l.max_style_bytes, l.max_declarations, l.max_custom_expansion};
+      l.max_reference_expansion, l.max_text_bytes, l.max_diagnostics, l.max_style_bytes, l.max_declarations, l.max_custom_expansion, l.max_gradient_stops};
   return v[f];
 }
 
 static void SetField(GVEC_Limits & l, int f, size_t value) {
   size_t * p[] = {&l.max_input_bytes, &l.max_inflated_bytes, &l.max_elements, &l.max_depth, &l.max_attributes,
       &l.max_entity_expanded_bytes, &l.max_entity_depth, &l.max_entity_references, &l.max_entity_amplification, &l.max_path_segments, &l.max_list_items,
-      &l.max_reference_expansion, &l.max_text_bytes, &l.max_diagnostics, &l.max_style_bytes, &l.max_declarations, &l.max_custom_expansion};
+      &l.max_reference_expansion, &l.max_text_bytes, &l.max_diagnostics, &l.max_style_bytes, &l.max_declarations, &l.max_custom_expansion, &l.max_gradient_stops};
   *p[f] = value;
 }
 
@@ -74,6 +74,7 @@ TEST(Limits, TheDefaultsAreTheXmlParsersOwnLimits) {
   EXPECT_EQ(l.max_reference_expansion, (size_t) 1000000);
   EXPECT_EQ(l.max_text_bytes, (size_t) 64 * 1024 * 1024);
   EXPECT_EQ(l.max_diagnostics, (size_t) 4096);
+  EXPECT_EQ(l.max_gradient_stops, (size_t) 65535);
   // The style layer's: the bounds of the engine of `text` they feed.
   GTEXT_CSS_Parse_Options css_parse = gtext_css_parse_options_default();
   GTEXT_CSS_Substitute_Options css_substitute = gtext_css_substitute_options_default();
