@@ -483,7 +483,15 @@ uncut reference as a gradient's, and stops there.
 the shapes' paths, each with its own `transform` and `clip-rule`, and the clip's map places them as a whole, as H9 says. The region
 is the union of the members, quantized once, so abutting shapes leave no seam; overlapping members are the sink's work. A
 `clip-path` on one shape of several clips that shape alone, which an intersection around the union cannot say, so it is refused,
-as are a basic shape (`inset()`, `circle()` and the rest), a `use` child and text in a `clipPath`, with `clip-path` and `text`.
+as are a `use` child and text in a `clipPath`, with `clip-path` and `text`.
+
+**H12 Basic shapes.** `clip-path: inset() | circle() | ellipse() | polygon() | path()`, with an optional geometry box, on an element
+is one clip region in that element's space (its `transform` moves it). The box is the fill box, the stroke box (the default, the
+fill box widened by half the stroke width; refused for geometry that is not a rectangle, circle or ellipse, whose stroke bounds are
+not exact), or the view box; an element that is not a shape, or a view box whose origin is not the viewport's, is refused. A
+circle with no radius is `closest-side` of the fill box and a percentage is of the normalized diagonal, as CSS Shapes says. `inset()`
+radii that overlap on a side are all scaled by one factor, as CSS Backgrounds does. A shape with no area lets nothing through. A
+basic shape on a `clipPath`'s shape is still refused.
 
 ## Threads
 

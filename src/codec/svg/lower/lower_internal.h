@@ -360,6 +360,35 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_primitive_of(gvec_lw_ctx * ctx, const GVEC
 GVEC_INTERNAL_API GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, double y1, double x2, double y2,
     gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
 
+/** The path of absolute path segments (a `path()` shape of a clip), interned in the store. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_segments_path(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment * segments, size_t count,
+    gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
+
+/** The closed polygon of `count` numbers (x, y pairs), interned in the store. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_points_path(gvec_lw_ctx * ctx, const double * numbers, size_t count, gvec_lw_geometry * out_kind,
+    const GSHSCENE_Resource ** out_resource);
+
+/** What `clip-path` written as a basic shape comes to. */
+typedef enum gvec_lw_shape_kind {
+  GVEC_LW_SHAPE_INVALID, ///< Not a shape this reads: the property is as if not specified.
+  GVEC_LW_SHAPE_NONE,    ///< A shape for an element that draws nothing: no clip is needed.
+  GVEC_LW_SHAPE_ALL,     ///< A shape with no area: nothing gets through.
+  GVEC_LW_SHAPE_PATH,    ///< The region `path`, filled by `rule`, in the element's space moved by (`ox`, `oy`).
+  GVEC_LW_SHAPE_REFUSED, ///< Valid, and not lowered (`why`).
+  GVEC_LW_SHAPE_ERROR    ///< The call's own result says why (out of memory, or an element already refused).
+} gvec_lw_shape_kind;
+
+typedef struct gvec_lw_basic_shape {
+  gvec_lw_shape_kind kind;
+  const GSHSCENE_Resource * path;
+  GSHGEOM_Fill_Rule rule;
+  double ox, oy;
+  const char * why;
+} gvec_lw_shape;
+
+/** Read the text of a `clip-path` that is a basic shape, with its reference box, against the element `inst`. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_basic_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const char * text, gvec_lw_shape * out);
+
 /** The path of the rectangle `x`, `y`, `width`, `height` as four lines (a viewport's clip); interned in the store. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_rect_path(
     gvec_lw_ctx * ctx, double x, double y, double width, double height, gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);

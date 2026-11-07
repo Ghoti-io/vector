@@ -181,10 +181,13 @@ direction of a marker at a degenerate vertex. They stay in the score as failures
 Clips (`clip-path` naming a `clipPath` of any number of shapes, nested or not, in either units) are lowered; they moved `masking` from 2 passes to 13 and the score from
 366 to 377; most of the 28 `masking` cases that
 fail do so for a reason no renderer escapes: the references clip with hard edges, so `resvg` is itself 255 levels off them over
-372 to 1,552 pixels of each, where this library is 255 off over fewer (`simple-case`: 272 pixels to `resvg`'s 1,076). What is refused is a basic
-shape in `clip-path`, a `use` child or text in a `clipPath`, and a `clip-path` on one shape of several.
+372 to 1,552 pixels of each, where this library is 255 off over fewer (`simple-case`: 272 pixels to `resvg`'s 1,076). Basic shapes in `clip-path` (`inset()`, `circle()`, `ellipse()`, `polygon()`, `path()`) on an element are lowered too: the score is 377 and
+the refused cases fell from 82 to 79. The three `circle()` cases of `masking/clip-path` still fail, and only on the references: they are opaque
+white where this render is transparent, and the edge is hard; composited on white, `view-box` differs in 108 pixels (largest difference 7)
+and `stroke-box` in 966 (largest 16). What is refused is a basic shape on a `clipPath`'s shape,
+a `use` child or text in a `clipPath`, and a `clip-path` on one shape of several.
 
-The remaining refusals are the basic-shape clips, `mask`, `text` that is not excluded, `image`, `pattern`, and gradients
+The remaining refusals are `mask`, `text` that is not excluded, `image`, `pattern`, and gradients
 named by `context-fill` and `context-stroke`. Gradients interpolated in `linearRGB` are drawn; no case of the corpus covers
 them, since the reference renderer ignores the property on a gradient.
 No case has been seen to **error**; the two that timed out in the previous run (`painting/color/recursive-nested-context*`)

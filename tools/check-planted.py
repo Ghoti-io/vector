@@ -45,6 +45,7 @@ LP = "src/codec/svg/lower/lower_path.c"
 GR = "src/codec/svg/lower/lower_gradient.c"
 # Clips.
 CL = "src/codec/svg/lower/lower_clip.c"
+BS = "src/codec/svg/lower/lower_basic_shape.c"
 
 # (rule, source file, text, replacement, what the defect is)
 PLANTS = [
@@ -276,6 +277,15 @@ PLANTS = [
     ("H6", GR, "g.space.transfer = GCOL_TRANSFER_LINEAR;", "g.space.transfer = GCOL_TRANSFER_SRGB;", "linearRGB interpolates in sRGB"),
     ("H6", GR, "  if (cache->linear_rgb) {\n    /* The stops", "  if (0 && cache->linear_rgb) {\n    /* The stops", "linearRGB is ignored"),
     ("H4", GR, "if (count > limit) {", "if (count > limit + 1) {", "one stop past the limit is drawn"),
+    ("H11", BS, "double half = style.width / 2;", "double half = style.width / 4;", "the stroke box is widened by less than half the width"),
+    ("H11", BS, "if (top > w) {", "if (top > w * 2) {", "corners that overlap are not scaled"),
+    ("H11", BS, "(b->w * b->w + b->h * b->h) / 2.0", "(b->w * b->w + b->h * b->h) / 1.0", "a percentage radius is of the wrong diagonal"),
+    ("H11", BS, "  out->rule = GSHGEOM_FILL_NONZERO;\n  fill_rule_word(c, &out->rule);\n  size_t capacity", "  out->rule = GSHGEOM_FILL_NONZERO;\n  size_t capacity", "a polygon's fill rule is ignored"),
+    ("H11", BS, "out->ox = b->x;", "out->ox = 0;", "a path() is not placed at the box origin"),
+    ("H11", BS, "(v.x != 0 || v.y != 0)", "(false)", "a view box that does not start at the origin is used"),
+    ("H11", BS, "if (!(radius > 0)) {", "if (radius < 0) {", "a circle of no radius has an area"),
+    ("H11", BS, "sum = op == '+' ? sum + term : sum - term;", "sum = op == '+' ? sum - term : sum + term;", "calc() adds what it should subtract"),
+    ("H11", BS, "  if (!is_geometry(gvec_svg_element_kind(e))) {\n    return BOX_REFUSED;", "  if (!is_geometry(gvec_svg_element_kind(e))) {\n    return BOX_NONE;", "a group is given a box"),
     ("H11", CL, "    if (!drawn) {\n      continue;", "    if (!drawn && 0) {\n      continue;", "a hidden shape adds to the union"),
     ("H11", CL, "    if (geometry != GVEC_LW_GEOMETRY_PATH) {\n      continue;", "    if (geometry != GVEC_LW_GEOMETRY_PATH && 0) {\n      continue;",
      "a shape with no area is a member"),

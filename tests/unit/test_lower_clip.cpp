@@ -3,7 +3,7 @@
  *
  * `clip-path` (H9, H10): a `clipPath` of one shape is one clip push around what the element draws, with the map the element's own
  * space, the clipPath's transform, the box when the units say so and the shape's transform make; a clip that is clipped is a nested
- * push; several shapes are one union push; a basic shape, a `use` child and a clip on one of several shapes are refused.
+ * push; several shapes are one union push; a `use` child and a clip on one of several shapes are refused.
  */
 
 #include "../lower_helpers.h"
@@ -230,10 +230,10 @@ TEST(LowerClip, WhatIsNotAShapeOrOneOfSeveralWithItsOwnClipIsRefusedWhole) {
     EXPECT_EQ(l.Items(), (size_t) 0) << c.clip;
     EXPECT_NE(l.Refusal(c.reason), nullptr) << c.clip;
   }
-  Lowered shape;
+  Lowered shape;  // a basic shape on the element itself is lowered (test_lower_basic_shape.cpp); on a clip's shape it is not
   Lower("<rect width=\"9\" height=\"9\" style=\"clip-path: inset(1px)\"/>", shape);
-  EXPECT_EQ(shape.Items(), (size_t) 0);
-  EXPECT_NE(shape.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+  EXPECT_EQ(shape.Items(), (size_t) 3);
+  EXPECT_EQ(shape.Refusals(), (size_t) 0);
 }
 
 int main(int argc, char ** argv) {

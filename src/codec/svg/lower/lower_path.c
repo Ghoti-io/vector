@@ -209,6 +209,20 @@ static GVEC_Result polygon_points(gvec_lw_ctx * ctx, const double * numbers, siz
   return finish(ctx, path, kind, out);
 }
 
+GVEC_Result gvec_lw_segments_path(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment * segments, size_t count, gvec_lw_geometry * out_kind,
+    const GSHSCENE_Resource ** out_resource) {
+  *out_kind = GVEC_LW_GEOMETRY_EMPTY;
+  *out_resource = NULL;
+  return path_segments(ctx, segments, count, false, out_kind, out_resource);
+}
+
+GVEC_Result gvec_lw_points_path(gvec_lw_ctx * ctx, const double * numbers, size_t count, gvec_lw_geometry * out_kind,
+    const GSHSCENE_Resource ** out_resource) {
+  *out_kind = GVEC_LW_GEOMETRY_EMPTY;
+  *out_resource = NULL;
+  return polygon_points(ctx, numbers, count, true, false, out_kind, out_resource);
+}
+
 GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, double y1, double x2, double y2, gvec_lw_geometry * out_kind,
     const GSHSCENE_Resource ** out_resource) {
   *out_kind = GVEC_LW_GEOMETRY_EMPTY;

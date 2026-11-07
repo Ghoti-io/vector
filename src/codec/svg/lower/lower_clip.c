@@ -23,8 +23,8 @@
  *
  * `clip-path` naming a `clipPath` of one shape (H9, H10): one clip node of the waist around what the element draws, never an alpha
  * mask, and a clip that is itself clipped (on the clipPath or on its shape) a nested node, whose region is the intersection. Several
- * shapes are one union clip of the waist, each with its own transform and clip-rule; a basic shape, a `use` child, and a clip-path on
- * one shape of several are refused.
+ * shapes are one union clip of the waist, each with its own transform and clip-rule; a `use` child and a clip-path on one shape of
+ * several are refused. A basic shape (`circle()` and the others) is lowered by lower_basic_shape.c.
  */
 
 #include <ghoti.io/vector/macros.h>
@@ -409,6 +409,94 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
   return push_node(c, path, &map, rule, state);
 }
 
+/* The text of a `clip-path` that is a basic shape with its box keyword, or NULL when it holds a `url()` (another document, or a mix). */
+static GVEC_Result shape_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const char ** text) {
+  GVEC_Svg_Style_Value v;
+  bool usable;
+  *text = NULL;
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_CLIP_PATH, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  size_t length = 1;
+  for (size_t i = 0; i < v.reference_count; i++) {
+    if (v.references[i].is_url || !v.references[i].text) {
+      return GVEC_OK;
+    }
+    length += strlen(v.references[i].text) + 1;
+  }
+  char * joined = gvec_arena_alloc(&ctx->arena, length, 1);
+  if (!joined) {
+    return GVEC_ERR_OOM;
+  }
+  joined[0] = 0;
+  for (size_t i = 0; i < v.reference_count; i++) {
+    strcat(joined, v.references[i].text);
+    strcat(joined, " ");
+  }
+  *text = joined;
+  return GVEC_OK;
+}
+
+/* `clip-path` that is a basic shape: one clip region in the element's space. */
+static GVEC_Result basic_shape_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_clip_state * state,
+    gvec_lw_node ** out, size_t * count) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  const char * text;
+  GVEC_Result r = shape_text(ctx, inst, &text);
+  if (r != GVEC_OK) {
+    *state = GVEC_LW_CLIP_REFUSED;
+    return r;
+  }
+  if (!text) {
+    *state = GVEC_LW_CLIP_REFUSED;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clip-path that names another document is not lowered");
+  }
+  *state = GVEC_LW_CLIP_REFUSED;
+  gvec_lw_shape shape;
+  r = gvec_lw_basic_shape(ctx, inst, text, &shape);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  switch (shape.kind) {
+  case GVEC_LW_SHAPE_REFUSED:
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, shape.why);
+  case GVEC_LW_SHAPE_ERROR:
+    return GVEC_OK; /* The element was refused where the reason arose. */
+  case GVEC_LW_SHAPE_INVALID:
+    *state = GVEC_LW_CLIP_NONE;
+    return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_STYLE_INVALID, 0, e->node.line, e->node.column, e->node.offset,
+        e->name, "a clip-path that is not a shape or a reference is as if it were not specified");
+  case GVEC_LW_SHAPE_NONE:
+    *state = GVEC_LW_CLIP_NONE;
+    return GVEC_OK;
+  case GVEC_LW_SHAPE_ALL:
+    *state = GVEC_LW_CLIP_ALL;
+    return GVEC_OK;
+  case GVEC_LW_SHAPE_PATH:
+    break;
+  }
+  GSHGEOM_Map t, local, moved, placed;
+  bool usable;
+  r = own_transform(ctx, inst, e, &t, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  if (!gvec_lw_compose(frame, &t, &local) || gshgeom_map_translate(2, shape.ox, shape.oy, 0, &moved) != GSHGEOM_OK ||
+      !gvec_lw_compose(&local, &moved, &placed)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
+  }
+  chain c;
+  memset(&c, 0, sizeof c);
+  c.ctx = ctx;
+  c.element = e;
+  c.inst = inst;
+  c.nodes = out;
+  r = push_node(&c, shape.path, &placed, shape.rule, state);
+  *count = c.count;
+  return r;
+}
+
 GVEC_Result gvec_lw_clip_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_clip_state * state,
     gvec_lw_node ** out, size_t * count) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -421,8 +509,7 @@ GVEC_Result gvec_lw_clip_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return r;
   }
   if (kind == -1) {
-    *state = GVEC_LW_CLIP_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clip-path that is a basic shape or names another document is not lowered yet");
+    return basic_shape_begin(ctx, inst, frame, state, out, count);
   }
   if (kind == 0 || gvec_svg_element_kind(clip_path) != GVEC_SVG_KIND_CLIP_PATH) {
     return GVEC_OK; /* A reference to nothing, or to what is no clipPath, draws the element unclipped (CSS Masking). */
