@@ -301,6 +301,7 @@ PLANTS = [
     ("H11", CL, "if (gvec_lw_keyword_is(&v, \"none\") || gvec_svg_element_conditional_false(child)) {\n      continue;",
      "if (0 || gvec_svg_element_conditional_false(child)) {\n      continue;", "a shape with display none is in the box of a group"),
     ("H11", CL, "  if (map->m[0][1] == 0 && map->m[1][0] == 0) {\n    GSHGEOM_Point lo, hi;", "  if (1) {\n    GSHGEOM_Point lo, hi;", "a rotated shape is boxed by moving its box"),
+    ("H12", GR, "      if (paint->has_fallback) {", "      if (false && paint->has_fallback) {", "a gradient on a box of no area ignores its fallback paint"),
     ("H12", M, "  ctx->context_inst = w->inst;\n  if (w->inst &&", "  ctx->context_inst = NULL;\n  if (w->inst &&", "a gradient context paint in a marker is refused"),
     ("H12", M, "!gvec_lw_invert(&w->step, &ctx->context_back)", "!(ctx->context_back = w->step, true)", "the marker's placement is not undone for a context gradient"),
     ("H12", S, "gvec_lw_compose(&own_back, &ctx->context_back, &into)", "gvec_lw_compose(&ctx->context_back, &own_back, &into)", "a context gradient undoes the shape's map and the marker's in the wrong order"),

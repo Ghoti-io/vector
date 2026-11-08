@@ -264,6 +264,23 @@ TEST(LowerGradient, ABoundingBoxOfNoAreaAndATransformWithNoInverseDisableThePain
   EXPECT_EQ(singular.Refusals(), (size_t) 0);
 }
 
+TEST(LowerGradient, ABoundingBoxOfNoAreaTakesTheFallbackPaintWhenThereIsOne) {
+  const std::string defs = std::string("<defs><linearGradient id=\"g\">") + kStops + "</linearGradient></defs>";
+  Lowered colored;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", defs + "<line x1=\"0\" y1=\"5\" x2=\"20\" y2=\"5\" stroke=\"url(#g) lime\"/>"), colored);
+  ASSERT_EQ(colored.Items(), (size_t) 1);
+  EXPECT_EQ(colored.Item(0).paint.kind, GSHSCENE_PAINT_SOLID);
+  EXPECT_EQ(colored.Item(0).paint.rgba[1], 1.0) << "lime, not the gradient's red or blue";
+  EXPECT_EQ(colored.Item(0).paint.rgba[0], 0.0);
+  Lowered none;  // a fallback of none is still none
+  LowerSvg(Svg("width=\"200\" height=\"200\"", defs + "<line x1=\"0\" y1=\"5\" x2=\"20\" y2=\"5\" stroke=\"url(#g) none\"/>"), none);
+  EXPECT_EQ(none.Items(), (size_t) 0);
+  Lowered box;  // a box that has an area takes the gradient, fallback or not
+  LowerSvg(Svg("width=\"200\" height=\"200\"", defs + "<rect width=\"10\" height=\"10\" fill=\"url(#g) lime\"/>"), box);
+  ASSERT_EQ(box.Items(), (size_t) 1);
+  EXPECT_EQ(box.Item(0).paint.kind, GSHSCENE_PAINT_GRADIENT);
+}
+
 TEST(LowerGradient, LinearRgbInterpolationNamesLinearLightAsTheInterpolationSpace) {
   Lowered srgb, linear;
   ASSERT_TRUE(Lower(std::string("<linearGradient id=\"g\">") + kStops + "</linearGradient>", srgb));

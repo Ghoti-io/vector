@@ -352,6 +352,14 @@ GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance
       }
     }
     if (box.empty || !(box.max.x > box.min.x) || !(box.max.y > box.min.y)) {
+      if (paint->has_fallback) {
+        /* A box with no area cannot hold the gradient; the paint after the url, when the document gave one, is what is drawn. */
+        GVEC_Svg_Paint fallback;
+        memset(&fallback, 0, sizeof fallback);
+        fallback.kind = paint->fallback_kind;
+        fallback.color = paint->fallback_color;
+        return gvec_lw_paint_of(ctx, inst, &fallback, opacity, out, decision);
+      }
       return not_rendered(ctx, server, "an element with no width or no height has no bounding box for a gradient to be placed in", decision);
     }
     GSHGEOM_Map shift, scale, placed;

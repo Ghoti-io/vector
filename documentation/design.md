@@ -445,7 +445,8 @@ one handle however many shapes it paints), with a map from gradient space to the
 units, the default, the map is the box of the element's fill geometry (the stroke left out, from the geometry library's bounds;
 a line's is its extent) composed with `gradientTransform`, and a coordinate is a fraction of the box; with `userSpaceOnUse` the
 map is `gradientTransform` and a percentage is of the viewport (of its normalized diagonal for a radius). A box with no width or no
-height, a `gradientTransform` with no inverse and a negative radius make the paint `none` with a notice, as SVG 2 says a paint server
+height takes the paint after the `url()` when the document gave one (a color, or `none`), and is `none` with a notice when it did not; a
+`gradientTransform` with no inverse and a negative radius make the paint `none` with a notice, as SVG 2 says a paint server
 that cannot be rendered is not. `spreadMethod` is the waist's extend mode.
 
 **H2 Stops and inheritance.** The stops are the `stop` children of the first gradient of an `href` chain that has any; each
