@@ -121,6 +121,7 @@
 #define gvec_lw_children GHOTIIO_VECTOR(gvec_lw_children)
 #define gvec_lw_clip_begin GHOTIIO_VECTOR(gvec_lw_clip_begin)
 #define gvec_lw_compose GHOTIIO_VECTOR(gvec_lw_compose)
+#define gvec_lw_content_box GHOTIIO_VECTOR(gvec_lw_content_box)
 #define gvec_lw_context_paint GHOTIIO_VECTOR(gvec_lw_context_paint)
 #define gvec_lw_element_box GHOTIIO_VECTOR(gvec_lw_element_box)
 #define gvec_lw_emit_edit GHOTIIO_VECTOR(gvec_lw_emit_edit)

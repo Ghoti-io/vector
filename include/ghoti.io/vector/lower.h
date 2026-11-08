@@ -213,7 +213,9 @@ GVEC_API GVEC_Result gvec_doc_lower_list(const GVEC_Doc * doc, const GVEC_Lower_
 
 /**
  * The size the document draws at, in the user units its drawing is lowered in: for an SVG, the used width and height of the
- * outermost `svg` (a missing or `auto` size is the load's viewport, a percentage is of it). A renderer that wants the picture at
+ * outermost `svg` (a missing or `auto` size is the load's viewport, a percentage is of it; a document with no viewBox that gives no
+ * width, or no height, is as wide, or as high, as its drawing reaches right, or down, strokes included, when the drawing is only shapes and
+ * groups of them). A renderer that wants the picture at
  * another size maps this one to it.
  *
  * @return GVEC_OK; GVEC_ERR_INVALID for a NULL argument; GVEC_ERR_UNSUPPORTED when the codec has no size;

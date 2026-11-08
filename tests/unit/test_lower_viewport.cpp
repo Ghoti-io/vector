@@ -167,6 +167,32 @@ TEST(LowerViewport, TheDocumentSizeIsTheOutermostSvgsUsedSize) {
   EXPECT_EQ(gvec_doc_size(nullptr, &w, &h), GVEC_ERR_INVALID);
 }
 
+TEST(LowerViewport, ADocumentWithNoSizeAndNoViewBoxIsAsLargeAsItsDrawingReachesWithItsStrokes) {
+  struct Case {
+    const char * attributes;
+    const char * body;
+    double width, height;
+  } const cases[] = {
+      // right and down, from the origin: the stroke of the frame reaches half its width past 199
+      {"", "<rect x=\"20\" y=\"20\" width=\"160\" height=\"160\" fill=\"green\"/><rect x=\"1\" y=\"1\" width=\"198\" height=\"198\" fill=\"none\" stroke=\"black\"/>", 199.5, 199.5},
+      {"", "<rect width=\"10\" height=\"20\"/>", 10, 20},                                  // no stroke, none counted
+      {"", "<rect width=\"10\" height=\"20\" stroke=\"red\" stroke-width=\"4\"/>", 12, 22},   // half the width on each side
+      {"", "<g transform=\"translate(5 5)\"><rect width=\"10\" height=\"10\"/></g>", 15, 15},
+      {"", "<rect width=\"10\" height=\"20\" display=\"none\"/>", 400, 300},                  // nothing to size it: the viewport
+      {"width=\"50\"", "<rect width=\"10\" height=\"20\"/>", 50, 20},                         // a size that is given is kept
+      {"viewBox=\"0 0 8 8\"", "<rect width=\"10\" height=\"20\"/>", 400, 300},                // a viewBox gives the size by the viewport
+  };
+  for (const Case & c : cases) {
+    Loaded loaded;
+    LoadSvg(Svg(c.attributes, c.body), loaded, 400, 300);
+    ASSERT_EQ(loaded.result, GVEC_OK) << c.attributes << c.body;
+    double w = -1, h = -1;
+    ASSERT_EQ(gvec_doc_size(loaded.doc, &w, &h), GVEC_OK) << c.attributes << c.body;
+    EXPECT_EQ(w, c.width) << c.attributes << c.body;
+    EXPECT_EQ(h, c.height) << c.attributes << c.body;
+  }
+}
+
 TEST(LowerViewport, ASizeNeedsNoBoxAndAMissingSizeIsTheOptionsViewport) {
   {
     Lowered l;

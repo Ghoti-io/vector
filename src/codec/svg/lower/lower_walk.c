@@ -1394,6 +1394,23 @@ GVEC_Result gvec_lw_root_size(gvec_lw_ctx * ctx, double * width, double * height
     *width = vw;
     *height = vh;
   }
+  if (r != GVEC_OK) {
+    return r;
+  }
+  /* A document that gives no size and no viewBox is as large as its drawing reaches right and down, strokes included. */
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(root);
+  if (!gvec_svg_element_find_attribute(e, "viewBox")) {
+    bool no_w = !gvec_svg_element_find_attribute(e, "width"), no_h = !gvec_svg_element_find_attribute(e, "height");
+    if (no_w || no_h) {
+      GSHGEOM_Bounds box;
+      bool known;
+      r = gvec_lw_content_box(ctx, root, &box, &known);
+      if (r == GVEC_OK && known && !box.empty && box.max.x > 0 && box.max.y > 0) {
+        *width = no_w ? box.max.x : *width;
+        *height = no_h ? box.max.y : *height;
+      }
+    }
+  }
   return r;
 }
 

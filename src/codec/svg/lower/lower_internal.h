@@ -166,6 +166,7 @@ typedef struct gvec_lw_ctx {
    * known) and its space is that element's user space: `context_back` takes a point of the picture the walk is in to that space,
    * inverted, and `item_local` is the map of the shape being drawn within the picture. */
   const GVEC_Svg_Instance * context_inst;
+  bool box_stroke;                   ///< A group's box takes in the strokes of its shapes (the size of a document that gives none).
   bool context_box_set;              ///< `context_box` is the box (a `use` has no geometry of its own); otherwise it is that of the shape `context_inst`.
   GSHGEOM_Bounds context_box;
   GSHGEOM_Map context_back;
@@ -270,6 +271,8 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const
  * removes is left out; `visibility` and `opacity` do not remove a shape. `*known` is false when it holds what this does not box.
  * `box->empty` is set when nothing in it has area.
  */
+/** The box of the drawing under the outermost `svg`, strokes included, in its user space; *known false when it holds what is not boxed. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, GSHGEOM_Bounds * box, bool * known);
 GVEC_INTERNAL_API GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
 
 /** The inverse of a 2D map; false when it has none (or the result is not finite). */

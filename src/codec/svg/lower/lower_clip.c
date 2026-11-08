@@ -32,6 +32,7 @@
 
 #include <string.h>
 
+#include <ghoti.io/math/elementary.h>
 #include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/clip_union.h>
 
@@ -459,6 +460,45 @@ merge:
   return true;
 }
 
+/* `b` merged into `acc`. */
+static void merge_bounds(GSHGEOM_Bounds * acc, const GSHGEOM_Bounds * b) {
+  if (b->empty) {
+    return;
+  }
+  if (acc->empty) {
+    *acc = *b;
+    acc->empty = 0;
+    return;
+  }
+  acc->min.x = b->min.x < acc->min.x ? b->min.x : acc->min.x;
+  acc->min.y = b->min.y < acc->min.y ? b->min.y : acc->min.y;
+  acc->max.x = b->max.x > acc->max.x ? b->max.x : acc->max.x;
+  acc->max.y = b->max.y > acc->max.y ? b->max.y : acc->max.y;
+}
+
+/* How far the stroke of a shape reaches past its fill box, in the space `map` leads to: half the stroke width, scaled by the map. Joins and
+ * caps that reach further than half the width (a miter at a sharp angle, a square cap on a slanted line) are not counted. */
+static GVEC_Result stroke_pad(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * map, double * pad) {
+  GVEC_Svg_Style_Value v;
+  bool usable;
+  *pad = 0;
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_STROKE, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);
+  if (r != GVEC_OK || !usable || v.paint.kind == GVEC_SVG_PAINT_NONE) {
+    return r;
+  }
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_STROKE_WIDTH, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  double width = v.kind == GVEC_SVG_STYLE_LENGTH ? v.number : 1;
+  if (!(width > 0)) {
+    return GVEC_OK;
+  }
+  double sx = gmath_hypot(map->m[0][0], map->m[1][0]), sy = gmath_hypot(map->m[0][1], map->m[1][1]);
+  *pad = width / 2 * (sx > sy ? sx : sy);
+  return GVEC_OK;
+}
+
 /* The bounding box of a group in its own space (SVG 2, 8.10): the union of the fill boxes of the shapes in it, each in the group's space.
  * What `display` removes is left out; `visibility` and `opacity` do not remove a shape from the box. *known is false when the group holds
  * what this does not box (a `use`, text, an image, a nested viewport, a transform that needs a box of its own). */
@@ -521,9 +561,24 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
       *known = false;
       return r;
     }
-    if (geometry == GVEC_LW_GEOMETRY_PATH && !merge_box(gshscene_resource_path(path), &inner, box)) {
-      *known = false;
-      return GVEC_OK;
+    if (geometry == GVEC_LW_GEOMETRY_PATH) {
+      GSHGEOM_Bounds one = {1, {0, 0, 0}, {0, 0, 0}};
+      if (!merge_box(gshscene_resource_path(path), &inner, &one)) {
+        *known = false;
+        return GVEC_OK;
+      }
+      double pad = 0;
+      if (ctx->box_stroke && !one.empty) {
+        r = stroke_pad(ctx, ci, &inner, &pad);
+        if (r != GVEC_OK) {
+          return r;
+        }
+        one.min.x -= pad;
+        one.min.y -= pad;
+        one.max.x += pad;
+        one.max.y += pad;
+      }
+      merge_bounds(box, &one);
     }
   }
   return GVEC_OK;
@@ -559,6 +614,21 @@ GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     *known = false;
   }
   return GVEC_OK;
+}
+
+GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, GSHGEOM_Bounds * box, bool * known) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(root);
+  GSHGEOM_Map identity;
+  box->empty = 1;
+  *known = true;
+  if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+    *known = false;
+    return GVEC_OK;
+  }
+  ctx->box_stroke = true;
+  GVEC_Result r = group_box(ctx, e, e, root, &identity, box, known, 0);
+  ctx->box_stroke = false;
+  return r;
 }
 
 /* Add the clip nodes of `clip_path`, in `space`: *state is NODE when they were added, ALL when nothing gets through, REFUSED when the

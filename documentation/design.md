@@ -504,6 +504,11 @@ its own. A gradient that `context-fill` or `context-stroke` names is placed in t
 space: for a marker, the shape the marker is on (the picture's placement and the drawn shape's own map are undone), for a `use`, what its
 referent draws, moved by `x` and `y`. A paint a shape takes from an outer context, or a pattern, stays refused.
 
+The same box sizes a document that gives no size. With no `viewBox`, a missing `width` is the right edge of the drawing and a missing `height`
+its bottom edge, from the origin, with each stroke reaching half its width past its shape (a join or cap that reaches further is not counted):
+that is what `resvg` does and what the reference images show. A document that holds anything the box does not take in (a `use`, text, an image)
+or draws nothing is the load's viewport, as before. A negative size is not treated this way: it is dropped as invalid, so the size is `auto`.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
