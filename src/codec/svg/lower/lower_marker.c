@@ -231,6 +231,8 @@ typedef struct walk {
   marker * markers[3];             ///< The marker of each slot, or NULL.
   double scale[3];                 ///< The scale of each slot's instances (the stroke width, or 1).
   GVEC_Svg_Paint fill, stroke;     ///< The paints `context-fill` and `context-stroke` name.
+  const GVEC_Svg_Instance * inst;  ///< The shape, whose box a gradient among them is placed in; NULL when they are not its own paints.
+  GSHGEOM_Map step;                ///< The last placement without the shape's map: the picture of the marker to the shape's user space.
   gvec_lw_node ** nodes;
   size_t count;
   size_t hits;
@@ -240,7 +242,7 @@ typedef struct walk {
 } walk;
 
 /* The map of one instance: the shape's map, the vertex, the rotation, the scale and the reference point. */
-static bool placement(const walk * w, const marker * m, int slot, const GSHGEOM_Vertex * v, double scale, GSHGEOM_Map * out) {
+static bool placement(walk * w, const marker * m, int slot, const GSHGEOM_Vertex * v, double scale, GSHGEOM_Map * out) {
   GSHGEOM_Map rotation, shift, size, step;
   if (m->orient.mode == GVEC_SVG_ORIENT_ANGLE) {
     if (gshgeom_map_rotate(GSHGEOM_ANGLE_DEGREES, m->orient.angle, &rotation) != GSHGEOM_OK) {
@@ -258,7 +260,8 @@ static bool placement(const walk * w, const marker * m, int slot, const GSHGEOM_
   }
   return gshgeom_map_translate(2, v->point.x, v->point.y, 0, &shift) == GSHGEOM_OK &&
          gshgeom_map_scale(2, scale, scale, 1, &size) == GSHGEOM_OK && gvec_lw_compose(&shift, &rotation, &step) &&
-         gvec_lw_compose(&step, &size, &step) && gvec_lw_compose(&step, &m->fixed, &step) && gvec_lw_compose(w->local, &step, out);
+         gvec_lw_compose(&step, &size, &step) && gvec_lw_compose(&step, &m->fixed, &step) && ((w->step = step), true) &&
+         gvec_lw_compose(w->local, &step, out);
 }
 
 /* One instance: a picture of the marker's content, placed by `map`. */
@@ -297,6 +300,15 @@ static GVEC_Result instance_node(walk * w, const marker * m, uint64_t ordinal, c
   ctx->context_set = true;
   ctx->context_fill = w->fill;
   ctx->context_stroke = w->stroke;
+  const GVEC_Svg_Instance * saved_inst = ctx->context_inst;
+  GSHGEOM_Map saved_back = ctx->context_back;
+  bool saved_box_set = ctx->context_box_set;
+  GSHGEOM_Bounds saved_box = ctx->context_box;
+  ctx->context_box_set = false;
+  ctx->context_inst = w->inst;
+  if (w->inst && !gvec_lw_invert(&w->step, &ctx->context_back)) {
+    ctx->context_inst = NULL; /* A marker placed with no inverse draws nothing a gradient could be seen on. */
+  }
   ctx->marker_instances++;
   gvec_lw_node * clip = NULL;
   if (m->clip) {
@@ -332,6 +344,10 @@ static GVEC_Result instance_node(walk * w, const marker * m, uint64_t ordinal, c
   ctx->context_set = saved_set;
   ctx->context_fill = saved_fill;
   ctx->context_stroke = saved_stroke;
+  ctx->context_inst = saved_inst;
+  ctx->context_back = saved_back;
+  ctx->context_box_set = saved_box_set;
+  ctx->context_box = saved_box;
   ctx->chain = saved_chain;
   ctx->use_depth--;
   ctx->open = saved_open;
@@ -475,6 +491,7 @@ GVEC_Result gvec_lw_markers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   w.ctx = ctx;
   w.shape = e;
   w.local = local;
+  w.inst = inst;
   /* The scale of `markerUnits="strokeWidth"` is the used stroke width, whether or not the stroke is painted. */
   GVEC_Svg_Style_Value width;
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_STROKE_WIDTH, GVEC_LOWER_STYLE, &width, &usable);
@@ -508,6 +525,14 @@ GVEC_Result gvec_lw_markers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_FILL, &w.fill, &usable);
   if (r == GVEC_OK && usable) {
     r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_STROKE, &w.stroke, &usable);
+  }
+  /* A paint the shape takes from its own context is placed in that element's box, not the shape's: only the shape's own are placed here. */
+  GVEC_Svg_Style_Value own;
+  for (int i = 0; r == GVEC_OK && usable && w.inst && i < 2; i++) {
+    r = gvec_lw_read_property(ctx, inst, i == 0 ? GVEC_SVG_PROP_FILL : GVEC_SVG_PROP_STROKE, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &own, &usable);
+    if (r == GVEC_OK && usable && (own.paint.kind == GVEC_SVG_PAINT_CONTEXT_FILL || own.paint.kind == GVEC_SVG_PAINT_CONTEXT_STROKE)) {
+      w.inst = NULL;
+    }
   }
   if (r != GVEC_OK || !usable) {
     out->refused = !usable;

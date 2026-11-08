@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!-- A use in a clipPath is the shape it names; a clip in the units of the bounding box of a group is placed in the box of what the group draws (visibility and opacity do not take a shape out of it, display does); a context-fill that is a gradient is placed in the box of the shape the marker is on, or of what the use draws (H11, H12). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120" viewBox="0 0 160 120">
+  <defs>
+    <path id="star" d="M 12 2 L 15 10 L 23 10 L 17 15 L 19 23 L 12 18 L 5 23 L 7 15 L 1 10 L 9 10 Z"/>
+    <clipPath id="by-use"><use href="#star" x="2" y="1" transform="scale(1.2)"/></clipPath>
+    <clipPath id="box" clipPathUnits="objectBoundingBox"><circle cx="0.5" cy="0.5" r="0.45"/></clipPath>
+    <linearGradient id="ramp"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#e74c3c"/><stop offset="1" stop-color="#27ae60"/></linearGradient>
+    <marker id="dot" markerWidth="8" markerHeight="8" refX="4" refY="4" markerUnits="userSpaceOnUse" overflow="visible"><rect width="8" height="8" fill="context-fill"/></marker>
+    <g id="pair"><rect width="14" height="14" fill="context-fill"/><circle cx="22" cy="7" r="7" fill="context-fill" transform="translate(4 0)"/></g>
+  </defs>
+  <rect x="2" y="2" width="30" height="30" fill="#2980b9" clip-path="url(#by-use)"/>
+  <g clip-path="url(#box)">
+    <rect x="40" y="4" width="26" height="26" fill="#8e44ad" visibility="hidden"/>
+    <rect x="44" y="8" width="18" height="18" fill="#f39c12"/>
+    <rect x="0" y="0" width="200" height="200" fill="red" display="none"/>
+  </g>
+  <path d="M 80 30 L 110 8 L 140 30 L 110 14 Z" fill="url(#ramp)" stroke="none" marker-start="url(#dot)" marker-mid="url(#dot)" marker-end="url(#dot)"/>
+  <use href="#pair" x="10" y="60" fill="url(#ramp)"/>
+</svg>

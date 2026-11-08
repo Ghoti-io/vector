@@ -59,6 +59,18 @@ bool gvec_lw_compose(const GSHGEOM_Map * outer, const GSHGEOM_Map * inner, GSHGE
   return gvec_lw_normal(&product, out);
 }
 
+bool gvec_lw_invert(const GSHGEOM_Map * map, GSHGEOM_Map * out) {
+  double a = map->m[0][0], b = map->m[0][1], c = map->m[1][0], d = map->m[1][1];
+  double det = a * d - b * c;
+  if (!(det != 0) || det - det != 0) {
+    return false;
+  }
+  const double linear[4] = {d / det, -b / det, -c / det, a / det};
+  const double shift[2] = {-(linear[0] * map->t[0] + linear[1] * map->t[1]), -(linear[2] * map->t[0] + linear[3] * map->t[1])};
+  GSHGEOM_Map inverse;
+  return gshgeom_map_from_matrix(2, linear, shift, &inverse) == GSHGEOM_OK && gvec_lw_normal(&inverse, out);
+}
+
 bool gvec_lw_normal(const GSHGEOM_Map * map, GSHGEOM_Map * out) {
   GSHGEOM_Map identity;
   if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
@@ -735,6 +747,7 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
+  ctx->item_local = c.local;
   GSHSCENE_Paint paint;
   GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
   gvec_lw_paint_decision fill_decision;
@@ -1162,6 +1175,12 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   /* `context-fill` and `context-stroke` in the referent are the paints of the `use`. */
   bool saved_set = ctx->context_set;
   GVEC_Svg_Paint saved_fill = ctx->context_fill, saved_stroke = ctx->context_stroke;
+  const GVEC_Svg_Instance * saved_context_inst = ctx->context_inst;
+  GSHGEOM_Map saved_context_back = ctx->context_back;
+  bool saved_context_box_set = ctx->context_box_set;
+  GSHGEOM_Bounds saved_context_box = ctx->context_box;
+  ctx->context_inst = NULL;
+  ctx->context_box_set = false;
   GVEC_Svg_Paint use_fill, use_stroke;
   r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_FILL, &use_fill, &usable);
   if (r == GVEC_OK && usable) {
@@ -1171,7 +1190,34 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
     ctx->context_set = true;
     ctx->context_fill = use_fill;
     ctx->context_stroke = use_stroke;
-    r = push_use(ctx, e);
+    /* A gradient among them is placed in the box of what the use draws, in the use's space: the picture's space is that moved by `x` and `y`. */
+    GVEC_Svg_Style_Value own;
+    bool direct = true;
+    for (int i = 0; r == GVEC_OK && i < 2; i++) {
+      r = gvec_lw_read_property(ctx, inst, i == 0 ? GVEC_SVG_PROP_FILL : GVEC_SVG_PROP_STROKE, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &own, &usable);
+      if (r == GVEC_OK && usable && (own.paint.kind == GVEC_SVG_PAINT_CONTEXT_FILL || own.paint.kind == GVEC_SVG_PAINT_CONTEXT_STROKE)) {
+        direct = false;
+      }
+    }
+    GSHGEOM_Map back;
+    bool known = false;
+    if (r == GVEC_OK && direct && (use_fill.kind == GVEC_SVG_PAINT_SERVER || use_stroke.kind == GVEC_SVG_PAINT_SERVER)) {
+      GSHGEOM_Map unshift;
+      r = gvec_lw_element_box(ctx, clone, &ctx->context_box, &known);
+      if (r == GVEC_OK && known && gshgeom_map_translate(2, -x, -y, 0, &unshift) == GSHGEOM_OK && gvec_lw_normal(&unshift, &back)) {
+        /* The box is of the target as the picture has it; in the use's space it is moved by `x` and `y`. */
+        ctx->context_box.min.x += x;
+        ctx->context_box.max.x += x;
+        ctx->context_box.min.y += y;
+        ctx->context_box.max.y += y;
+        ctx->context_inst = inst;
+        ctx->context_back = back;
+        ctx->context_box_set = true;
+      }
+    }
+    if (r == GVEC_OK) {
+      r = push_use(ctx, e);
+    }
     if (r == GVEC_OK) {
       GSHGEOM_Map identity;
       r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(ctx, clone, &identity, use) : GVEC_ERR_INTERNAL;
@@ -1181,6 +1227,10 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   ctx->context_set = saved_set;
   ctx->context_fill = saved_fill;
   ctx->context_stroke = saved_stroke;
+  ctx->context_inst = saved_context_inst;
+  ctx->context_back = saved_context_back;
+  ctx->context_box_set = saved_context_box_set;
+  ctx->context_box = saved_context_box;
   ctx->use_depth--;
   ctx->chain = saved_chain;
   ctx->levels -= 2;

@@ -471,6 +471,77 @@ TEST(LowerMarker, ADegenerateAndAnArcPathAreHandledByTheirRules) {
   EXPECT_EQ(Instances(point).size(), (size_t) 0);
 }
 
+namespace {
+
+const char * kRamp = "<linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"/><stop offset=\"1\" stop-color=\"blue\"/></linearGradient>";
+
+/** The gradient of the first fill of the picture of the first instance of `l`. */
+bool InstanceGradient(const Lowered & l, GSHSCENE_Gradient & g) {
+  std::vector<GSHSCENE_Item> in = Instances(l);
+  if (in.empty()) {
+    return false;
+  }
+  std::vector<GSHSCENE_Item> content = Picture(in[0]);
+  return !content.empty() && content[0].paint.kind == GSHSCENE_PAINT_GRADIENT && gshscene_resource_gradient(content[0].paint.resource, &g) == GSHSCENE_OK;
+}
+
+}  // namespace
+
+TEST(LowerMarker, AGradientContextPaintIsPlacedInTheBoxOfTheShapeTheMarkerIsOn) {
+  const std::string content = "<path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/>";
+  const std::string host = "<path d=\"M10 10L30 10L30 30\" fill=\"url(#g)\" stroke=\"none\" marker-start=\"url(#m)\"/>";
+  Lowered l;
+  LowerSvg(OnlyMarkers(std::string(kRamp) + Marker("orient=\"0\" overflow=\"visible\"", content), host), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Gradient g;
+  ASSERT_TRUE(InstanceGradient(l, g));
+  EXPECT_EQ(g.map.m[0][0], 20.0) << "the host's box is 20 by 20, and the marker's picture is not scaled";
+  EXPECT_EQ(g.map.m[1][1], 20.0);
+  EXPECT_EQ(g.map.t[0], 0.0) << "the box starts where the marker is placed, so in the picture it starts at the origin";
+  EXPECT_EQ(g.map.t[1], 0.0);
+  Lowered turned;  // the picture is turned a quarter, and the gradient with it
+  LowerSvg(OnlyMarkers(std::string(kRamp) + Marker("orient=\"90\" overflow=\"visible\"", content), host), turned);
+  GSHSCENE_Gradient t;
+  ASSERT_TRUE(InstanceGradient(turned, t));
+  EXPECT_NEAR(t.map.m[0][1], 20.0, 1e-9);
+  EXPECT_NEAR(t.map.m[1][0], -20.0, 1e-9);
+  EXPECT_NEAR(t.map.m[0][0], 0.0, 1e-9);
+  Lowered inner;  // a shape in the marker with a transform of its own: the gradient is in the host's space, not the shape's
+  LowerSvg(OnlyMarkers(std::string(kRamp) + Marker("orient=\"0\" overflow=\"visible\"", "<path d=\"M0 0H4V4H0Z\" transform=\"scale(2)\" fill=\"context-fill\"/>"), host), inner);
+  GSHSCENE_Gradient in;
+  ASSERT_TRUE(InstanceGradient(inner, in));
+  EXPECT_EQ(in.map.m[0][0], 10.0) << "undoes the shape's own scale of 2";
+  EXPECT_EQ(in.map.t[0], 0.0);
+}
+
+TEST(LowerMarker, AGradientContextPaintInAUseIsPlacedInTheBoxOfWhatTheUseDraws) {
+  Lowered one;
+  LowerSvg(Svg("width=\"80\" height=\"80\"", std::string("<defs>") + kRamp + "<rect id=\"r\" width=\"10\" height=\"10\" fill=\"context-fill\"/></defs>"
+                                                     "<use href=\"#r\" x=\"30\" fill=\"url(#g)\"/>"),
+      one);
+  EXPECT_EQ(one.Refusals(), (size_t) 0);
+  GSHSCENE_Gradient g;
+  ASSERT_TRUE(InstanceGradient(one, g));
+  EXPECT_EQ(g.map.m[0][0], 10.0);
+  EXPECT_EQ(g.map.t[0], 0.0) << "the box is at x 30 in the use's space, and so is the picture";
+  Lowered group;  // a group is boxed as the union of what is in it
+  LowerSvg(Svg("width=\"80\" height=\"80\"", std::string("<defs>") + kRamp +
+                                                     "<g id=\"c\"><rect width=\"10\" height=\"10\" fill=\"context-fill\"/>"
+                                                     "<rect x=\"20\" y=\"5\" width=\"10\" height=\"30\"/></g></defs><use href=\"#c\" fill=\"url(#g)\"/>"),
+      group);
+  ASSERT_TRUE(InstanceGradient(group, g));
+  EXPECT_EQ(g.map.m[0][0], 30.0) << "from x 0 to 30";
+  EXPECT_EQ(g.map.m[1][1], 35.0) << "from y 0 to 35";
+}
+
+TEST(LowerMarker, AGradientContextPaintThatIsNotTheShapesOwnOrIsAPatternIsStillRefused) {
+  Lowered pattern;
+  LowerSvg(OnlyMarkers("<pattern id=\"p\" width=\"2\" height=\"2\"/>" + Marker("orient=\"0\"", "<path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/>"),
+               "<path d=\"M10 10L30 10L30 30\" fill=\"url(#p)\" marker-start=\"url(#m)\"/>"),
+      pattern);
+  EXPECT_NE(pattern.Refusal(GVEC_LOWER_PATTERN), nullptr);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -3,7 +3,7 @@
  *
  * `clip-path` (H9, H10): a `clipPath` of one shape is one clip push around what the element draws, with the map the element's own
  * space, the clipPath's transform, the box when the units say so and the shape's transform make; a clip that is clipped is a nested
- * push; several shapes are one union push; a `use` child and a clip on one of several shapes are refused.
+ * push; several shapes are one union push; a `use` child is the shape it names; a clip on one of several shapes is refused.
  */
 
 #include "../lower_helpers.h"
@@ -222,7 +222,8 @@ TEST(LowerClip, WhatIsNotAShapeOrOneOfSeveralWithItsOwnClipIsRefusedWhole) {
       {"<clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" clip-path=\"url(#o)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
       {"<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" style=\"clip-path: inset(1px)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
       {"<clipPath id=\"c\"><text>x</text></clipPath>", GVEC_LOWER_TEXT},
-      {"<clipPath id=\"c\"><rect id=\"r\" width=\"5\" height=\"5\"/><use href=\"#r\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
+      {"<clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><rect id=\"r\" width=\"5\" height=\"5\"/><clipPath id=\"c\"><use href=\"#r\" clip-path=\"url(#o)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
+      {"<text id=\"t\">x</text><clipPath id=\"c\"><use href=\"#t\"/></clipPath>", GVEC_LOWER_TEXT},
   };
   for (const auto & c : cases) {
     Lowered l;
@@ -234,6 +235,86 @@ TEST(LowerClip, WhatIsNotAShapeOrOneOfSeveralWithItsOwnClipIsRefusedWhole) {
   Lower("<rect width=\"9\" height=\"9\" style=\"clip-path: inset(1px)\"/>", shape);
   EXPECT_EQ(shape.Items(), (size_t) 3);
   EXPECT_EQ(shape.Refusals(), (size_t) 0);
+}
+
+TEST(LowerClip, AUseChildThatNamesAShapeIsThatShapePlacedByTheUse) {
+  Lowered l;
+  Lower("<defs><rect id=\"r\" width=\"5\" height=\"5\" transform=\"translate(0 2)\"/>"
+        "<clipPath id=\"c\"><use href=\"#r\" x=\"7\" transform=\"translate(1 3)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(l.Item(0).map.t[0], 8.0) << "the use's transform and its x";
+  EXPECT_EQ(l.Item(0).map.t[1], 5.0) << "the use's transform and the shape's own";
+  Lowered several;  // a use and a shape are one union
+  Lower("<defs><rect id=\"r\" width=\"5\" height=\"5\"/><clipPath id=\"c\"><use href=\"#r\"/><rect x=\"9\" width=\"5\" height=\"5\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      several);
+  EXPECT_EQ(Kinds(several), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(several.Refusals(), (size_t) 0);
+}
+
+TEST(LowerClip, AUseChildThatNamesAnythingElseOrIsNotDrawnAddsNothing) {
+  const char * const clips[] = {
+      "<g id=\"g\"><rect width=\"5\" height=\"5\"/></g><clipPath id=\"c\"><use href=\"#g\"/></clipPath>",
+      "<symbol id=\"s\"><rect width=\"5\" height=\"5\"/></symbol><clipPath id=\"c\"><use href=\"#s\"/></clipPath>",
+      "<clipPath id=\"c\"><use href=\"#nothing\"/></clipPath>",
+      "<rect id=\"r\" width=\"5\" height=\"5\" display=\"none\"/><clipPath id=\"c\"><use href=\"#r\"/></clipPath>",
+      "<rect id=\"r\" width=\"5\" height=\"5\"/><clipPath id=\"c\"><use href=\"#r\" visibility=\"hidden\"/></clipPath>",
+  };
+  for (const char * clip : clips) {
+    Lowered l;
+    Lower(std::string("<defs>") + clip + "</defs><rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>", l);
+    EXPECT_EQ(l.Count(FILL), (size_t) 0) << clip << ": a clip of nothing lets nothing through";
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << clip;
+  }
+  Lowered valid;  // the invalid use is skipped and the shape beside it clips
+  Lower("<defs><g id=\"g\"/><clipPath id=\"c\"><use href=\"#g\"/><rect width=\"5\" height=\"5\"/></clipPath></defs><rect width=\"9\" height=\"9\" clip-path=\"url(#c)\"/>",
+      valid);
+  EXPECT_EQ(Kinds(valid), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+}
+
+TEST(LowerClip, AGroupInTheUnitsOfTheBoundingBoxIsPlacedInTheBoxOfWhatItDraws) {
+  Lowered l;  // the hidden rectangle and the opacity-0 one are in the box; the one with display none is not
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
+        "<g clip-path=\"url(#c)\"><rect x=\"20\" y=\"20\" width=\"60\" height=\"60\" visibility=\"hidden\"/>"
+        "<g transform=\"translate(100 0)\"><rect x=\"0\" y=\"40\" width=\"20\" height=\"60\" opacity=\"0\"/></g>"
+        "<rect x=\"30\" y=\"30\" width=\"10\" height=\"10\"/>"
+        "<rect x=\"0\" y=\"0\" width=\"500\" height=\"500\" display=\"none\"/></g>",
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  ASSERT_GT(l.Items(), (size_t) 0);
+  ASSERT_EQ(Kinds(l).front(), PUSH);
+  EXPECT_EQ(l.Item(0).map.m[0][0], 100.0) << "x from 20 to 120";
+  EXPECT_EQ(l.Item(0).map.m[1][1], 80.0) << "y from 20 to 100";
+  EXPECT_EQ(l.Item(0).map.t[0], 20.0);
+  EXPECT_EQ(l.Item(0).map.t[1], 20.0);
+  Lowered rotated;  // a rotated child is boxed by where its corners go
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
+        "<g clip-path=\"url(#c)\"><rect width=\"10\" height=\"10\" transform=\"rotate(45)\"/></g>",
+      rotated);
+  ASSERT_GT(rotated.Items(), (size_t) 0);
+  ASSERT_EQ(Kinds(rotated).front(), PUSH);
+  EXPECT_NEAR(rotated.Item(0).map.m[0][0], 14.142135623730951, 1e-9);
+  EXPECT_NEAR(rotated.Item(0).map.t[0], -7.0710678118654755, 1e-9);
+  Lowered nothing;  // a group whose only shape has display none has no box, so nothing is drawn
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
+        "<g clip-path=\"url(#c)\"><rect width=\"10\" height=\"10\" display=\"none\"/></g>",
+      nothing);
+  EXPECT_EQ(nothing.Count(FILL), (size_t) 0);
+  EXPECT_EQ(nothing.Refusals(), (size_t) 0);
+  Lowered flat;  // a group whose box has no height cannot place the clip: it is not rendered
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
+        "<g clip-path=\"url(#c)\"><line x1=\"0\" y1=\"5\" x2=\"10\" y2=\"5\" stroke=\"black\"/></g>",
+      flat);
+  EXPECT_EQ(flat.Items(), (size_t) 0);
+  EXPECT_EQ(flat.Refusals(), (size_t) 0);
+  Lowered unboxed;  // a group that holds text, an image or a nested use is still refused
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath><rect id=\"r\" width=\"5\" height=\"5\"/></defs>"
+        "<g clip-path=\"url(#c)\"><use href=\"#r\"/></g>",
+      unboxed);
+  EXPECT_NE(unboxed.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
 }
 
 int main(int argc, char ** argv) {

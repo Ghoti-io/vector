@@ -162,6 +162,14 @@ typedef struct gvec_lw_ctx {
   size_t marker_instances;           ///< Marker instances made so far, nested ones included.
   bool context_set;                  ///< The walk is inside a marker: context-fill and context-stroke name the paints below.
   GVEC_Svg_Paint context_fill, context_stroke;
+  /* A context paint that is a gradient is placed in the box of the element the paints came from (`context_inst`, NULL when that is not
+   * known) and its space is that element's user space: `context_back` takes a point of the picture the walk is in to that space,
+   * inverted, and `item_local` is the map of the shape being drawn within the picture. */
+  const GVEC_Svg_Instance * context_inst;
+  bool context_box_set;              ///< `context_box` is the box (a `use` has no geometry of its own); otherwise it is that of the shape `context_inst`.
+  GSHGEOM_Bounds context_box;
+  GSHGEOM_Map context_back;
+  GSHGEOM_Map item_local;
   bool tracing;
   gvec_lw_table * tables;
   size_t table_count, table_capacity;
@@ -251,6 +259,21 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
     double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
+/** As gvec_lw_gradient_paint(), for the box of `inst` but a gradient space that `into` takes to the space the paint is used in. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
+    double opacity, const GSHGEOM_Map * into, const GSHGEOM_Bounds * box, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
+/**
+ * The bounding box (SVG 2, 8.10) of what the element of `inst` draws, in the space inside its own `transform` and the space it
+ * is in: the fill box of a shape, or the union of those of the shapes in a `g` or `a`, each moved by its transform. What `display`
+ * removes is left out; `visibility` and `opacity` do not remove a shape. `*known` is false when it holds what this does not box.
+ * `box->empty` is set when nothing in it has area.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
+
+/** The inverse of a 2D map; false when it has none (or the result is not finite). */
+GVEC_INTERNAL_API bool gvec_lw_invert(const GSHGEOM_Map * map, GSHGEOM_Map * out);
 
 /** What the stroke of an element amounts to. */
 typedef struct gvec_lw_stroke {

@@ -462,8 +462,8 @@ with it (its stops, transform, units and spread) is read once.
 center and `r` the end, with the focal point defaulting to the center; where they do not contain one another the waist's two-circle
 rule decides, not a clamp in this library. A gradient with `color-interpolation: linearRGB` names linear-light sRGB as the waist's interpolation space; its stops stay the
 document's sRGB colors and the waist converts each, so the ramp between them is walked in linear light (other renderers ignore the
-property on a gradient and walk sRGB; this follows the property). A gradient named by `context-fill` or `context-stroke` (whose box
-is the context element's, not the element drawn) is refused whole with `context-paint` until it is lowered. Colors are
+property on a gradient and walk sRGB; this follows the property). A gradient named by `context-fill` or `context-stroke` is placed in the box
+of the context element, not the element drawn (H13). Colors are
 interpolated straight, as the waist's `premultiplied` field says. A gradient with more stops than `max_gradient_stops` (65,535,
 the most the scene carries) is refused with `limit`; the option can lower it.
 
@@ -483,7 +483,9 @@ uncut reference as a gradient's, and stops there.
 the shapes' paths, each with its own `transform` and `clip-rule`, and the clip's map places them as a whole, as H9 says. The region
 is the union of the members, quantized once, so abutting shapes leave no seam; overlapping members are the sink's work. A
 `clip-path` on one shape of several clips that shape alone, which an intersection around the union cannot say, so it is refused,
-as are a `use` child and text in a `clipPath`, with `clip-path` and `text`.
+as is text in a `clipPath`, with `text`. A `use` child that names a shape is that shape, placed by the use's `transform` and its `x` and
+`y` (the shape's own `transform` comes after), and one that names anything else (a group, a `symbol`, nothing) is not a valid child and adds
+nothing, so a clip of only those lets nothing through; a `use` that has a `clip-path` of its own is refused.
 
 **H12 Basic shapes.** `clip-path: inset() | circle() | ellipse() | polygon() | path()`, with an optional geometry box, on an element
 is one clip region in that element's space (its `transform` moves it). The box is the fill box, the stroke box (the default, the
@@ -492,6 +494,14 @@ not exact), or the view box; an element that is not a shape, or a view box whose
 circle with no radius is `closest-side` of the fill box and a percentage is of the normalized diagonal, as CSS Shapes says. `inset()`
 radii that overlap on a side are all scaled by one factor, as CSS Backgrounds does. A shape with no area lets nothing through. A
 basic shape on a `clipPath`'s shape is still refused.
+
+**H13 Bounding boxes of groups, and context gradients.** A `clipPath` in `objectBoundingBox` units on a group is placed in the box of what
+the group draws: the union of the fill boxes of the shapes in it (and in the `g` and `a` inside it), each moved by its transforms; a
+rotated or skewed shape is boxed by its segments, one with an arc by its box, `display` takes a shape out and `visibility` and `opacity`
+do not. A group that holds a `use`, text, an image or a nested viewport is refused with `clip-path`, as is a transform that needs a box of
+its own. A gradient that `context-fill` or `context-stroke` names is placed in the box of the context element, in that element's user
+space: for a marker, the shape the marker is on (the picture's placement and the drawn shape's own map are undone), for a `use`, what its
+referent draws, moved by `x` and `y`. A paint a shape takes from an outer context, or a pattern, stays refused.
 
 ## Threads
 

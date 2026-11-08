@@ -303,6 +303,11 @@ static void solid_of(const GSHSCENE_Gradient_Stop * stop, double opacity, GSHSCE
 
 GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
     GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
+  return gvec_lw_gradient_paint_in(ctx, inst, paint, opacity, NULL, NULL, out, decision);
+}
+
+GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
+    const GSHGEOM_Map * into, const GSHGEOM_Bounds * given, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
   const GVEC_Svg_Element * shape = gvec_svg_instance_element(inst);
   const GVEC_Svg_Element * server = paint->server;
   *decision = GVEC_LW_PAINT_REFUSED;
@@ -327,19 +332,26 @@ GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
   double vw, vh;
   gvec_svg_instance_viewport(inst, &vw, &vh);
   if (cache->bounding_box) {
-    gvec_lw_geometry geometry;
-    const GSHSCENE_Resource * resource = NULL;
-    bool usable;
-    r = gvec_lw_centerline_of(ctx, inst, &geometry, &resource, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
     GSHGEOM_Bounds box;
-    if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
-      return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+    if (given) {
+      box = *given;
     }
-    if (geometry != GVEC_LW_GEOMETRY_PATH || gshgeom_path_bounds(gshscene_resource_path(resource), &box) != GSHGEOM_OK || box.empty ||
-        !(box.max.x > box.min.x) || !(box.max.y > box.min.y)) {
+    else {
+      gvec_lw_geometry geometry;
+      const GSHSCENE_Resource * resource = NULL;
+      bool usable;
+      r = gvec_lw_centerline_of(ctx, inst, &geometry, &resource, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+      if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
+        return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+      }
+      if (geometry != GVEC_LW_GEOMETRY_PATH || gshgeom_path_bounds(gshscene_resource_path(resource), &box) != GSHGEOM_OK) {
+        box.empty = 1;
+      }
+    }
+    if (box.empty || !(box.max.x > box.min.x) || !(box.max.y > box.min.y)) {
       return not_rendered(ctx, server, "an element with no width or no height has no bounding box for a gradient to be placed in", decision);
     }
     GSHGEOM_Map shift, scale, placed;
@@ -348,6 +360,9 @@ GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
         !gvec_lw_compose(&placed, &cache->transform, &map)) {
       return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the gradient's map is past the range the waist can carry");
     }
+  }
+  if (into && !gvec_lw_compose(into, &map, &map)) {
+    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the gradient's map is past the range the waist can carry");
   }
   bool bb = cache->bounding_box;
   GSHSCENE_Gradient g;

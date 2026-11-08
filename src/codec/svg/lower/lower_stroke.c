@@ -79,8 +79,16 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
       return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "the context element's own paint is a context paint that names nothing");
     }
     if (named->kind == GVEC_SVG_PAINT_SERVER) {
-      /* A gradient is placed in the box of the context element, which is not the element that is being drawn. */
-      return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "a context paint that names a gradient is not lowered yet");
+      /* A gradient is placed in the box of the context element, which is not the element that is being drawn, and in its user space:
+       * the element's own map within the picture is undone, and the picture's map to the context element's space is. */
+      GSHGEOM_Map own_back, into;
+      if (!ctx->context_inst || gvec_svg_element_kind(named->server) == GVEC_SVG_KIND_PATTERN) {
+        return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "a context paint that names a gradient is not lowered here yet");
+      }
+      if (!gvec_lw_invert(&ctx->item_local, &own_back) || !gvec_lw_compose(&own_back, &ctx->context_back, &into)) {
+        return gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the gradient's map is past the range the waist can carry");
+      }
+      return gvec_lw_gradient_paint_in(ctx, ctx->context_inst, named, opacity, &into, ctx->context_box_set ? &ctx->context_box : NULL, out, decision);
     }
     return gvec_lw_paint_of(ctx, inst, named, opacity, out, decision);
   default:
