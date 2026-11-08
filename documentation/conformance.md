@@ -137,19 +137,19 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **379 of 1,679
-(22.57%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **380 of 1,679
+(22.63%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
 
 | directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
 | `masking` | 93 | 15 | 33 | 6 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 97 | 21 | 0 | 0 | 31 | 0 |
-| `painting` | 304 | 119 | 122 | 38 | 0 | 25 | 0 |
+| `painting` | 304 | 120 | 121 | 38 | 0 | 25 | 0 |
 | `shapes` | 133 | 39 | 91 | 3 | 0 | 0 | 0 |
 | `structure` | 247 | 109 | 51 | 21 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **379** | **318** | **68** | **1** | **913** | **0** |
+| **all** | **1679** | **380** | **317** | **68** | **1** | **913** | **0** |
 
 The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
@@ -184,9 +184,10 @@ fail do so for a reason no renderer escapes: the references clip with hard edges
 372 to 1,552 pixels of each, where this library is 255 off over fewer (`simple-case`: 272 pixels to `resvg`'s 1,076). Basic shapes in `clip-path` (`inset()`, `circle()`, `ellipse()`, `polygon()`, `path()`) on an element are lowered too: the score is 377 and
 the refused cases fell from 82 to 79. The three `circle()` cases of `masking/clip-path` still fail, and only on the references: they are opaque
 white where this render is transparent, and the edge is hard; composited on white, `view-box` differs in 108 pixels (largest difference 7)
-and `stroke-box` in 966 (largest 16). A `use` child of a `clipPath`, a clip in the units of the bounding box of a group, and a gradient `context-fill` or `context-stroke` on a marker or a `use` are lowered as well: the score is 379 and the refused cases fell
+and `stroke-box` in 966 (largest 16). A `use` child of a `clipPath`, a clip in the units of the bounding box of a group, and a gradient `context-fill` or `context-stroke` on a marker or a `use` are lowered as well: the score is 380 and the refused cases fell
 from 79 to 68; the cases that moved but did not pass differ only along edges. What is refused is a basic shape on a `clipPath`'s shape,
 text in a `clipPath`, and a `clip-path` on one shape of several.
+A gradient on a shape whose bounding box has no area takes its fallback paint when it has one, and a document with no size and no `viewBox` is as large as its drawing (as `resvg` sizes it); `no-size` still fails by a fraction of a pixel along the edges of its square.
 
 The remaining refusals are `mask`, `text` that is not excluded, `image`, `pattern`, and gradients
 named by `context-fill` and `context-stroke`. Gradients interpolated in `linearRGB` are drawn; no case of the corpus covers
