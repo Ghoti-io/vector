@@ -298,6 +298,16 @@ TEST(LowerClip, AGroupInTheUnitsOfTheBoundingBoxIsPlacedInTheBoxOfWhatItDraws) {
   ASSERT_EQ(Kinds(rotated).front(), PUSH);
   EXPECT_NEAR(rotated.Item(0).map.m[0][0], 14.142135623730951, 1e-9);
   EXPECT_NEAR(rotated.Item(0).map.t[0], -7.0710678118654755, 1e-9);
+  Lowered round;  // a rotated circle is boxed by where its arcs go (a circle of radius 5 at (5,5), turned 45 degrees about the origin)
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
+        "<g clip-path=\"url(#c)\"><circle cx=\"5\" cy=\"5\" r=\"5\" transform=\"rotate(45)\"/></g>",
+      round);
+  EXPECT_EQ(round.Refusals(), (size_t) 0);
+  ASSERT_GT(round.Items(), (size_t) 0);
+  ASSERT_EQ(Kinds(round).front(), PUSH);
+  EXPECT_NEAR(round.Item(0).map.m[0][0], 10.0, 1e-6);
+  EXPECT_NEAR(round.Item(0).map.m[1][1], 10.0, 1e-6);
+  EXPECT_NEAR(round.Item(0).map.t[0], -5.0, 1e-6);
   Lowered nothing;  // a group whose only shape has display none has no box, so nothing is drawn
   Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
         "<g clip-path=\"url(#c)\"><rect width=\"10\" height=\"10\" display=\"none\"/></g>",

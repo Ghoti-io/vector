@@ -304,6 +304,7 @@ PLANTS = [
     ("H12", GR, "      if (paint->has_fallback) {", "      if (false && paint->has_fallback) {", "a gradient on a box of no area ignores its fallback paint"),
     ("H13", W, "        *height = no_h ? box.max.y : *height;", "        *height = no_h ? box.max.x : *height;", "a document with no height takes its width from the drawing"),
     ("H13", W, "        *width = no_w ? box.max.x : *width;", "        *width = *width;", "a document with no width is not as wide as its drawing"),
+    ("H12", CL, "    if (g == GSHGEOM_ERR_UNSUPPORTED) {", "    if (g == GSHGEOM_ERR_UNSUPPORTED && 0) {", "a path with an arc is not bounded under a map that turns it"),
     ("H13", CL, "  *pad = width / 2 * (sx > sy ? sx : sy);", "  *pad = 0 * (sx + sy);", "the stroke of a shape adds nothing to the size of a document with none"),
     ("H12", M, "  ctx->context_inst = w->inst;\n  if (w->inst &&", "  ctx->context_inst = NULL;\n  if (w->inst &&", "a gradient context paint in a marker is refused"),
     ("H12", M, "!gvec_lw_invert(&w->step, &ctx->context_back)", "!(ctx->context_back = w->step, true)", "the marker's placement is not undone for a context gradient"),

@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include <ghoti.io/math/elementary.h>
+#include <ghoti.io/shape-geometry/arc.h>
 #include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/clip_union.h>
 
@@ -399,7 +400,7 @@ static GVEC_Result add_union(chain * c, const clip_child * list, const GSHGEOM_M
 }
 
 /* The box of a path under `map`, merged into `acc`. An axis-aligned map moves the path's box; any other map moves each segment, and a
- * path with an arc (which cannot be read back as a segment) is not bounded: false. */
+ * arc is mapped as an arc and bounded by the curves it is made of. False when a piece cannot be bounded. */
 static bool merge_box(const GSHGEOM_Path * path, const GSHGEOM_Map * map, GSHGEOM_Bounds * acc) {
   GSHGEOM_Bounds b;
   if (map->m[0][1] == 0 && map->m[1][0] == 0) {
@@ -420,27 +421,44 @@ static bool merge_box(const GSHGEOM_Path * path, const GSHGEOM_Map * map, GSHGEO
   b.empty = 1;
   for (size_t i = 0, n = gshgeom_path_element_count(path); i < n; i++) {
     GSHGEOM_Element el;
+    GSHGEOM_Curve pieces[GSHGEOM_ARC_MAX_PIECES];
+    int np = 0;
     GSHGEOM_Result g = gshgeom_path_element(path, i, &el);
-    if (g != GSHGEOM_OK) {
+    if (g == GSHGEOM_ERR_UNSUPPORTED) {
+      /* An arc cannot be read back as a segment: map it, then take the pieces it is made of. */
+      GSHGEOM_Arc arc, moved_arc;
+      if (gshgeom_path_arc(path, i, &arc) != GSHGEOM_OK || gshgeom_arc_map(map, &arc, &moved_arc) != GSHGEOM_OK ||
+          gshgeom_arc_pieces(&moved_arc, pieces, &np) != GSHGEOM_OK) {
+        return false;
+      }
+    }
+    else if (g != GSHGEOM_OK) {
       return false;
     }
-    if (el.verb == GSHGEOM_VERB_MOVE) {
+    else if (el.verb == GSHGEOM_VERB_MOVE) {
       continue;
     }
-    GSHGEOM_Curve moved;
-    GSHGEOM_Bounds cb;
-    if (gshgeom_map_apply_curve(map, &el.curve, &moved) != GSHGEOM_OK || gshgeom_curve_bounds(&moved, &cb) != GSHGEOM_OK) {
-      return false;
-    }
-    if (b.empty) {
-      b = cb;
-      b.empty = 0;
-    }
     else {
-      b.min.x = cb.min.x < b.min.x ? cb.min.x : b.min.x;
-      b.min.y = cb.min.y < b.min.y ? cb.min.y : b.min.y;
-      b.max.x = cb.max.x > b.max.x ? cb.max.x : b.max.x;
-      b.max.y = cb.max.y > b.max.y ? cb.max.y : b.max.y;
+      if (gshgeom_map_apply_curve(map, &el.curve, &pieces[0]) != GSHGEOM_OK) {
+        return false;
+      }
+      np = 1;
+    }
+    for (int k = 0; k < np; k++) {
+      GSHGEOM_Bounds cb;
+      if (gshgeom_curve_bounds(&pieces[k], &cb) != GSHGEOM_OK) {
+        return false;
+      }
+      if (b.empty) {
+        b = cb;
+        b.empty = 0;
+      }
+      else {
+        b.min.x = cb.min.x < b.min.x ? cb.min.x : b.min.x;
+        b.min.y = cb.min.y < b.min.y ? cb.min.y : b.min.y;
+        b.max.x = cb.max.x > b.max.x ? cb.max.x : b.max.x;
+        b.max.y = cb.max.y > b.max.y ? cb.max.y : b.max.y;
+      }
     }
   }
   if (b.empty) {
