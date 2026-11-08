@@ -398,6 +398,13 @@ a vertex. The vertices, and the direction at each (the incoming and the outgoing
 length and for the corner at the start of a closed subpath), are the geometry library's: this library computes no tangent. A
 reference to nothing draws no marker, and a reference to an element that is no marker draws none and is said.
 
+By default a closed path's first and last vertex take the direction the geometry library gives, the bisector of the segment before and
+the one after. SVG 2 (13.7.4) does not say whether the closing segment is the one before the start, and says nothing of a reversal or a
+segment of no length, and the renderers differ: the browsers bisect; `resvg`, Batik and Inkscape point the start marker along the first
+segment and the end marker along the last. `GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN` selects the second, taking the incoming and outgoing
+directions of the vertex from the same library; the vertices in the middle of a path are unchanged. The conformance runner sets it,
+because the reference images are `resvg`'s.
+
 **K8 The marker, and where it goes.** A marker is a viewport of `markerWidth` by `markerHeight` (3 by default), with a `viewBox`
 and `preserveAspectRatio` as any other, and its content is **a picture drawn once for each vertex** under the map of the shape
 (its `transform`), the vertex, the rotation, the scale and the reference point. `orient` is an angle in degrees, `auto` (the

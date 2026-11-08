@@ -153,12 +153,19 @@ GVEC_API GVEC_Result gvec_lower_trace_element(const GVEC_Lower_Trace * trace, co
 /** The fields of GVEC_Lower_Options::flags. */
 enum {
   GVEC_LOWER_AT_POSITION = 1u << 0,    ///< Edit: place the drawing at `position` rather than after the last child of `parent`.
-  GVEC_LOWER_SET_FOREGROUND = 1u << 1  ///< Set the target's foreground to `foreground`.
+  GVEC_LOWER_SET_FOREGROUND = 1u << 1, ///< Set the target's foreground to `foreground`.
+  /**
+   * The first and last vertex of a path that closes are oriented like those of an open path: an `orient="auto"` start marker
+   * points along the first segment and an end marker along the last, where by default each is half way between the two
+   * (SVG 2, 13.7.4, which does not say whether the closing segment is the segment before the start, and says nothing of a
+   * reversal or a segment of no length). The renderers disagree: the browsers bisect, `resvg`, Batik and Inkscape do this.
+   */
+  GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN = 1u << 2
 };
 
 /** Options for a lowering. Zero-fill it, then set what you need. */
 typedef struct GVEC_Lower_Options {
-  uint32_t flags;                        ///< GVEC_LOWER_AT_POSITION, GVEC_LOWER_SET_FOREGROUND.
+  uint32_t flags;                        ///< GVEC_LOWER_AT_POSITION, GVEC_LOWER_SET_FOREGROUND, GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN.
   /**
    * The store the paths and pictures are interned in. A list lowering requires it and it must be the store the list
    * was made over (shape-scene lists do not say); an edit lowering ignores it and uses the edit's own.

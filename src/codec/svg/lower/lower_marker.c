@@ -251,7 +251,16 @@ static bool placement(walk * w, const marker * m, int slot, const GSHGEOM_Vertex
   }
   else {
     double sign = m->orient.mode == GVEC_SVG_ORIENT_AUTO_START_REVERSE && slot == SLOT_START ? -1 : 1;
-    double dx = sign * v->direction.x, dy = sign * v->direction.y;
+    GSHGEOM_Point dir = v->direction;
+    if (w->ctx->options && (w->ctx->options->flags & GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN) && (v->flags & GSHGEOM_VERTEX_CLOSED)) {
+      if (slot == SLOT_START && (v->flags & GSHGEOM_VERTEX_HAS_OUT)) {
+        dir = v->out;
+      }
+      else if (slot == SLOT_END && (v->flags & GSHGEOM_VERTEX_HAS_IN)) {
+        dir = v->in;
+      }
+    }
+    double dx = sign * dir.x, dy = sign * dir.y;
     const double linear[4] = {dx, -dy, dy, dx};
     const double zero[2] = {0, 0};
     if (gshgeom_map_from_matrix(2, linear, zero, &rotation) != GSHGEOM_OK) {

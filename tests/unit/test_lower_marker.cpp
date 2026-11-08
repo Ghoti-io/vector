@@ -145,6 +145,36 @@ TEST(LowerMarker, AutoTakesTheDirectionOfTheVertexFromTheGeometry) {
   EXPECT_NEAR(in[1].map.m[1][0], std::sqrt(0.5), 1e-15);
 }
 
+TEST(LowerMarker, TheEndsOfAClosedPathAreOrientedLikeThoseOfAnOpenOneOnlyWhenAsked) {
+  const char * closed =
+      "<path d=\"M10 10L30 10L30 30Z\" fill=\"none\" stroke=\"none\" marker-start=\"url(#m)\" marker-mid=\"url(#m)\" marker-end=\"url(#m)\"/>";
+  const double h = std::sqrt(0.5);
+  Lowered by_default;  // half way between the closing segment and the first
+  LowerSvg(OnlyMarkers(Marker("orient=\"auto\""), closed), by_default);
+  std::vector<GSHSCENE_Item> d = Instances(by_default);
+  ASSERT_EQ(d.size(), (size_t) 4);
+  EXPECT_NE(d.front().map.m[0][0], 1.0);
+  EXPECT_NEAR(d.front().map.m[0][0], d.back().map.m[0][0], 1e-15) << "both are the one vertex";
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.flags = GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN;
+  Lowered open;
+  LowerSvg(OnlyMarkers(Marker("orient=\"auto\""), closed), open, 0, 0, &options);
+  std::vector<GSHSCENE_Item> o = Instances(open);
+  ASSERT_EQ(o.size(), (size_t) 4);
+  EXPECT_EQ(o.front().map.m[0][0], 1.0) << "the start looks along the first segment";
+  EXPECT_EQ(o.front().map.m[1][0], 0.0);
+  EXPECT_NEAR(o.back().map.m[0][0], -h, 1e-15) << "the end looks along the closing segment";
+  EXPECT_NEAR(o.back().map.m[1][0], -h, 1e-15);
+  EXPECT_NEAR(o[1].map.m[0][0], d[1].map.m[0][0], 1e-15) << "a mid vertex is as it was";
+  Lowered still_open;  // an open path is the same either way
+  LowerSvg(OnlyMarkers(Marker("orient=\"auto\""), kPath), still_open, 0, 0, &options);
+  std::vector<GSHSCENE_Item> so = Instances(still_open);
+  ASSERT_EQ(so.size(), (size_t) 3);
+  EXPECT_EQ(so[0].map.m[0][0], 1.0);
+  EXPECT_EQ(so[2].map.m[1][0], 1.0);
+}
+
 TEST(LowerMarker, ANumberIsAnAngleInDegreesAndAutoStartReverseTurnsTheStart) {
   Lowered number;
   LowerSvg(OnlyMarkers(Marker("orient=\"90\""), kPath), number);
