@@ -516,6 +516,11 @@ its bottom edge, from the origin, with each stroke reaching half its width past 
 that is what `resvg` does and what the reference images show. A document that holds anything the box does not take in (a `use`, text, an image)
 or draws nothing is the load's viewport, as before. A negative size is not treated this way: it is dropped as invalid, so the size is `auto`.
 
+**H14 Shape rendering.** `shape-rendering` of `crispEdges` or `optimizeSpeed` asks the fill and the stroke of a shape for no antialiasing:
+each item is recorded with the waist's no-antialiasing mode, so a pixel is covered whole when its center is inside the shape and not at all
+otherwise. `auto` and `geometricPrecision` leave the default. The property is inherited, so it is read on each shape, and a group has none
+of its own. A sink that cannot draw the mode draws the item antialiased and the plan reports it approximated.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a

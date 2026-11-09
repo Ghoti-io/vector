@@ -95,6 +95,7 @@ struct gvec_lw_node {
   const GSHSCENE_Resource * style;   ///< STROKE: the stroke style (held by the context).
   GSHGEOM_Fill_Rule rule;
   GSHSCENE_Paint paint;
+  bool crisp;                        ///< FILL, STROKE: the item asks for no antialiasing (`shape-rendering` crispEdges or optimizeSpeed).
   double opacity;                    ///< GROUP.
   bool content;                      ///< Something is drawn by this node or below it.
   size_t items;                      ///< The items this node and its subtree are in the list the node is in.
@@ -171,6 +172,7 @@ typedef struct gvec_lw_ctx {
   GSHGEOM_Bounds context_box;
   GSHGEOM_Map context_back;
   GSHGEOM_Map item_local;
+  bool item_crisp;                   ///< The shape being drawn has `shape-rendering` crispEdges or optimizeSpeed.
   bool tracing;
   gvec_lw_table * tables;
   size_t table_count, table_capacity;

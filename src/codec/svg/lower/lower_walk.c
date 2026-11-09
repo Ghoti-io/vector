@@ -733,6 +733,7 @@ static GVEC_Result shape_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, con
   node->style = style;
   node->rule = rule;
   node->paint = *paint;
+  node->crisp = ctx->item_crisp;
   node->content = true;
   node->key = gvec_lw_key(e->key, ctx->chain, style ? GVEC_LW_ROLE_STROKE : GVEC_LW_ROLE_SHAPE);
   node->site = gvec_lw_new_site(ctx, e, node->key);
@@ -748,6 +749,15 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
     return r;
   }
   ctx->item_local = c.local;
+  {
+    GVEC_Svg_Style_Value sr;
+    bool sr_usable;
+    r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_SHAPE_RENDERING, GVEC_LOWER_STYLE, &sr, &sr_usable);
+    if (r != GVEC_OK || !sr_usable) {
+      return r;
+    }
+    ctx->item_crisp = gvec_lw_keyword_is(&sr, "crispedges") || gvec_lw_keyword_is(&sr, "optimizespeed");
+  }
   GSHSCENE_Paint paint;
   GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
   gvec_lw_paint_decision fill_decision;

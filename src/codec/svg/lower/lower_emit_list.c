@@ -95,13 +95,13 @@ static GVEC_Result emit_nodes(gvec_lw_ctx * ctx, GSHSCENE_List * list, size_t ta
     bool skipped = false;
     switch (n->kind) {
     case GVEC_LW_FILL:
-      r = scene_failure(ctx, n, gshscene_list_fill(list, n->resource, &n->map, n->rule, &n->paint, 0, 0.0), &skipped);
+      r = scene_failure(ctx, n, gshscene_list_fill_antialias(list, n->resource, &n->map, n->rule, &n->paint, n->crisp ? GSHSCENE_ANTIALIAS_NONE : GSHSCENE_ANTIALIAS_AREA, 0, 0.0), &skipped);
       if (r == GVEC_OK && !skipped) {
         r = gvec_lw_table_add(ctx, table, n->site, 0);
       }
       break;
     case GVEC_LW_STROKE:
-      r = scene_failure(ctx, n, gshscene_list_stroke(list, n->resource, n->style, &n->map, &n->paint, 0, 0.0), &skipped);
+      r = scene_failure(ctx, n, gshscene_list_stroke_antialias(list, n->resource, n->style, &n->map, &n->paint, n->crisp ? GSHSCENE_ANTIALIAS_NONE : GSHSCENE_ANTIALIAS_AREA, 0, 0.0), &skipped);
       if (r == GVEC_OK && !skipped) {
         r = gvec_lw_table_add(ctx, table, n->site, 0);
       }

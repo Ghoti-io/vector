@@ -134,6 +134,7 @@ static GVEC_Result edit_children(gvec_lw_ctx * ctx, GSHSCENE_Edit * edit, uint64
       props.resource = n->resource;
       props.fill_rule = n->rule;
       props.paint = n->paint;
+      props.antialias = n->crisp ? GSHSCENE_ANTIALIAS_NONE : GSHSCENE_ANTIALIAS_AREA;
       r = put(ctx, edit, group, position, n->key, n->site, &props, &id, &skipped);
       if (r == GVEC_OK && !skipped) {
         position++;
@@ -145,6 +146,7 @@ static GVEC_Result edit_children(gvec_lw_ctx * ctx, GSHSCENE_Edit * edit, uint64
       props.resource = n->resource;
       props.style = n->style;
       props.paint = n->paint;
+      props.antialias = n->crisp ? GSHSCENE_ANTIALIAS_NONE : GSHSCENE_ANTIALIAS_AREA;
       r = put(ctx, edit, group, position, n->key, n->site, &props, &id, &skipped);
       if (r == GVEC_OK && !skipped) {
         position++;

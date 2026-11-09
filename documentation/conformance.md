@@ -175,7 +175,7 @@ Of the 306 that fail, most agree with `resvg` in being unlike the reference, or 
 anti-aliasing over a tail of pixels (`painting/marker/orient=auto-start-reverse` is 107 pixels over the
 tolerance, all along the strokes); a few follow the reference's own conventions, which the lowering does not (a negative
 `width` on the root `svg` renders nothing, and an `svg` with no size takes its size from the content's bounding box), and
-`painting/marker/with-viewBox-1` is marked undefined behavior in the corpus. The rest are features the lowering does not do yet: SVG 2 units and geometry given in style, `shape-rendering="crispEdges"`, and the
+`painting/marker/with-viewBox-1` is marked undefined behavior in the corpus. The `shape-rendering` cases are drawn without antialiasing where asked and still miss the rule by a few edge pixels, where the reference's circle (four cubics) and its treatment of a pixel center on an edge differ. The rest are features the lowering does not do yet: SVG 2 units and geometry given in style, and the
 direction of a marker at a degenerate vertex. They stay in the score as failures.
 
 Clips (`clip-path` naming a `clipPath` of any number of shapes, nested or not, in either units) are lowered; they moved `masking` from 2 passes to 13 and the score from

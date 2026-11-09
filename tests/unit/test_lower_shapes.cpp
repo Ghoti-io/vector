@@ -190,3 +190,30 @@ int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST(LowerShapes, ShapeRenderingCrispEdgesAndOptimizeSpeedAskTheFillAndTheStrokeForNoAntialiasing) {
+  const char * const asks[] = {"crispEdges", "optimizeSpeed"};
+  for (const char * value : asks) {
+    Lowered l;
+    LowerSvg(Svg("width=\"100\" height=\"100\"", std::string("<rect width=\"20\" height=\"20\" stroke=\"black\" shape-rendering=\"") + value + "\"/>"), l);
+    ASSERT_EQ(l.Items(), (size_t) 2) << value;
+    EXPECT_EQ(l.Item(0).antialias, (uint32_t) GSHSCENE_ANTIALIAS_NONE) << value;
+    EXPECT_EQ(l.Item(1).antialias, (uint32_t) GSHSCENE_ANTIALIAS_NONE) << value;
+  }
+  const char * const keeps[] = {"auto", "geometricPrecision"};
+  for (const char * value : keeps) {
+    Lowered l;
+    LowerSvg(Svg("width=\"100\" height=\"100\"", std::string("<rect width=\"20\" height=\"20\" stroke=\"black\" shape-rendering=\"") + value + "\"/>"), l);
+    ASSERT_EQ(l.Items(), (size_t) 2) << value;
+    EXPECT_EQ(l.Item(0).antialias, (uint32_t) GSHSCENE_ANTIALIAS_AREA) << value;
+    EXPECT_EQ(l.Item(1).antialias, (uint32_t) GSHSCENE_ANTIALIAS_AREA) << value;
+  }
+}
+
+TEST(LowerShapes, ShapeRenderingIsInheritedByTheShapesBelowAGroup) {
+  Lowered l;
+  LowerSvg(Svg("width=\"100\" height=\"100\"", "<g shape-rendering=\"crispEdges\"><circle r=\"5\"/><circle r=\"5\" shape-rendering=\"auto\"/></g>"), l);
+  ASSERT_EQ(l.Items(), (size_t) 2);
+  EXPECT_EQ(l.Item(0).antialias, (uint32_t) GSHSCENE_ANTIALIAS_NONE);
+  EXPECT_EQ(l.Item(1).antialias, (uint32_t) GSHSCENE_ANTIALIAS_AREA);
+}
