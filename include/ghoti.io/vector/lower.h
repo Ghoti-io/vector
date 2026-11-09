@@ -160,12 +160,18 @@ enum {
    * (SVG 2, 13.7.4, which does not say whether the closing segment is the segment before the start, and says nothing of a
    * reversal or a segment of no length). The renderers disagree: the browsers bisect, `resvg`, Batik and Inkscape do this.
    */
-  GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN = 1u << 2
+  GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN = 1u << 2,
+  /**
+   * A gradient with no stops, named by a paint that has a fallback (`fill="url(#g) green"`), is drawn with the fallback. By default
+   * it is `none` (SVG 2, 13.2.3, which says a gradient with no stops is as `none`, and uses the fallback only when the reference
+   * cannot be resolved). The renderers disagree: the browsers paint nothing, `resvg` and Batik use the fallback.
+   */
+  GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK = 1u << 3
 };
 
 /** Options for a lowering. Zero-fill it, then set what you need. */
 typedef struct GVEC_Lower_Options {
-  uint32_t flags;                        ///< GVEC_LOWER_AT_POSITION, GVEC_LOWER_SET_FOREGROUND, GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN.
+  uint32_t flags;                        ///< GVEC_LOWER_AT_POSITION, GVEC_LOWER_SET_FOREGROUND, GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN, GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK.
   /**
    * The store the paths and pictures are interned in. A list lowering requires it and it must be the store the list
    * was made over (shape-scene lists do not say); an edit lowering ignores it and uses the edit's own.

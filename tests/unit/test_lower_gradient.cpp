@@ -147,6 +147,25 @@ TEST(LowerGradient, NoStopsIsNoPaintAndOneStopIsASolidFill) {
   EXPECT_EQ(one.Item(0).paint.rgba[3], 0.5);
 }
 
+TEST(LowerGradient, AGradientWithNoStopsTakesItsFallbackOnlyWhenAsked) {
+  const std::string body = "<defs><linearGradient id=\"g\"/></defs><rect width=\"10\" height=\"10\" fill=\"url(#g) #008000\"/>";
+  Lowered none;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", body), none);
+  EXPECT_EQ(none.Items(), (size_t) 0) << "by default the paint is none";
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.flags = GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK;
+  Lowered fallback;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", body), fallback, 0, 0, &options);
+  ASSERT_EQ(fallback.Items(), (size_t) 1);
+  EXPECT_EQ(fallback.Item(0).paint.kind, GSHSCENE_PAINT_SOLID);
+  EXPECT_EQ(fallback.Item(0).paint.rgba[1], 128 / 255.0);
+  Lowered no_fallback;  // with no fallback in the paint, the flag changes nothing
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<defs><linearGradient id=\"g\"/></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/>"),
+      no_fallback, 0, 0, &options);
+  EXPECT_EQ(no_fallback.Items(), (size_t) 0);
+}
+
 TEST(LowerGradient, TheOpacityOfTheFillMultipliesTheGradient) {
   Lowered l;
   ASSERT_TRUE(Lower(std::string("<linearGradient id=\"g\">") + kStops + "</linearGradient>", l, "fill-opacity=\"0.25\""));

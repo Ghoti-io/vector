@@ -40,7 +40,8 @@ static GVEC_Result check_options(const GVEC_Lower_Options * options) {
       return GVEC_ERR_INVALID;
     }
   }
-  if (options->flags & ~(GVEC_LOWER_AT_POSITION | GVEC_LOWER_SET_FOREGROUND | GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN)) {
+  if (options->flags & ~(GVEC_LOWER_AT_POSITION | GVEC_LOWER_SET_FOREGROUND | GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN |
+                              GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK)) {
     return GVEC_ERR_INVALID;
   }
   if ((options->flags & GVEC_LOWER_SET_FOREGROUND) && gshscene_color_check(&options->foreground) != GSHSCENE_OK) {

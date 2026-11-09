@@ -521,6 +521,10 @@ each item is recorded with the waist's no-antialiasing mode, so a pixel is cover
 otherwise. `auto` and `geometricPrecision` leave the default. The property is inherited, so it is read on each shape, and a group has none
 of its own. A sink that cannot draw the mode draws the item antialiased and the plan reports it approximated.
 
+**H15 A gradient with no stops.** Its paint is `none` (SVG 2, 13.2.3), and the paint after the `url()` is not used: the fallback is for a
+reference that cannot be resolved. `resvg` and Batik use it, the browsers do not, so `GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK` draws the
+fallback, when the paint has one. A paint with no fallback is `none` either way.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a

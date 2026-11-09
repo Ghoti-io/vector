@@ -320,6 +320,13 @@ GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance
     return not_rendered(ctx, server, "a gradientTransform with no inverse disables the paint server", decision);
   }
   if (cache->stop_count == 0) {
+    if (paint->has_fallback && ctx->options && (ctx->options->flags & GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK)) {
+      GVEC_Svg_Paint fallback;
+      memset(&fallback, 0, sizeof fallback);
+      fallback.kind = paint->fallback_kind;
+      fallback.color = paint->fallback_color;
+      return gvec_lw_paint_of(ctx, inst, &fallback, opacity, out, decision);
+    }
     *decision = GVEC_LW_PAINT_NONE; /* No stops: the paint is none (SVG 2, 13.2.3). */
     return GVEC_OK;
   }

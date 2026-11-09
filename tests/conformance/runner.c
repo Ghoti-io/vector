@@ -323,7 +323,7 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   memset(&lower, 0, sizeof lower);
   lower.store = store;
   lower.trace = trace;
-  lower.flags = GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN; /* the reference images are resvg's */
+  lower.flags = GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN | GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK; /* the reference images are resvg's */
   GVEC_Result lr = o->lower(doc, &lower, list, &diag);
   if (lr != GVEC_OK) {
     say(v, "ERROR", "lowering returned %s", gvec_result_string(lr));
