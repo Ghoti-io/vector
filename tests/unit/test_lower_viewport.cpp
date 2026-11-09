@@ -229,6 +229,19 @@ TEST(LowerViewport, AZeroSizedBoxOrViewportDisablesRenderingWithANoticeAndNoRefu
   }
 }
 
+TEST(LowerViewport, ANegativeWidthOrHeightOfTheRootDisablesRenderingWithANotice) {
+  for (const char * attributes : {"width=\"-50\" height=\"100\"", "width=\"50\" height=\"-0.5\"", "width=\" -5px\" height=\"10\""}) {
+    Lowered l;
+    LowerSvg(Svg(attributes, "<path d=\"M0 0H1V1Z\"/>"), l);
+    EXPECT_EQ(l.Items(), (size_t) 0) << attributes;
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << attributes;
+    EXPECT_EQ(gvec_diagnostics_count_code(&l.by_list, GVEC_DIAG_RENDERING_DISABLED), (size_t) 1) << attributes;
+  }
+  Lowered zero;  // minus zero is zero
+  LowerSvg(Svg("width=\"-0\" height=\"10\"", "<path d=\"M0 0H1V1Z\"/>"), zero);
+  EXPECT_EQ(gvec_diagnostics_count_code(&zero.by_list, GVEC_DIAG_RENDERING_DISABLED), (size_t) 1) << "a zero size disables it all the same";
+}
+
 TEST(LowerViewport, ANegativeBoxIsAnInvalidAttributeAndIsIgnored) {
   Lowered l;
   LowerSvg(Svg("width=\"10\" height=\"10\" viewBox=\"0 0 -5 10\"", "<path d=\"M0 0H1V1Z\"/>"), l);

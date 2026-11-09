@@ -514,7 +514,7 @@ referent draws, moved by `x` and `y`. A paint a shape takes from an outer contex
 The same box sizes a document that gives no size. With no `viewBox`, a missing `width` is the right edge of the drawing and a missing `height`
 its bottom edge, from the origin, with each stroke reaching half its width past its shape (a join or cap that reaches further is not counted):
 that is what `resvg` does and what the reference images show. A document that holds anything the box does not take in (a `use`, text, an image)
-or draws nothing is the load's viewport, as before. A negative size is not treated this way: it is dropped as invalid, so the size is `auto`.
+or draws nothing is the load's viewport, as before. A negative size is not treated this way (H16).
 
 **H14 Shape rendering.** `shape-rendering` of `crispEdges` or `optimizeSpeed` asks the fill and the stroke of a shape for no antialiasing:
 each item is recorded with the waist's no-antialiasing mode, so a pixel is covered whole when its center is inside the shape and not at all
@@ -524,6 +524,10 @@ of its own. A sink that cannot draw the mode draws the item antialiased and the 
 **H15 A gradient with no stops.** Its paint is `none` (SVG 2, 13.2.3), and the paint after the `url()` is not used: the fallback is for a
 reference that cannot be resolved. `resvg` and Batik use it, the browsers do not, so `GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK` draws the
 fallback, when the paint has one. A paint with no fallback is `none` either way.
+
+**H16 A negative size on the root.** A negative `width` or `height` of the root `svg` is an error and nothing is drawn, with the notice that
+rendering is disabled, as for a size of zero. SVG 1.1 says it is an error, SVG 2 is silent on a negative one, and the browsers and `resvg`
+all draw nothing, so there is no flag. A negative size on a nested `svg` or a shape is as it was.
 
 ## Threads
 

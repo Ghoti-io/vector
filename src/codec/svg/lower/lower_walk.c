@@ -1484,5 +1484,22 @@ GVEC_Result gvec_lw_walk(gvec_lw_ctx * ctx) {
   if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
     return GVEC_ERR_INTERNAL;
   }
+  /* A negative width or height on the root is an error that the browsers and `resvg` answer by drawing nothing. */
+  const GVEC_Svg_Element * root_element = gvec_svg_instance_element(root);
+  static const char * const sizes[] = {"width", "height"};
+  for (size_t i = 0; i < 2; i++) {
+    const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(root_element, sizes[i]);
+    size_t n = 0;
+    const char * t = a ? gvec_svg_attribute_raw(a, &n) : NULL;
+    while (t && n > 0 && (*t == ' ' || *t == '\t' || *t == '\n' || *t == '\r')) {
+      t++;
+      n--;
+    }
+    if (t && n > 1 && t[0] == '-' && ((t[1] >= '0' && t[1] <= '9') || t[1] == '.')) {
+      return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_RENDERING_DISABLED, 0, root_element->node.line,
+          root_element->node.column, root_element->node.offset, root_element->name,
+          "a negative width or height of the root disables the rendering of the document");
+    }
+  }
   return lw_element(ctx, root, &identity, &ctx->root);
 }
