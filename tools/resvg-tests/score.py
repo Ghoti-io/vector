@@ -11,7 +11,7 @@
 """Score vector against the resvg test suite.
 
     score.py --corpus DIR --runner EXE --out DIR
-             [--versions F] [--cases F] [--tolerance F] [--expected N] [--stub NAME]
+             [--versions F] [--cases F] [--accepted F] [--tolerance F] [--expected N] [--stub NAME]
 
 The population is every tests/**/*.svg in the corpus, read from the tree. A
 case is given exactly one outcome:
@@ -20,11 +20,25 @@ case is given exactly one outcome:
     FAIL        loaded, lowered with no refusal, rendered, outside the tolerance
     REFUSED     loaded, and the lowering reported one or more refusals
     NOT_LOADED  the load failed
+    ACCEPTED    rendered outside the tolerance, and a reviewed row of ACCEPTED
+                says why the library's drawing is the correct one
     EXCLUDED    a rule of CASES names it (never run, and so never a PASS)
     ERROR       the harness failed on it (decode, render, crash, timeout)
 
-The score is PASS over *all* cases, EXCLUDED included. PASS over all but the
-excluded is printed beside it, labelled, and is never the headline.
+The score is "determined correct": PASS plus ACCEPTED, over *all* cases,
+EXCLUDED included. The reference is one oracle among several, so a case whose
+behavior is undefined, or on which the oracles disagree, or which the
+specification's text decides against the reference, is correct when a reviewed
+row says so and gives the evidence; PASS and ACCEPTED are always printed apart.
+The same ratio over all but the excluded is printed beside it, labelled, and is
+never the headline.
+
+An ACCEPTED row is one line of five tab-separated fields: the case, a kind
+(UNDEFINED, DISAGREEMENT or SPECIFICATION), the evidence, the reason, and what
+the runner reported for the case when it was reviewed. It names a case exactly
+(a glob names no case, so it is refused), and it is refused when the case is excluded, when it now passes or is
+refused or errors, or when the runner's report has changed since the review: a
+row cannot go stale unseen.
 
 The scorer fails (exit 1, the line named) on: a population different from the
 pinned count, a case with no reference PNG, a CASES line that is malformed, has
@@ -46,7 +60,8 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLASSES = ("OUT_OF_SCOPE", "ENVIRONMENT", "REFERENCE")
-OUTCOMES = ("PASS", "FAIL", "REFUSED", "NOT_LOADED", "EXCLUDED", "ERROR")
+KINDS = ("UNDEFINED", "DISAGREEMENT", "SPECIFICATION")
+OUTCOMES = ("PASS", "ACCEPTED", "FAIL", "REFUSED", "NOT_LOADED", "EXCLUDED", "ERROR")
 RUNNER_OUTCOMES = ("PASS", "FAIL", "REFUSED", "NOT_LOADED", "ERROR")
 
 
@@ -122,6 +137,40 @@ def parse_cases(path, cases):
     return excluded
 
 
+def parse_accepted(path, cases, excluded):
+    """The reviewed rows: {case: (kind, evidence, reason, seen)}."""
+    known = set(cases)
+    accepted = {}
+    if not os.path.isfile(path):
+        return accepted
+    with open(path, "r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            line = line.rstrip("\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            where = "%s:%d" % (os.path.basename(path), number)
+            parts = line.split("\t")
+            if len(parts) != 5:
+                raise ScoreError("%s: not five tab-separated fields" % where)
+            case, kind, evidence, reason, seen = parts
+            if kind not in KINDS:
+                raise ScoreError("%s: kind %r is not one of %s" % (where, kind, ", ".join(KINDS)))
+            if len(evidence.split()) < 3:
+                raise ScoreError("%s: evidence of fewer than three words" % where)
+            if len(reason.split()) < 3:
+                raise ScoreError("%s: a reason of fewer than three words" % where)
+            if not seen.strip():
+                raise ScoreError("%s: no report of the runner to hold the row to" % where)
+            if case not in known:
+                raise ScoreError("%s: %r matches no case" % (where, case))
+            if case in excluded:
+                raise ScoreError("%s: %s is excluded, so it is never run and cannot be accepted" % (where, case))
+            if case in accepted:
+                raise ScoreError("%s: %s is listed twice" % (where, case))
+            accepted[case] = (kind, evidence, reason, seen)
+    return accepted
+
+
 def parse_tolerance(path):
     values = {}
     with open(path, "r", encoding="utf-8") as handle:
@@ -178,12 +227,22 @@ def run_runner(runner, corpus, to_run, tolerance, stub, work, timeout):
     return got
 
 
-def score(cases, excluded, results):
-    """Merge the exclusions and the runner's results into {case: (outcome, detail)}."""
+def score(cases, excluded, accepted, results):
+    """Merge the exclusions, the reviewed rows and the runner's results into {case: (outcome, detail)}."""
     merged = {}
     for case in cases:
         if case in excluded:
             merged[case] = ("EXCLUDED", "%s: %s" % excluded[case])
+        elif case in accepted:
+            kind, _evidence, reason, seen = accepted[case]
+            outcome, detail = results[case]
+            if outcome != "FAIL":
+                raise ScoreError("%s is accepted but the runner reports %s (%s): only a drawing outside the "
+                                 "tolerance is accepted, so remove the row" % (case, outcome, detail))
+            if detail != seen:
+                raise ScoreError("%s is accepted as %r but the runner now reports %r: the drawing changed "
+                                 "since the review, so review the row again" % (case, seen, detail))
+            merged[case] = ("ACCEPTED", "%s: %s: %s" % (kind, reason, detail))
         else:
             merged[case] = results[case]
     return merged
@@ -200,15 +259,17 @@ def render(pin, merged, tolerance):
         row[outcome] += 1
     total = len(merged)
     run = total - counts["EXCLUDED"]
+    correct = counts["PASS"] + counts["ACCEPTED"]
     out = ["resvg-test-suite %s" % pin, "cases %d" % total]
     for outcome in OUTCOMES:
         out.append("%-10s %d" % (outcome, counts[outcome]))
     out.append("tolerance max-diff=%d max-bad-ppm=%d evidence=%s" % tolerance)
-    out.append("score (PASS over all cases) %d/%d %s" % (counts["PASS"], total, pct(counts["PASS"], total)))
-    out.append("not the score: PASS over all cases but the excluded %d/%d %s"
-               % (counts["PASS"], run, pct(counts["PASS"], run)))
+    out.append("score (determined correct, PASS + ACCEPTED, over all cases) %d/%d %s" % (correct, total, pct(correct, total)))
+    out.append("  of which PASS (within the tolerance of the reference) %d/%d %s" % (counts["PASS"], total, pct(counts["PASS"], total)))
+    out.append("  of which ACCEPTED (a reviewed row, in ACCEPTED) %d/%d %s" % (counts["ACCEPTED"], total, pct(counts["ACCEPTED"], total)))
+    out.append("not the score: determined correct over all cases but the excluded %d/%d %s" % (correct, run, pct(correct, run)))
     out.append("")
-    out.append("%-34s %6s %6s %6s %6s %6s %6s %6s" % (("directory", "cases") + OUTCOMES))
+    out.append("%-34s %6s %6s %6s %6s %6s %6s %6s %6s" % (("directory", "cases") + OUTCOMES))
     for top in sorted(by_dir):
         row = by_dir[top]
         out.append("%-34s %6d %s" % (top, sum(row.values()), " ".join("%6d" % row[o] for o in OUTCOMES)))
@@ -239,6 +300,7 @@ def main(argv):
     ap.add_argument("--out", required=True)
     ap.add_argument("--versions", default=os.path.join(HERE, "VERSIONS"))
     ap.add_argument("--cases", default=os.path.join(HERE, "CASES"))
+    ap.add_argument("--accepted", default=os.path.join(HERE, "ACCEPTED"))
     ap.add_argument("--tolerance", default=os.path.join(HERE, "TOLERANCE"))
     ap.add_argument("--expected", type=int, default=None)
     ap.add_argument("--stub", default=None)
@@ -250,11 +312,12 @@ def main(argv):
         pin = read_record(args.versions, "resvg-test-suite-commit")
         cases = population(args.corpus, expected)
         excluded = parse_cases(args.cases, cases)
+        accepted = parse_accepted(args.accepted, cases, excluded)
         tolerance = parse_tolerance(args.tolerance)
         to_run = [c for c in cases if c not in excluded]
         results = run_runner(args.runner, args.corpus, to_run, tolerance[:2], args.stub,
                              os.path.join(args.out, "work"), args.timeout)
-        merged = score(cases, excluded, results)
+        merged = score(cases, excluded, accepted, results)
     except ScoreError as err:
         sys.stderr.write("score: %s\n" % err)
         return 1

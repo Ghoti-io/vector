@@ -20,19 +20,39 @@ Every case gets exactly one outcome.
 | Outcome | Meaning |
 | --- | --- |
 | `PASS` | The document loaded, the lowering reported **no refusal at all**, and the render is within the tolerance of the reference. |
+| `ACCEPTED` | Rendered outside the tolerance of the reference, and a reviewed row of `tools/resvg-tests/ACCEPTED` says why this library's drawing is the correct one. |
 | `FAIL` | Loaded, lowered with no refusal, rendered, outside the tolerance. |
 | `REFUSED` | Loaded, and the lowering reported one or more refusals. The render is not scored: a drawing that left something out cannot pass, even when the reference happens to be blank. A lowering that dropped diagnostics past the cap is also refused. |
 | `NOT_LOADED` | The load failed. |
 | `EXCLUDED` | A rule of `tools/resvg-tests/CASES` names it. It is not run, so it cannot pass. |
 | `ERROR` | The harness failed on it: a reference that does not decode or is too large, a render error, a crash, a timeout. |
 
-The **score** is `PASS` over **all** cases, excluded ones included. The score file also prints `PASS` over all
-cases but the excluded, labelled as not the score, so the reach of the milestone can be read without that ratio
-standing in for the first.
+The **score** is the cases **determined correct**, `PASS` plus `ACCEPTED`, over **all** cases, excluded ones included.
+The reference image is one oracle among several, so matching it is one way to be correct and not the only one: a case
+whose behavior the specification leaves undefined, a case on which the oracles disagree, and a case whose
+specification text decides against the reference are correct when a reviewed row says so. `PASS` and `ACCEPTED` are
+printed apart, so the share that matches the reference is never read as the whole. The score file also prints the
+determined-correct ratio over all cases but the excluded, labelled as not the score, so the reach of the milestone can
+be read without that ratio standing in for the first.
+
+An accepted case is a reviewed row of `tools/resvg-tests/ACCEPTED`, one case at a time, never a glob: the case, a kind
+(`UNDEFINED`, `DISAGREEMENT` or `SPECIFICATION`), the evidence (what the oracles drew, with the numbers), the reason, and
+what the runner reported for the case when it was reviewed. The scorer refuses a row for a case that now passes, is
+refused or errors, a row for an excluded case, a row whose report no longer matches the drawing, evidence or a reason of
+fewer than three words, and a case named twice, so a row cannot go stale unseen. The evidence is measured: Chromium
+156, `resvg` 0.45.1 and Inkscape 1.4 render the case at the size of the reference and the distance of this library's
+drawing from each is read.
+
+The reference of a case the corpus marks undefined behavior (`UB` in the title) is not a drawing: it is the two letters
+UB. It never matches, so each such case is correct only through a row.
 
 An exclusion is a reviewed row of `CASES`: a path or, for a feature that is outside the milestone, a glob, with a
 class (`OUT_OF_SCOPE`, `ENVIRONMENT`, `REFERENCE`) and a reason. The scorer refuses an unknown class, a reason of
 fewer than three words, a glob outside `OUT_OF_SCOPE`, a rule that matches nothing and a case named twice.
+
+A row of `ACCEPTED` is not a measure of how close a drawing is. A case whose drawing differs from its reference only along
+the anti-aliased edges, or in the color of fully transparent pixels, is not accepted for that: it stays a `FAIL` until the
+metric is changed, not the case.
 
 ## How a case is scored
 
@@ -137,19 +157,19 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **380 of 1,679
-(22.63%)**, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **403 of 1,679
+(24.00%)** determined correct, of which **383 (22.81%)** match the reference and **20 (1.19%)** are accepted, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
 
-| directory | cases | PASS | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `filters` | 397 | 0 | 0 | 0 | 0 | 397 | 0 |
-| `masking` | 93 | 15 | 33 | 6 | 0 | 39 | 0 |
-| `paint-servers` | 149 | 97 | 21 | 0 | 0 | 31 | 0 |
-| `painting` | 304 | 120 | 121 | 38 | 0 | 25 | 0 |
-| `shapes` | 133 | 39 | 91 | 3 | 0 | 0 | 0 |
-| `structure` | 247 | 109 | 51 | 21 | 1 | 65 | 0 |
-| `text` | 356 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **380** | **317** | **68** | **1** | **913** | **0** |
+| directory | cases | PASS | ACCEPTED | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `filters` | 397 | 0 | 0 | 0 | 0 | 0 | 397 | 0 |
+| `masking` | 93 | 15 | 1 | 32 | 6 | 0 | 39 | 0 |
+| `paint-servers` | 149 | 97 | 6 | 15 | 0 | 0 | 31 | 0 |
+| `painting` | 304 | 122 | 7 | 112 | 38 | 0 | 25 | 0 |
+| `shapes` | 133 | 39 | 1 | 90 | 3 | 0 | 0 | 0 |
+| `structure` | 247 | 110 | 5 | 45 | 21 | 1 | 65 | 0 |
+| `text` | 356 | 0 | 0 | 0 | 0 | 0 | 356 | 0 |
+| **all** | **1679** | **383** | **20** | **294** | **68** | **1** | **913** | **0** |
 
 The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and

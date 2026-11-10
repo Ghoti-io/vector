@@ -118,7 +118,7 @@ def build_corpus(root):
 
 
 def run_score(runner, corpus, out, cases, stub=None, tolerance=None, expected=5, expect_ok=True):
-    argv = ["--corpus", corpus, "--runner", runner, "--out", out, "--cases", cases, "--expected", str(expected),
+    argv = ["--corpus", corpus, "--runner", runner, "--out", out, "--cases", cases, "--accepted", "/nonexistent/ACCEPTED", "--expected", str(expected),
             "--tolerance", tolerance or os.path.join(HERE, "TOLERANCE")]
     if stub:
         argv += ["--stub", stub]
@@ -201,8 +201,50 @@ def main(argv):
           "and the document with no size, which is laid out in the reference's size, whose reference has a transparent pixel with colour")
     with open(os.path.join(out, "score"), encoding="utf-8") as handle:
         text = handle.read()
-    check("score (PASS over all cases) 2/5 40.00%" in text, "the headline is PASS over every case: 2/5")
-    check("not the score: PASS over all cases but the excluded 2/4" in text, "the second ratio is printed, labelled")
+    check("over all cases) 2/5 40.00%" in text, "the headline is over every case: 2/5")
+    check("not the score: determined correct over all cases but the excluded 2/4" in text, "the second ratio is printed, labelled")
+
+    # --- the reviewed rows: ACCEPTED ----------------------------------------------
+    off_seen = "maxdiff=255 bad=8/256"
+    row = "s/drawn.svg\tUNDEFINED\tthe planted evidence of the self test\tthe planted reason of the self test\t%s\n"
+    accepted_file = os.path.join(work, "ACCEPTED")
+    write(accepted_file, (row % off_seen).encode())
+
+    def run_accepted(stub, rows_text, expect_ok=True, name="out-acc"):
+        write(accepted_file, rows_text.encode())
+        argv = ["--corpus", corpus, "--runner", runner, "--out", os.path.join(work, name), "--cases", cases_file,
+                "--accepted", accepted_file, "--expected", "5"]
+        if stub:
+            argv += ["--stub", stub]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = score.main(argv)
+        if expect_ok:
+            check(code == 0, "score.py ran with an ACCEPTED file (stub %s)" % stub)
+        return code
+
+    run_accepted("off-by-one", row % off_seen)
+    check(table(os.path.join(work, "out-acc"))["s/drawn.svg"][0] == "ACCEPTED", "a failing case with a reviewed row is ACCEPTED")
+    with open(os.path.join(work, "out-acc", "score"), encoding="utf-8") as handle:
+        text = handle.read()
+    check("determined correct, PASS + ACCEPTED, over all cases) 1/5 20.00%" in text, "the headline counts the accepted: 1/5")
+    check("of which PASS (within the tolerance of the reference) 0/5 0.00%" in text and "of which ACCEPTED (a reviewed row, in ACCEPTED) 1/5 20.00%" in text,
+          "PASS and ACCEPTED are printed apart")
+    check(run_accepted("exact", row % "maxdiff=0 bad=0/256", expect_ok=False, name="o6") == 1, "a row for a case that passes is refused")
+    check(run_accepted("off-by-one", row % "maxdiff=254 bad=8/256", expect_ok=False, name="o6") == 1,
+          "a row whose report no longer matches the drawing is refused")
+    check(run_accepted("off-by-one", (row % off_seen) + (row % off_seen), expect_ok=False, name="o6") == 1, "a case listed twice is refused")
+    for name, body in {
+            "four fields": "s/drawn.svg\tUNDEFINED\tthe planted evidence of the self test\tthe planted reason of the self test\n",
+            "unknown kind": (row % off_seen).replace("UNDEFINED", "MAYBE"),
+            "short evidence": (row % off_seen).replace("the planted evidence of the self test", "too short"),
+            "short reason": (row % off_seen).replace("the planted reason of the self test", "too short"),
+            "no report": (row % off_seen).replace(off_seen, " "),
+            "a glob": (row % off_seen).replace("s/drawn.svg", "s/*"),
+            "a missing case": (row % off_seen).replace("s/drawn.svg", "s/gone.svg"),
+            "an excluded case": (row % off_seen).replace("s/drawn.svg", "x/skipped.svg")}.items():
+        check(run_accepted("off-by-one", body, expect_ok=False, name="o6") == 1, "an ACCEPTED row with %s is refused" % name)
+    check(run_accepted(None, "", name="o7") == 0, "an empty ACCEPTED file is fine")
+    os.remove(accepted_file)
 
     # --- the tolerance ----------------------------------------------------------
     loose = os.path.join(work, "TOLERANCE-loose")
