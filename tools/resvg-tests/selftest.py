@@ -183,7 +183,7 @@ def main(argv):
     check(table(out)["s/drawn.svg"] == ("FAIL", "EDGE: maxdiff=2 bad=64/256 white-over=0"), "a difference of two levels is a bad pixel, and edge-only: %r" % (table(out)["s/drawn.svg"],))
     with open(os.path.join(out, "score"), encoding="utf-8") as handle:
         text = handle.read()
-    check("over all cases) 2/" in text and "of which EDGE (a FAIL that differs only at antialiased edges, measured) 1/" in text,
+    check("over all cases) 2/" in text and "of which EDGE (a FAIL that differs only at antialiased edges, measured) 2/" in text,
           "an EDGE FAIL counts as determined correct and is printed apart")
 
     out = os.path.join(work, "out-off")

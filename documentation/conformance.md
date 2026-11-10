@@ -176,19 +176,19 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **687 of 1,679
-(40.92%)** determined correct, of which **383 (22.81%)** match the reference, **20 (1.19%)** are accepted, **252 (15.01%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 294 `FAIL`s are the 252 `EDGE`, the 32 `ORACLE_AGREES`, 5 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, and a marker that draws itself, which each engine cuts differently) and 5 `DEFECT` (the stroker's end notches and joins, `crispEdges`, and the marker directions of repeated close commands).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **695 of 1,679
+(41.39%)** determined correct, of which **385 (22.93%)** match the reference, **20 (1.19%)** are accepted, **258 (15.37%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 296 `FAIL`s are the 258 `EDGE`, the 32 `ORACLE_AGREES`, 5 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, and a marker that draws itself, which each engine cuts differently) and 1 `DEFECT` (the markers of repeated close commands).
 
 | directory | cases | PASS | ACCEPTED | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 0 | 397 | 0 |
 | `masking` | 93 | 15 | 1 | 32 | 6 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 97 | 6 | 15 | 0 | 0 | 31 | 0 |
-| `painting` | 304 | 122 | 7 | 112 | 38 | 0 | 25 | 0 |
-| `shapes` | 133 | 39 | 1 | 90 | 3 | 0 | 0 | 0 |
+| `painting` | 304 | 124 | 7 | 111 | 37 | 0 | 25 | 0 |
+| `shapes` | 133 | 39 | 1 | 93 | 0 | 0 | 0 | 0 |
 | `structure` | 247 | 110 | 5 | 45 | 21 | 1 | 65 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **383** | **20** | **294** | **68** | **1** | **913** | **0** |
+| **all** | **1679** | **385** | **20** | **296** | **64** | **1** | **913** | **0** |
 
 The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
