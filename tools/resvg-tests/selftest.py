@@ -117,15 +117,16 @@ def build_corpus(root):
         write(os.path.join(root, "tests", case[:-4] + ".png"), reference)
 
 
-def run_score(runner, corpus, out, cases, stub=None, tolerance=None, expected=5, expect_ok=True):
+def run_score(runner, corpus, out, cases, stub=None, tolerance=None, expected=5, expect_ok=True, fails=None):
     argv = ["--corpus", corpus, "--runner", runner, "--out", out, "--cases", cases, "--accepted", "/nonexistent/ACCEPTED", "--expected", str(expected),
-            "--tolerance", tolerance or os.path.join(HERE, "TOLERANCE")]
+            "--tolerance", tolerance or os.path.join(HERE, "TOLERANCE"), "--fails", fails or "/nonexistent/FAILS"]
     if stub:
         argv += ["--stub", stub]
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    err = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
         code = score.main(argv)
     if expect_ok:
-        check(code == 0, "score.py ran (stub %s)" % stub)
+        check(code == 0, "score.py ran (stub %s): %s" % (stub, err.getvalue().strip()))
     return code
 
 
@@ -156,7 +157,7 @@ def main(argv):
     out = os.path.join(work, "out-exact")
     run_score(runner, corpus, out, cases_file, stub="exact")
     rows = table(out)
-    check(rows["s/drawn.svg"] == ("PASS", "maxdiff=0 bad=0/256"), "the exact drawing is a PASS: %r" % (rows["s/drawn.svg"],))
+    check(rows["s/drawn.svg"] == ("PASS", "maxdiff=0 bad=0/256 white-over=0"), "the exact drawing is a PASS: %r" % (rows["s/drawn.svg"],))
     check(rows["s/transp.svg"][0] == "PASS", "two fully transparent pixels are equal whatever their colour channels hold")
     check(rows["s/notsvg.svg"][0] == "NOT_LOADED", "a file that is not SVG is NOT_LOADED")
     check(rows["s/badref.svg"][0] == "ERROR", "a reference that does not decode is an ERROR")
@@ -176,15 +177,56 @@ def main(argv):
     write(near, b"max-diff\t2\nmax-bad-ppm\t0\nevidence\tthe self test's own planted row\n")
     out = os.path.join(work, "out-minus1")
     run_score(runner, corpus, out, cases_file, stub="minus1", tolerance=near)
-    check(table(out)["s/drawn.svg"] == ("PASS", "maxdiff=1 bad=0/256"), "a difference of one level is not a bad pixel: %r" % (table(out)["s/drawn.svg"],))
+    check(table(out)["s/drawn.svg"] == ("PASS", "maxdiff=1 bad=0/256 white-over=0"), "a difference of one level is not a bad pixel: %r" % (table(out)["s/drawn.svg"],))
     out = os.path.join(work, "out-minus2")
     run_score(runner, corpus, out, cases_file, stub="minus2", tolerance=near)
-    check(table(out)["s/drawn.svg"] == ("FAIL", "maxdiff=2 bad=64/256"), "a difference of two levels is a bad pixel: %r" % (table(out)["s/drawn.svg"],))
+    check(table(out)["s/drawn.svg"] == ("FAIL", "EDGE: maxdiff=2 bad=64/256 white-over=0"), "a difference of two levels is a bad pixel, and edge-only: %r" % (table(out)["s/drawn.svg"],))
 
     out = os.path.join(work, "out-off")
-    run_score(runner, corpus, out, cases_file, stub="off-by-one")
+    fails_file = os.path.join(work, "FAILS")
+    fail_row = "s/drawn.svg\tDEFECT\tthe planted evidence of the self test\t%s\n"
+    off_seen = "maxdiff=255 bad=8/256 white-over=8"
+    transp = fail_row.replace("s/drawn.svg", "s/transp.svg") % off_seen
+    write(fails_file, ((fail_row % off_seen) + transp).encode())
+    run_score(runner, corpus, out, cases_file, stub="off-by-one", fails=fails_file)
     rows = table(out)
-    check(rows["s/drawn.svg"] == ("FAIL", "maxdiff=255 bad=8/256"), "a drawing one row too tall is a FAIL with its numbers: %r" % (rows["s/drawn.svg"],))
+    check(rows["s/drawn.svg"] == ("FAIL", "DEFECT: " + off_seen), "a drawing one row too tall is a FAIL with its numbers and its kind: %r" % (rows["s/drawn.svg"],))
+    with open(os.path.join(out, "score"), encoding="utf-8") as handle:
+        text = handle.read()
+    check("FAIL, all 2 explained: EDGE 0, ORACLE_AGREES 0, ORACLE_SPLIT 0, DEFECT 2" in text, "the FAILs are tallied by kind")
+
+    # --- every FAIL is explained --------------------------------------------------------
+    def run_fails(stub, rows_text, name="out-fails", accepted="/nonexistent/ACCEPTED", tolerance=None):
+        write(fails_file, rows_text.encode())
+        argv = ["--corpus", corpus, "--runner", runner, "--out", os.path.join(work, name), "--cases", cases_file,
+                "--accepted", accepted, "--fails", fails_file, "--expected", "5",
+                "--tolerance", tolerance or os.path.join(HERE, "TOLERANCE")]
+        if stub:
+            argv += ["--stub", stub]
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = score.main(argv)
+        return code, err.getvalue()
+
+    def fails_refused(stub, body, phrase, what, tolerance=None):
+        code, err = run_fails(stub, body, tolerance=tolerance)
+        check(code == 1 and phrase in err, "%s (wanted %r, got %r)" % (what, phrase, err.strip()))
+
+    fails_refused("off-by-one", "", "has no row in FAILS", "a FAIL that is not edge-only and has no row is refused")
+    fails_refused("exact", fail_row % "maxdiff=0 bad=0/256 white-over=0", "has a row in FAILS but is", "a FAILS row for a case that passes is refused")
+    fails_refused("minus2", fail_row % "maxdiff=2 bad=64/256 white-over=0", "differs only at edges",
+                  "a FAILS row for a case that differs only at edges is refused", tolerance=near)
+    check(run_fails("minus2", "", tolerance=near)[0] == 0, "an edge-only FAIL needs no row")
+    for name, phrase, body in (
+            ("four fields missing", "not four", "s/drawn.svg\tDEFECT\tthe planted evidence of the self test\n"),
+            ("an unknown kind", "is not one of", (fail_row % off_seen).replace("DEFECT", "MAYBE")),
+            ("short evidence", "evidence of fewer", (fail_row % off_seen).replace("the planted evidence of the self test", "too short")),
+            ("no report", "no report", (fail_row % off_seen).replace(off_seen, " ")),
+            ("a missing case", "matches no case", (fail_row % off_seen).replace("s/drawn.svg", "s/gone.svg")),
+            ("a stale report", "the drawing changed", fail_row % "maxdiff=254 bad=8/256 white-over=8"),
+            ("a duplicate", "listed twice", (fail_row % off_seen) * 2),
+            ("an excluded case", "excluded or accepted", (fail_row % off_seen).replace("s/drawn.svg", "x/skipped.svg"))):
+        fails_refused("off-by-one", body + transp, phrase, "a FAILS row with %s is refused" % name)
 
     out = os.path.join(work, "out-sink")
     run_score(runner, corpus, out, cases_file, stub="sink-refused")
@@ -195,7 +237,7 @@ def main(argv):
     out = os.path.join(work, "out-real")
     run_score(runner, corpus, out, cases_file)
     rows = table(out)
-    check(rows["s/drawn.svg"] == ("PASS", "maxdiff=0 bad=0/256"),
+    check(rows["s/drawn.svg"] == ("PASS", "maxdiff=0 bad=0/256 white-over=0"),
           "the library's own lowering draws the planted document exactly: %r" % (rows["s/drawn.svg"],))
     check(rows["s/transp.svg"][0] == "PASS",
           "and the document with no size, which is laid out in the reference's size, whose reference has a transparent pixel with colour")
@@ -205,22 +247,32 @@ def main(argv):
     check("not the score: determined correct over all cases but the excluded 2/4" in text, "the second ratio is printed, labelled")
 
     # --- the reviewed rows: ACCEPTED ----------------------------------------------
-    off_seen = "maxdiff=255 bad=8/256"
+    off_seen = "maxdiff=255 bad=8/256 white-over=8"
     row = "s/drawn.svg\tUNDEFINED\tthe planted evidence of the self test\tthe planted reason of the self test\t%s\n"
     accepted_file = os.path.join(work, "ACCEPTED")
     write(accepted_file, (row % off_seen).encode())
 
     def run_accepted(stub, rows_text, expect_ok=True, name="out-acc"):
         write(accepted_file, rows_text.encode())
+        write(fails_file, (transp if stub == "off-by-one" else "").encode())
         argv = ["--corpus", corpus, "--runner", runner, "--out", os.path.join(work, name), "--cases", cases_file,
-                "--accepted", accepted_file, "--expected", "5"]
+                "--accepted", accepted_file, "--fails", fails_file, "--expected", "5"]
         if stub:
             argv += ["--stub", stub]
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             code = score.main(argv)
+        acc_err[0] = err.getvalue()
         if expect_ok:
-            check(code == 0, "score.py ran with an ACCEPTED file (stub %s)" % stub)
+            check(code == 0, "score.py ran with an ACCEPTED file (stub %s): %s" % (stub, acc_err[0].strip()))
         return code
+
+    def refused(stub, body, phrase, what):
+        # The refusal must be for the reason under test, not for another unexplained FAIL beside it.
+        check(run_accepted(stub, body, expect_ok=False, name="o6") == 1 and phrase in acc_err[0],
+              "%s (wanted %r, got %r)" % (what, phrase, acc_err[0].strip()))
+
+    acc_err = [""]
 
     run_accepted("off-by-one", row % off_seen)
     check(table(os.path.join(work, "out-acc"))["s/drawn.svg"][0] == "ACCEPTED", "a failing case with a reviewed row is ACCEPTED")
@@ -229,20 +281,19 @@ def main(argv):
     check("determined correct, PASS + ACCEPTED, over all cases) 1/5 20.00%" in text, "the headline counts the accepted: 1/5")
     check("of which PASS (within the tolerance of the reference) 0/5 0.00%" in text and "of which ACCEPTED (a reviewed row, in ACCEPTED) 1/5 20.00%" in text,
           "PASS and ACCEPTED are printed apart")
-    check(run_accepted("exact", row % "maxdiff=0 bad=0/256", expect_ok=False, name="o6") == 1, "a row for a case that passes is refused")
-    check(run_accepted("off-by-one", row % "maxdiff=254 bad=8/256", expect_ok=False, name="o6") == 1,
-          "a row whose report no longer matches the drawing is refused")
-    check(run_accepted("off-by-one", (row % off_seen) + (row % off_seen), expect_ok=False, name="o6") == 1, "a case listed twice is refused")
-    for name, body in {
-            "four fields": "s/drawn.svg\tUNDEFINED\tthe planted evidence of the self test\tthe planted reason of the self test\n",
-            "unknown kind": (row % off_seen).replace("UNDEFINED", "MAYBE"),
-            "short evidence": (row % off_seen).replace("the planted evidence of the self test", "too short"),
-            "short reason": (row % off_seen).replace("the planted reason of the self test", "too short"),
-            "no report": (row % off_seen).replace(off_seen, " "),
-            "a glob": (row % off_seen).replace("s/drawn.svg", "s/*"),
-            "a missing case": (row % off_seen).replace("s/drawn.svg", "s/gone.svg"),
-            "an excluded case": (row % off_seen).replace("s/drawn.svg", "x/skipped.svg")}.items():
-        check(run_accepted("off-by-one", body, expect_ok=False, name="o6") == 1, "an ACCEPTED row with %s is refused" % name)
+    refused("exact", row % "maxdiff=0 bad=0/256 white-over=0", "is accepted but the runner reports", "a row for a case that passes is refused")
+    refused("off-by-one", row % "maxdiff=254 bad=8/256", "the drawing changed", "a row whose report no longer matches the drawing is refused")
+    refused("off-by-one", (row % off_seen) + (row % off_seen), "listed twice", "a case listed twice is refused")
+    for name, phrase, body in (
+            ("four fields", "not five", "s/drawn.svg\tUNDEFINED\tthe planted evidence of the self test\tthe planted reason of the self test\n"),
+            ("unknown kind", "is not one of", (row % off_seen).replace("UNDEFINED", "MAYBE")),
+            ("short evidence", "evidence of fewer", (row % off_seen).replace("the planted evidence of the self test", "too short")),
+            ("short reason", "a reason of fewer", (row % off_seen).replace("the planted reason of the self test", "too short")),
+            ("no report", "no report", (row % off_seen).replace(off_seen, " ")),
+            ("a glob", "matches no case", (row % off_seen).replace("s/drawn.svg", "s/*")),
+            ("a missing case", "matches no case", (row % off_seen).replace("s/drawn.svg", "s/gone.svg")),
+            ("an excluded case", "is excluded", (row % off_seen).replace("s/drawn.svg", "x/skipped.svg"))):
+        refused("off-by-one", body, phrase, "an ACCEPTED row with %s is refused" % name)
     check(run_accepted(None, "", name="o7") == 0, "an empty ACCEPTED file is fine")
     os.remove(accepted_file)
 

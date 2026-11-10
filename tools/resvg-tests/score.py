@@ -47,6 +47,19 @@ OUT_OF_SCOPE, a rule matching no case, a case matched by two rules; a
 TOLERANCE that is nonzero with no evidence; and a runner that reports a case
 twice, not at all, or that was not asked about.
 
+Every FAIL is explained, or the scorer fails. The runner reports, beside the strict
+figures, how many pixels differ by more than the tolerance's level once both rasters
+are composited on white ("white-over"). A FAIL within the tolerance on that figure is
+EDGE: it differs from the reference along antialiased edges, or in the color of pixels
+that are fully transparent in one raster, which the strict comparison of straight RGBA
+counts and a viewer cannot see. Every other FAIL needs a reviewed row of FAILS, one
+line of four tab-separated fields: the case, a kind (ORACLE_AGREES: a fresh render by a
+pinned oracle is within the tolerance of ours; ORACLE_SPLIT: the oracles disagree
+among themselves; DEFECT: ours, open), the evidence (the distances, in pixels over
+the tolerance's level composited on white, that the kind rests on), and the runner's
+report as reviewed. A row for a case that is not a FAIL, that is EDGE, or whose report
+has changed is refused, as for ACCEPTED. FAILs are never counted as correct here.
+
 The score file has no timestamp and no path, and lists cases in sorted order,
 so two runs of the same tree give the same bytes.
 """
@@ -54,6 +67,7 @@ so two runs of the same tree give the same bytes.
 import argparse
 import fnmatch
 import os
+import re
 import subprocess
 import sys
 import time
@@ -61,6 +75,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 CLASSES = ("OUT_OF_SCOPE", "ENVIRONMENT", "REFERENCE")
 KINDS = ("UNDEFINED", "DISAGREEMENT", "SPECIFICATION")
+FAIL_KINDS = ("ORACLE_AGREES", "ORACLE_SPLIT", "DEFECT")
 OUTCOMES = ("PASS", "ACCEPTED", "FAIL", "REFUSED", "NOT_LOADED", "EXCLUDED", "ERROR")
 RUNNER_OUTCOMES = ("PASS", "FAIL", "REFUSED", "NOT_LOADED", "ERROR")
 
@@ -171,6 +186,70 @@ def parse_accepted(path, cases, excluded):
     return accepted
 
 
+def parse_fails(path, cases, excluded, accepted):
+    """The reviewed rows for FAILs that are not edge-only: {case: (kind, evidence, seen)}."""
+    known = set(cases)
+    rows = {}
+    if not os.path.isfile(path):
+        return rows
+    with open(path, "r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            line = line.rstrip("\n")
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            where = "%s:%d" % (os.path.basename(path), number)
+            parts = line.split("\t")
+            if len(parts) != 4:
+                raise ScoreError("%s: not four tab-separated fields" % where)
+            case, kind, evidence, seen = parts
+            if kind not in FAIL_KINDS:
+                raise ScoreError("%s: kind %r is not one of %s" % (where, kind, ", ".join(FAIL_KINDS)))
+            if len(evidence.split()) < 3:
+                raise ScoreError("%s: evidence of fewer than three words" % where)
+            if not seen.strip():
+                raise ScoreError("%s: no report of the runner to hold the row to" % where)
+            if case not in known:
+                raise ScoreError("%s: %r matches no case" % (where, case))
+            if case in excluded or case in accepted:
+                raise ScoreError("%s: %s is excluded or accepted, so it is not a FAIL to explain" % (where, case))
+            if case in rows:
+                raise ScoreError("%s: %s is listed twice" % (where, case))
+            rows[case] = (kind, evidence, seen)
+    return rows
+
+
+def edge_only(detail, ppm):
+    """True when a FAIL's report says the composited difference is within the tolerance's share of pixels."""
+    over = re.search(r"white-over=(\d+)", detail)
+    total = re.search(r"/(\d+)", detail)
+    if not over or not total:
+        return False
+    return int(over.group(1)) * 1000000 <= ppm * int(total.group(1))
+
+
+def explain_fails(merged, fails, tolerance):
+    """Give every FAIL its kind: EDGE by measurement, else a reviewed row. Returns {case: kind}."""
+    kinds = {}
+    for case, (outcome, detail) in merged.items():
+        row = fails.get(case)
+        if outcome != "FAIL":
+            if row:
+                raise ScoreError("%s has a row in FAILS but is %s, so remove the row" % (case, outcome))
+            continue
+        if edge_only(detail, tolerance[1]):
+            if row:
+                raise ScoreError("%s has a row in FAILS but differs only at edges (%s), so remove the row" % (case, detail))
+            kinds[case] = "EDGE"
+            continue
+        if not row:
+            raise ScoreError("%s is a FAIL (%s) that is not edge-only and has no row in FAILS: review it" % (case, detail))
+        if row[2] != detail:
+            raise ScoreError("%s is reviewed as %r but the runner now reports %r: the drawing changed since "
+                             "the review, so review the row again" % (case, row[2], detail))
+        kinds[case] = row[0]
+    return kinds
+
+
 def parse_tolerance(path):
     values = {}
     with open(path, "r", encoding="utf-8") as handle:
@@ -248,7 +327,7 @@ def score(cases, excluded, accepted, results):
     return merged
 
 
-def render(pin, merged, tolerance):
+def render(pin, merged, tolerance, kinds):
     """The score file's text."""
     counts = {o: 0 for o in OUTCOMES}
     by_dir = {}
@@ -267,6 +346,11 @@ def render(pin, merged, tolerance):
     out.append("score (determined correct, PASS + ACCEPTED, over all cases) %d/%d %s" % (correct, total, pct(correct, total)))
     out.append("  of which PASS (within the tolerance of the reference) %d/%d %s" % (counts["PASS"], total, pct(counts["PASS"], total)))
     out.append("  of which ACCEPTED (a reviewed row, in ACCEPTED) %d/%d %s" % (counts["ACCEPTED"], total, pct(counts["ACCEPTED"], total)))
+    if counts["FAIL"]:
+        tally = {k: 0 for k in ("EDGE",) + FAIL_KINDS}
+        for kind in kinds.values():
+            tally[kind] += 1
+        out.append("FAIL, all %d explained: %s" % (counts["FAIL"], ", ".join("%s %d" % (k, tally[k]) for k in tally)))
     out.append("not the score: determined correct over all cases but the excluded %d/%d %s" % (correct, run, pct(correct, run)))
     out.append("")
     out.append("%-34s %6s %6s %6s %6s %6s %6s %6s %6s" % (("directory", "cases") + OUTCOMES))
@@ -301,6 +385,7 @@ def main(argv):
     ap.add_argument("--versions", default=os.path.join(HERE, "VERSIONS"))
     ap.add_argument("--cases", default=os.path.join(HERE, "CASES"))
     ap.add_argument("--accepted", default=os.path.join(HERE, "ACCEPTED"))
+    ap.add_argument("--fails", default=os.path.join(HERE, "FAILS"))
     ap.add_argument("--tolerance", default=os.path.join(HERE, "TOLERANCE"))
     ap.add_argument("--expected", type=int, default=None)
     ap.add_argument("--stub", default=None)
@@ -318,10 +403,14 @@ def main(argv):
         results = run_runner(args.runner, args.corpus, to_run, tolerance[:2], args.stub,
                              os.path.join(args.out, "work"), args.timeout)
         merged = score(cases, excluded, accepted, results)
+        fails = parse_fails(args.fails, cases, excluded, accepted)
+        kinds = explain_fails(merged, fails, tolerance)
+        for case, kind in kinds.items():
+            merged[case] = ("FAIL", "%s: %s" % (kind, merged[case][1]))
     except ScoreError as err:
         sys.stderr.write("score: %s\n" % err)
         return 1
-    text = render(pin, merged, tolerance)
+    text = render(pin, merged, tolerance, kinds)
     write_outputs(args.out, text, merged)
     sys.stdout.write(text)
     sys.stderr.write("score: %d cases in %.1f s\n" % (len(cases), time.monotonic() - started))

@@ -34,7 +34,10 @@
  *
  *     <case> TAB <OUTCOME> TAB <detail>
  *
- * where OUTCOME is PASS, FAIL, REFUSED, NOT_LOADED or ERROR. EXCLUDED is the
+ * where OUTCOME is PASS, FAIL, REFUSED, NOT_LOADED or ERROR. For a rendered case the
+ * detail is "maxdiff=M bad=B/T white-over=W": the strict figures (the largest per-channel
+ * difference over straight RGBA, the pixels off by more than one level, of T), and W, the
+ * pixels that differ by more than --max-diff once both rasters are composited on white. EXCLUDED is the
  * scorer's: an excluded case is never given to the runner.
  *
  * The final path is only the public API: gvec_doc_load on a file stream,
@@ -194,11 +197,18 @@ typedef struct Diff {
   unsigned max_diff;
   uint64_t bad;
   uint64_t total;
+  /** Pixels that differ by more than the tolerance's level once both rasters are composited on white. */
+  uint64_t white_over;
 } Diff;
 
+/** A straight channel value composited on white, in 1/255 levels (rounded). */
+static unsigned on_white(unsigned c, unsigned a) {
+  return (c * a + 255u * (255u - a) + 127u) / 255u;
+}
+
 /** The comparison: both rasters are straight RGBA8 of the same size. */
-static Diff compare_rasters(const GIMG_Raster * a, const GIMG_Raster * b) {
-  Diff d = {0, 0, 0};
+static Diff compare_rasters(const GIMG_Raster * a, const GIMG_Raster * b, unsigned tolerance) {
+  Diff d = {0, 0, 0, 0};
   uint32_t w = gimg_raster_width(a), h = gimg_raster_height(a);
   for (uint32_t y = 0; y < h; y++) {
     const uint8_t * pa = (const uint8_t *) gimg_raster_pixels_const(a) + y * gimg_raster_stride_bytes(a);
@@ -207,6 +217,17 @@ static Diff compare_rasters(const GIMG_Raster * a, const GIMG_Raster * b) {
       d.total++;
       if (pa[3] == 0 && pb[3] == 0) {
         continue;
+      }
+      unsigned white = 0;
+      for (int c = 0; c < 3; c++) {
+        unsigned wa = on_white(pa[c], pa[3]), wb = on_white(pb[c], pb[3]);
+        unsigned diff = wa > wb ? wa - wb : wb - wa;
+        if (diff > white) {
+          white = diff;
+        }
+      }
+      if (white > tolerance) {
+        d.white_over++;
       }
       unsigned worst = 0;
       for (int c = 0; c < 4; c++) {
@@ -392,10 +413,10 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   if (o->dump) {
     dump_raster(o->dump, name, raster);
   }
-  Diff d = compare_rasters(raster, reference);
+  Diff d = compare_rasters(raster, reference, o->max_diff);
   int pass = d.max_diff <= o->max_diff && d.bad * 1000000u <= o->max_bad_ppm * d.total;
-  say(v, pass ? "PASS" : "FAIL", "maxdiff=%u bad=%llu/%llu", d.max_diff, (unsigned long long) d.bad,
-      (unsigned long long) d.total);
+  say(v, pass ? "PASS" : "FAIL", "maxdiff=%u bad=%llu/%llu white-over=%llu", d.max_diff,
+      (unsigned long long) d.bad, (unsigned long long) d.total, (unsigned long long) d.white_over);
 
 done:
   gvec_lower_trace_free(trace);
@@ -512,7 +533,7 @@ static int compare_files(const char * a, const char * b) {
         gimg_raster_height(rb));
     status = 3;
   } else {
-    Diff d = compare_rasters(ra, rb);
+    Diff d = compare_rasters(ra, rb, 32);
     printf("maxdiff=%u bad=%llu total=%llu\n", d.max_diff, (unsigned long long) d.bad, (unsigned long long) d.total);
   }
   gimg_raster_destroy(ra);

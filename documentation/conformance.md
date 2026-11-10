@@ -54,6 +54,24 @@ A row of `ACCEPTED` is not a measure of how close a drawing is. A case whose dra
 the anti-aliased edges, or in the color of fully transparent pixels, is not accepted for that: it stays a `FAIL` until the
 metric is changed, not the case.
 
+### Every `FAIL` is explained
+
+The score file tallies the `FAIL`s by kind and the scorer fails when one has none. The runner reports, beside the strict
+figures, `white-over`: the pixels that differ by more than the tolerance's level once both images are composited on white.
+
+- **`EDGE`** is a `FAIL` whose `white-over` is within the tolerance's share of pixels. It differs from the reference along
+  anti-aliased edges, or in the color of pixels that are fully transparent in one image, which the strict comparison of
+  straight RGBA counts and a viewer cannot see. The scorer measures it; it is not a row.
+- Every other `FAIL` is a reviewed row of `tools/resvg-tests/FAILS`, one case a line, with the distances it rests on: in
+  pixels over the level, composited on white, ours against the reference and against fresh renders by Chromium, resvg and
+  Inkscape, and each of those against the reference. **`ORACLE_AGREES`**: a fresh render by a pinned oracle is within the
+  tolerance of ours, so the reference differs from what that oracle now draws; **`ORACLE_SPLIT`**: the oracles disagree
+  among themselves; **`DEFECT`**: ours, open, with where it belongs. A row is refused when its case no longer fails, has
+  become edge-only, or reports differently from the report reviewed.
+
+A `FAIL` is never counted as correct for being explained. `ORACLE_AGREES` and `EDGE` are the cases that would pass under
+another comparison, and which one to adopt is a decision about the metric, not about a case.
+
 ## How a case is scored
 
 The runner (`tests/conformance/runner.c`) takes each case through the public API only: `gvec_doc_load` on a file
@@ -158,7 +176,7 @@ row is that case. The pair is a first setting and is expected to be refined as t
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
 (`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **403 of 1,679
-(24.00%)** determined correct, of which **383 (22.81%)** match the reference and **20 (1.19%)** are accepted, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%).
+(24.00%)** determined correct, of which **383 (22.81%)** match the reference and **20 (1.19%)** are accepted, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 294 `FAIL`s are 252 `EDGE`, 32 `ORACLE_AGREES`, 4 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics) and 6 `DEFECT` (the stroker's end notches and joins, `crispEdges`, a recursive marker and the marker directions of repeated close commands).
 
 | directory | cases | PASS | ACCEPTED | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
