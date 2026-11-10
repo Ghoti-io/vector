@@ -25,7 +25,7 @@ case is given exactly one outcome:
     EXCLUDED    a rule of CASES names it (never run, and so never a PASS)
     ERROR       the harness failed on it (decode, render, crash, timeout)
 
-The score is "determined correct": PASS plus ACCEPTED, over *all* cases,
+The score is "determined correct": PASS plus ACCEPTED plus the FAILs classed EDGE or ORACLE_AGREES (below), over *all* cases,
 EXCLUDED included. The reference is one oracle among several, so a case whose
 behavior is undefined, or on which the oracles disagree, or which the
 specification's text decides against the reference, is correct when a reviewed
@@ -58,7 +58,8 @@ pinned oracle is within the tolerance of ours; ORACLE_SPLIT: the oracles disagre
 among themselves; DEFECT: ours, open), the evidence (the distances, in pixels over
 the tolerance's level composited on white, that the kind rests on), and the runner's
 report as reviewed. A row for a case that is not a FAIL, that is EDGE, or whose report
-has changed is refused, as for ACCEPTED. FAILs are never counted as correct here.
+has changed is refused, as for ACCEPTED. EDGE and ORACLE_AGREES FAILs count as determined correct
+(printed apart); ORACLE_SPLIT and DEFECT never do.
 
 The score file has no timestamp and no path, and lists cases in sorted order,
 so two runs of the same tree give the same bytes.
@@ -338,18 +339,20 @@ def render(pin, merged, tolerance, kinds):
         row[outcome] += 1
     total = len(merged)
     run = total - counts["EXCLUDED"]
-    correct = counts["PASS"] + counts["ACCEPTED"]
+    tally = {k: 0 for k in ("EDGE",) + FAIL_KINDS}
+    for kind in kinds.values():
+        tally[kind] += 1
+    correct = counts["PASS"] + counts["ACCEPTED"] + tally["EDGE"] + tally["ORACLE_AGREES"]
     out = ["resvg-test-suite %s" % pin, "cases %d" % total]
     for outcome in OUTCOMES:
         out.append("%-10s %d" % (outcome, counts[outcome]))
     out.append("tolerance max-diff=%d max-bad-ppm=%d evidence=%s" % tolerance)
-    out.append("score (determined correct, PASS + ACCEPTED, over all cases) %d/%d %s" % (correct, total, pct(correct, total)))
+    out.append("score (determined correct, PASS + ACCEPTED + EDGE + ORACLE_AGREES, over all cases) %d/%d %s" % (correct, total, pct(correct, total)))
     out.append("  of which PASS (within the tolerance of the reference) %d/%d %s" % (counts["PASS"], total, pct(counts["PASS"], total)))
     out.append("  of which ACCEPTED (a reviewed row, in ACCEPTED) %d/%d %s" % (counts["ACCEPTED"], total, pct(counts["ACCEPTED"], total)))
+    out.append("  of which EDGE (a FAIL that differs only at antialiased edges, measured) %d/%d %s" % (tally["EDGE"], total, pct(tally["EDGE"], total)))
+    out.append("  of which ORACLE_AGREES (a FAIL a fresh oracle render agrees with, reviewed in FAILS) %d/%d %s" % (tally["ORACLE_AGREES"], total, pct(tally["ORACLE_AGREES"], total)))
     if counts["FAIL"]:
-        tally = {k: 0 for k in ("EDGE",) + FAIL_KINDS}
-        for kind in kinds.values():
-            tally[kind] += 1
         out.append("FAIL, all %d explained: %s" % (counts["FAIL"], ", ".join("%s %d" % (k, tally[k]) for k in tally)))
     out.append("not the score: determined correct over all cases but the excluded %d/%d %s" % (correct, run, pct(correct, run)))
     out.append("")

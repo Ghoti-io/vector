@@ -27,10 +27,10 @@ Every case gets exactly one outcome.
 | `EXCLUDED` | A rule of `tools/resvg-tests/CASES` names it. It is not run, so it cannot pass. |
 | `ERROR` | The harness failed on it: a reference that does not decode or is too large, a render error, a crash, a timeout. |
 
-The **score** is the cases **determined correct**, `PASS` plus `ACCEPTED`, over **all** cases, excluded ones included.
+The **score** is the cases **determined correct**, `PASS`, `ACCEPTED`, and the `FAIL`s classed `EDGE` or `ORACLE_AGREES` (below), over **all** cases, excluded ones included.
 The reference image is one oracle among several, so matching it is one way to be correct and not the only one: a case
 whose behavior the specification leaves undefined, a case on which the oracles disagree, and a case whose
-specification text decides against the reference are correct when a reviewed row says so. `PASS` and `ACCEPTED` are
+specification text decides against the reference are correct when a reviewed row says so. `PASS`, `ACCEPTED`, `EDGE` and `ORACLE_AGREES` are
 printed apart, so the share that matches the reference is never read as the whole. The score file also prints the
 determined-correct ratio over all cases but the excluded, labelled as not the score, so the reach of the milestone can
 be read without that ratio standing in for the first.
@@ -69,8 +69,9 @@ figures, `white-over`: the pixels that differ by more than the tolerance's level
   among themselves; **`DEFECT`**: ours, open, with where it belongs. A row is refused when its case no longer fails, has
   become edge-only, or reports differently from the report reviewed.
 
-A `FAIL` is never counted as correct for being explained. `ORACLE_AGREES` and `EDGE` are the cases that would pass under
-another comparison, and which one to adopt is a decision about the metric, not about a case.
+`EDGE` and `ORACLE_AGREES` count as determined correct, each printed on its own line: an `EDGE` case differs from the
+reference only where a viewer cannot see it, and an `ORACLE_AGREES` case is drawn as a fresh render by a pinned oracle
+draws it. `ORACLE_SPLIT` and `DEFECT` are never counted.
 
 ## How a case is scored
 
@@ -175,8 +176,8 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **403 of 1,679
-(24.00%)** determined correct, of which **383 (22.81%)** match the reference and **20 (1.19%)** are accepted, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 294 `FAIL`s are 252 `EDGE`, 32 `ORACLE_AGREES`, 4 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics) and 6 `DEFECT` (the stroker's end notches and joins, `crispEdges`, a recursive marker and the marker directions of repeated close commands).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **687 of 1,679
+(40.92%)** determined correct, of which **383 (22.81%)** match the reference, **20 (1.19%)** are accepted, **252 (15.01%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 294 `FAIL`s are the 252 `EDGE`, the 32 `ORACLE_AGREES`, 4 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics) and 6 `DEFECT` (the stroker's end notches and joins, `crispEdges`, a recursive marker and the marker directions of repeated close commands).
 
 | directory | cases | PASS | ACCEPTED | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

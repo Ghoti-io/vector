@@ -181,6 +181,10 @@ def main(argv):
     out = os.path.join(work, "out-minus2")
     run_score(runner, corpus, out, cases_file, stub="minus2", tolerance=near)
     check(table(out)["s/drawn.svg"] == ("FAIL", "EDGE: maxdiff=2 bad=64/256 white-over=0"), "a difference of two levels is a bad pixel, and edge-only: %r" % (table(out)["s/drawn.svg"],))
+    with open(os.path.join(out, "score"), encoding="utf-8") as handle:
+        text = handle.read()
+    check("over all cases) 2/" in text and "of which EDGE (a FAIL that differs only at antialiased edges, measured) 1/" in text,
+          "an EDGE FAIL counts as determined correct and is printed apart")
 
     out = os.path.join(work, "out-off")
     fails_file = os.path.join(work, "FAILS")
@@ -278,7 +282,7 @@ def main(argv):
     check(table(os.path.join(work, "out-acc"))["s/drawn.svg"][0] == "ACCEPTED", "a failing case with a reviewed row is ACCEPTED")
     with open(os.path.join(work, "out-acc", "score"), encoding="utf-8") as handle:
         text = handle.read()
-    check("determined correct, PASS + ACCEPTED, over all cases) 1/5 20.00%" in text, "the headline counts the accepted: 1/5")
+    check("determined correct, PASS + ACCEPTED + EDGE + ORACLE_AGREES, over all cases) 1/5 20.00%" in text, "the headline counts the accepted: 1/5")
     check("of which PASS (within the tolerance of the reference) 0/5 0.00%" in text and "of which ACCEPTED (a reviewed row, in ACCEPTED) 1/5 20.00%" in text,
           "PASS and ACCEPTED are printed apart")
     refused("exact", row % "maxdiff=0 bad=0/256 white-over=0", "is accepted but the runner reports", "a row for a case that passes is refused")
