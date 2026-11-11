@@ -252,6 +252,7 @@ def style_corpus():
     c["var-cycle"] = seed(group="--a: var(--b); --b: var(--a); fill: var(--a, green)")
     c["var-bomb"] = seed(option=0x02, group="--a: 1 1 1 1 1 1 1 1; --b: var(--a) var(--a) var(--a) var(--a); --c: var(--b) var(--b) var(--b) var(--b); stroke-width: calc(1px * 2); stroke-dasharray: var(--c)")
     c["units"] = seed(group="font-size: 12px; stroke-width: 2em; stroke-dashoffset: 3ex; letter-spacing: 1ch; word-spacing: 1rem; opacity: 50%")
+    c["overflowing-number"] = seed(group="stroke-width: 2e66666666666666666666666666666; stroke-dashoffset: 1e999px; font-size: 1e999in; transform-origin: 1e999px 5px", transform="translate(1e999) rotate(1e999deg)")
     c["viewport-units"] = seed(group="stroke-width: 10vw; stroke-dashoffset: 5vmin; font-size: 2vh")
     c["percentages"] = seed(symbol="width: 50%; height: 25%; x: 10%; r: 10%; stroke-width: 20%")
     c["dash"] = seed(dash="5 10 15")
