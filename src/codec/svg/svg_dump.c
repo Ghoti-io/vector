@@ -130,7 +130,7 @@ static void length(writer * w, const GVEC_Svg_Length * l) {
 static void value(writer * w, const GVEC_Svg_Attribute * a) {
   const gvec_svg_value * v = &a->value;
   if (a->cls == GVEC_SVG_ATTR_INVALID) {
-    putf(w, "err:%zu:", a->error_offset);
+    putf(w, "err:%llu:", (unsigned long long) a->error_offset);
     quoted_z(w, a->error_reason);
     return;
   }
@@ -246,12 +246,12 @@ static void value(writer * w, const GVEC_Svg_Attribute * a) {
       quoted_z(w, v->reference.data.media_type);
       put(w, ":", 1);
       quoted_z(w, v->reference.data.parameters);
-      putf(w, ":%u:%zu", v->reference.data.base64, v->reference.data.payload_length);
+      putf(w, ":%u:%llu", v->reference.data.base64, (unsigned long long) v->reference.data.payload_length);
       break;
     }
     break;
   case GVEC_SVG_VALUE_KEYWORD:
-    putf(w, "k:%zu:%s", v->keyword.index, v->keyword.word);
+    putf(w, "k:%llu:%s", (unsigned long long) v->keyword.index, v->keyword.word);
     break;
   case GVEC_SVG_VALUE_STRING:
     puts_(w, "s:");
@@ -268,7 +268,7 @@ static void value(writer * w, const GVEC_Svg_Attribute * a) {
     put(w, "]", 1);
     break;
   case GVEC_SVG_VALUE_EXTENSIONS:
-    putf(w, "x:%zu", v->count);
+    putf(w, "x:%llu", (unsigned long long) v->count);
     break;
   default:
     puts_(w, "-");
@@ -279,7 +279,7 @@ static void value(writer * w, const GVEC_Svg_Attribute * a) {
 static void dump_element(writer * w, const GVEC_Svg_Element * e, size_t depth) {
   const char * kind = e->kind == GVEC_SVG_KIND_UNKNOWN ? "unknown" : e->kind == GVEC_SVG_KIND_FOREIGN ? "foreign"
       : gvec_svg_kind_name(e->kind);
-  putf(w, "e %zu %016llx %s ", depth, (unsigned long long) e->key, kind);
+  putf(w, "e %llu %016llx %s ", (unsigned long long) depth, (unsigned long long) e->key, kind);
   quoted_z(w, e->name);
   put(w, " ", 1);
   if (e->ns) {
@@ -320,7 +320,7 @@ static void dump_element(writer * w, const GVEC_Svg_Element * e, size_t depth) {
     putf(w, " %s %s %u:%u", k_class[a->cls], gvec_svg_grammar_name((GVEC_Svg_Grammar) a->grammar), a->line, a->column);
     putf(w, " %s", a->presentation ? "presentation" : "-");
     if (a->partial) {
-      putf(w, ",partial@%zu", a->error_offset);
+      putf(w, ",partial@%llu", (unsigned long long) a->error_offset);
     }
     put(w, " ", 1);
     if (a->ns) {
@@ -340,7 +340,7 @@ GVEC_Result gvec_svg_dump_document(const GVEC_Svg_Document * doc, GVEC_Stream * 
   w.out = out;
   w.used = 0;
   w.error = GVEC_OK;
-  putf(&w, "svg elements %zu text-bytes %zu\n", doc->element_count, doc->text_bytes);
+  putf(&w, "svg elements %llu text-bytes %llu\n", (unsigned long long) doc->element_count, (unsigned long long) doc->text_bytes);
   /* Pre-order over the nodes, so character data sits between the elements it was written between. */
   const GVEC_Svg_Node * n = &doc->root->node;
   size_t depth = 0;
@@ -354,7 +354,7 @@ GVEC_Result gvec_svg_dump_document(const GVEC_Svg_Document * doc, GVEC_Stream * 
         continue;
       }
     } else {
-      putf(&w, "t %zu %u:%u %zu ", depth, n->line, n->column, n->text_length);
+      putf(&w, "t %llu %u:%u %llu ", (unsigned long long) depth, n->line, n->column, (unsigned long long) n->text_length);
       quoted(&w, n->text, n->text_length);
       put(&w, "\n", 1);
     }

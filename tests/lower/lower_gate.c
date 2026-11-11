@@ -152,25 +152,37 @@ static char * slurp(const char * path, size_t * size) {
 /** The golden text of a fixture: hashes, the diagnostics, and the list's dump. NULL on failure. */
 static char * golden_text(const char * name, uint64_t list_hash, uint64_t raster_hash, const GVEC_Diagnostics * diagnostics,
     const GSHSCENE_List * list, size_t * size) {
-  char * buffer = NULL;
-  FILE * f = open_memstream(&buffer, size);
+  FILE * f = tmpfile(); /* not open_memstream: that is POSIX, and the gate runs on Windows too */
   if (!f) {
     return NULL;
   }
-  fprintf(f, "fixture %s\nlist-hash %016llx\nraster-hash %016llx\ndiagnostics %zu\n", name, (unsigned long long) list_hash,
-      (unsigned long long) raster_hash, diagnostics->count);
+  fprintf(f, "fixture %s\nlist-hash %016llx\nraster-hash %016llx\ndiagnostics %llu\n", name, (unsigned long long) list_hash,
+      (unsigned long long) raster_hash, (unsigned long long) diagnostics->count);
   for (size_t i = 0; i < diagnostics->count; i++) {
     const GVEC_Diagnostic * d = &diagnostics->items[i];
-    fprintf(f, "diagnostic code=%d detail=%u line=%zu column=%zu element=%s\n", (int) d->code, (unsigned) d->detail, d->line,
-        d->column, d->element ? d->element : "-");
+    fprintf(f, "diagnostic code=%d detail=%u line=%llu column=%llu element=%s\n", (int) d->code, (unsigned) d->detail,
+        (unsigned long long) d->line, (unsigned long long) d->column, d->element ? d->element : "-");
   }
   fprintf(f, "list\n");
-  if (gshscene_list_dump(list, f) != GSHSCENE_OK) {
+  if (gshscene_list_dump(list, f) != GSHSCENE_OK || fflush(f) != 0 || fseek(f, 0, SEEK_END) != 0) {
     fclose(f);
-    free(buffer);
     return NULL;
   }
+  long length = ftell(f);
+  if (length < 0 || fseek(f, 0, SEEK_SET) != 0) {
+    fclose(f);
+    return NULL;
+  }
+  char * buffer = malloc((size_t) length + 1);
+  if (buffer && fread(buffer, 1, (size_t) length, f) != (size_t) length) {
+    free(buffer);
+    buffer = NULL;
+  }
   fclose(f);
+  if (buffer) {
+    buffer[length] = 0;
+    *size = (size_t) length;
+  }
   return buffer;
 }
 

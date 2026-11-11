@@ -82,9 +82,9 @@ int main(int argc, char * argv[]) {
   }
   int missing = gvec_fuzz_unreached();
   if (missing) {
-    fprintf(stderr, "replay: %d outcome(s) never reached by %zu inputs\n", missing, replayed);
+    fprintf(stderr, "replay: %d outcome(s) never reached by %llu inputs\n", missing, (unsigned long long) replayed);
     return 1;
   }
-  printf("replay: %zu inputs, no crash, every outcome reached\n", replayed);
+  printf("replay: %llu inputs, no crash, every outcome reached\n", (unsigned long long) replayed);
   return 0;
 }
