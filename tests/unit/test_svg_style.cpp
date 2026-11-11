@@ -184,6 +184,16 @@ TEST(SvgStyleCascade, InvalidValuesAreDroppedAndReported) {
   EXPECT_EQ(s.Count(GVEC_DIAG_STYLE_INVALID), before);
 }
 
+TEST(SvgStyleUsed, ANumberThatOverflowsIsClampedNotInfinite) {
+  Styled s(Svg("", "<rect id=\"n\" style=\"stroke-width: 2e66666666666666666666666666666\"/>"
+                   "<rect id=\"px\" style=\"stroke-width: 1e999px\"/>"
+                   "<rect id=\"in\" style=\"stroke-width: 1e999in\"/>"));
+  const double largest = 3.4028234663852886e38;
+  for (const char * id : {"n", "px", "in"}) {
+    EXPECT_EQ(s.Get(id, GVEC_SVG_PROP_STROKE_WIDTH).number, largest) << id;
+  }
+}
+
 TEST(SvgStyleUsed, AbsoluteLengths) {
   Styled s(Svg("", "<rect id=\"in\" stroke-width=\"1in\"/><rect id=\"cm\" stroke-width=\"1cm\"/><rect id=\"mm\" stroke-width=\"10mm\"/>"
                    "<rect id=\"q\" stroke-width=\"40Q\"/><rect id=\"pt\" stroke-width=\"72pt\"/><rect id=\"pc\" stroke-width=\"6pc\"/>"

@@ -94,21 +94,25 @@ bool gvec_svg_length_of_value(const GTEXT_CSS_Value * v, double basis, double * 
     return true;
   case GTEXT_CSS_VAL_NUMBER:
   case GTEXT_CSS_VAL_INTEGER:
-    *out = v->number;
+    *out = gvec_svg_clamp_number(v->number);
     return true;
   case GTEXT_CSS_VAL_PERCENTAGE:
-    *out = v->number * basis / 100.0;
+    *out = gvec_svg_clamp_number(v->number * basis / 100.0);
     return true;
   case GTEXT_CSS_VAL_DIMENSION:
     if (gtext_css_unit_type(v->unit) != GTEXT_CSS_UNIT_TYPE_LENGTH) {
       return false;
     }
     if (v->unit == GTEXT_CSS_UNIT_PX) {
-      *out = v->number;
+      *out = gvec_svg_clamp_number(v->number);
       return true;
     }
     /* Anything else that survives to a computed value is an absolute length not yet in px. */
-    return gtext_css_unit_to_canonical(v->unit, v->number, out);
+    if (!gtext_css_unit_to_canonical(v->unit, v->number, out)) {
+      return false;
+    }
+    *out = gvec_svg_clamp_number(*out);
+    return true;
   case GTEXT_CSS_VAL_KEYWORD:
     if (is_keyword(v, "auto")) {
       *out = 0;
@@ -208,7 +212,7 @@ GVEC_Result gvec_svg_get(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instan
       return GVEC_OK;
     }
     out_value->kind = GVEC_SVG_STYLE_NUMBER;
-    out_value->number = v->kind == GTEXT_CSS_VAL_ZERO ? 0 : v->number;
+    out_value->number = v->kind == GTEXT_CSS_VAL_ZERO ? 0 : gvec_svg_clamp_number(v->number);
     return GVEC_OK;
   case GVEC_SVG_PT_LENGTH: {
     double value;

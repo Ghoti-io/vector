@@ -43,6 +43,21 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_computed(GVEC_Svg_Style_Context * context
     GVEC_Svg_Property property, const GTEXT_CSS_Computed_Style ** out_style, const GTEXT_CSS_Value ** out_value);
 
 /** The basis a percentage of a property is of, in user units, for an instance (C6). */
+/* A number read from a declaration, kept inside the range of a single-precision float as Chromium does: "2e999" is the largest
+ * magnitude there is, not an infinity, so no computed value is ever not finite. */
+static inline double gvec_svg_clamp_number(double v) {
+  if (v != v) {
+    return 0;
+  }
+  if (v > 3.4028234663852886e38) {
+    return 3.4028234663852886e38;
+  }
+  if (v < -3.4028234663852886e38) {
+    return -3.4028234663852886e38;
+  }
+  return v;
+}
+
 GVEC_INTERNAL_API double gvec_svg_basis(const GVEC_Svg_Instance * instance, gvec_svg_prop_basis basis);
 
 /**

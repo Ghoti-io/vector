@@ -57,13 +57,13 @@ static bool number_of(const GTEXT_CSS_Value * v, double * out) {
   switch (v->kind) {
   case GTEXT_CSS_VAL_NUMBER:
   case GTEXT_CSS_VAL_INTEGER:
-    *out = v->number;
+    *out = gvec_svg_clamp_number(v->number);
     return true;
   case GTEXT_CSS_VAL_ZERO:
     *out = 0;
     return true;
   case GTEXT_CSS_VAL_PERCENTAGE:
-    *out = v->number / 100.0; /* `scale(50%)` is 0.5 (Transforms 1, 12). */
+    *out = gvec_svg_clamp_number(v->number / 100.0); /* `scale(50%)` is 0.5 (Transforms 1, 12). */
     return true;
   default:
     return false;
@@ -78,10 +78,14 @@ static bool angle_of(const GTEXT_CSS_Value * v, double * out) {
   }
   if (v->kind == GTEXT_CSS_VAL_DIMENSION && gtext_css_unit_type(v->unit) == GTEXT_CSS_UNIT_TYPE_ANGLE) {
     if (v->unit == GTEXT_CSS_UNIT_DEG) {
-      *out = v->number;
+      *out = gvec_svg_clamp_number(v->number);
       return true;
     }
-    return gtext_css_unit_to_canonical(v->unit, v->number, out);
+    if (!gtext_css_unit_to_canonical(v->unit, v->number, out)) {
+      return false;
+    }
+    *out = gvec_svg_clamp_number(*out);
+    return true;
   }
   return false;
 }
@@ -95,10 +99,10 @@ static bool length_or_fraction(const GTEXT_CSS_Value * v, double * out, bool * p
     return true;
   case GTEXT_CSS_VAL_NUMBER:
   case GTEXT_CSS_VAL_INTEGER:
-    *out = v->number;
+    *out = gvec_svg_clamp_number(v->number);
     return true;
   case GTEXT_CSS_VAL_PERCENTAGE:
-    *out = v->number / 100.0;
+    *out = gvec_svg_clamp_number(v->number / 100.0);
     *percent = true;
     return true;
   case GTEXT_CSS_VAL_DIMENSION: {
