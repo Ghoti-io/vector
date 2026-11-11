@@ -152,7 +152,10 @@ static GVEC_Result path_segments(gvec_lw_ctx * ctx, const GVEC_Svg_Path_Segment 
       }
       break;
     case GVEC_SVG_SEGMENT_CLOSE:
-      g = gshgeom_path_close(path);
+      /* A close right after a close closes nothing and adds no vertex, as in the references (resvg, Inkscape). */
+      if (i == 0 || segments[i - 1].kind != GVEC_SVG_SEGMENT_CLOSE) {
+        g = gshgeom_path_close(path);
+      }
       break;
     default:
       g = GSHGEOM_ERR_INVALID;

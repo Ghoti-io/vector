@@ -176,8 +176,8 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **695 of 1,679
-(41.39%)** determined correct, of which **385 (22.93%)** match the reference, **20 (1.19%)** are accepted, **258 (15.37%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 296 `FAIL`s are the 258 `EDGE`, the 32 `ORACLE_AGREES`, 5 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, and a marker that draws itself, which each engine cuts differently) and 1 `DEFECT` (the markers of repeated close commands).
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **696 of 1,679
+(41.45%)** determined correct, of which **385 (22.93%)** match the reference, **20 (1.19%)** are accepted, **259 (15.43%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 296 `FAIL`s are the 259 `EDGE`, the 32 `ORACLE_AGREES`, 5 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, and a marker that draws itself, which each engine cuts differently) and no `DEFECT`.
 
 | directory | cases | PASS | ACCEPTED | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

@@ -175,6 +175,25 @@ TEST(LowerMarker, TheEndsOfAClosedPathAreOrientedLikeThoseOfAnOpenOneOnlyWhenAsk
   EXPECT_EQ(so[2].map.m[1][0], 1.0);
 }
 
+TEST(LowerMarker, ACloseRightAfterACloseAddsNoVertex) {
+  const char * once =
+      "<path d=\"M10 10L30 10L30 30Z\" fill=\"none\" stroke=\"none\" marker-start=\"url(#m)\" marker-mid=\"url(#m)\" marker-end=\"url(#m)\"/>";
+  const char * repeated =
+      "<path d=\"M10 10L30 10L30 30Z Z Z\" fill=\"none\" stroke=\"none\" marker-start=\"url(#m)\" marker-mid=\"url(#m)\" marker-end=\"url(#m)\"/>";
+  Lowered one;
+  LowerSvg(OnlyMarkers(Marker("orient=\"auto\""), once), one);
+  Lowered many;
+  LowerSvg(OnlyMarkers(Marker("orient=\"auto\""), repeated), many);
+  std::vector<GSHSCENE_Item> o = Instances(one);
+  std::vector<GSHSCENE_Item> m = Instances(many);
+  ASSERT_EQ(o.size(), (size_t) 4);
+  ASSERT_EQ(m.size(), o.size()) << "the repeated closes close nothing and place no markers";
+  for (size_t i = 0; i < o.size(); i++) {
+    EXPECT_EQ(m[i].map.m[0][0], o[i].map.m[0][0]);
+    EXPECT_EQ(m[i].map.m[1][0], o[i].map.m[1][0]);
+  }
+}
+
 TEST(LowerMarker, ANumberIsAnAngleInDegreesAndAutoStartReverseTurnsTheStart) {
   Lowered number;
   LowerSvg(OnlyMarkers(Marker("orient=\"90\""), kPath), number);
