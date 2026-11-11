@@ -37,12 +37,6 @@ uint64_t Bits(double d) {
   return b;
 }
 
-double FromBits(uint64_t b) {
-  double d;
-  std::memcpy(&d, &b, sizeof d);
-  return d;
-}
-
 gvec_svg_parse_status Num(const std::string & s, double * v, size_t * offset = nullptr) {
   gvec_svg_parse_error err{0, nullptr};
   auto st = gvec_svg_parse_number(s.data(), s.size(), v, &err);
