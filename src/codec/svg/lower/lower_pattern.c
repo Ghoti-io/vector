@@ -357,6 +357,10 @@ GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
     gshscene_resource_release(tile);
     return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the pattern's map is past the range the waist can carry");
   }
+  if (ctx->paint_pre_set && !gvec_lw_compose(&ctx->paint_pre, &transform, &transform)) {
+    gshscene_resource_release(tile);
+    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the pattern's map is past the range the waist can carry");
+  }
   pattern.map = transform;
   pattern.overflow = overflow_visible ? 1 : 0;
   const GSHSCENE_Resource * resource = NULL;

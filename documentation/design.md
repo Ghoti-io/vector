@@ -634,8 +634,8 @@ and the subpaths run one after the other). Each glyph is then put with the middl
 line, turned to the direction of the path there, with its baseline on the path (a `dy`, a baseline shift and the dominant baseline move it
 off); a glyph whose middle is beyond either end is not drawn. The text after the `textPath` goes on from where the text on the path ended
 (clamped to the path's end). The `path` attribute (SVG 2), when it parses, is the path and is preferred to the `href`; when it does not, the `href` names it. A `textPath` with no path to follow has no characters (a space after it is kept). Refused: a path with a
-`transform`, `method="stretch"`, `side="right"`, and text on a path in vertical text. A `rect`, `circle` or `ellipse` is the path of its outline (from where
-its fill starts), as SVG 2 says. A decoration on text on a path is cut at each glyph, each piece turned and placed as its glyph is.
+and text on a path in vertical text. The path is under the `transform` of the element it is (the text's own is not part of it). `side="right"` puts the text on the other side: it runs along the path backwards, from its end. `method` is read as `align` whatever it says: no engine the references come from stretches the glyphs. A `rect`, `circle` or `ellipse` is the path of its outline (from where
+its fill starts), as SVG 2 says. A decoration on text on a path is cut at each glyph, each piece turned and placed as its glyph is. So is a decoration over glyphs that are turned (a `rotate` list) or are not on one baseline (a `dy` or `y` list): a piece for each glyph, on its own baseline and turned with it, as the references draw it. A piece that is turned is built turned, and the paint of a turned glyph is not turned with it, so a pattern stays where the element puts it.
 
 **H29 `tref`, and text in a clip.** A `tref` is a span whose characters are the character data of the element its `href` names, in the
 `tref`'s own style and with its own `x`, `y`, `dx`, `dy` and `rotate` (read from the attribute as written, since the document does not type the

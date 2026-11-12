@@ -383,6 +383,9 @@ GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance
   GSHSCENE_Gradient g;
   memset(&g, 0, sizeof g);
   g.map = map;
+  if (ctx->paint_pre_set && !gvec_lw_compose(&ctx->paint_pre, &g.map, &g.map)) {
+    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the gradient's map is past the range the waist can carry");
+  }
   g.extend = cache->extend;
   g.stop_count = cache->stop_count;
   g.stops = cache->stops;

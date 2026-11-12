@@ -335,15 +335,6 @@ TEST(LowerText, ADecorationHasThePaintOfTheElementThatDeclaredItAndAnAncestorsTh
   EXPECT_EQ(outside.Item(1).paint.rgba[0], 1.0);
 }
 
-TEST(LowerText, ADecorationOverGlyphsThatRotateOrChangeBaselineIsRefused) {
-  Fonts f;
-  Lowered rotated, shifted;
-  LowerText(f, "rotate=\"10\" text-decoration=\"underline\"", "AA", rotated);
-  EXPECT_NE(rotated.Refusal(GVEC_LOWER_TEXT), nullptr);
-  LowerText(f, "dy=\"0 10\" text-decoration=\"underline\"", "AA", shifted);
-  EXPECT_NE(shifted.Refusal(GVEC_LOWER_TEXT), nullptr);
-}
-
 TEST(LowerText, LetterSpacingFollowsEveryCharacterAndWordSpacingEverySpace) {
   Fonts f;
   Lowered l;
@@ -539,15 +530,23 @@ TEST(LowerText, StartOffsetMovesTheTextAlongThePathAndAGlyphPastTheEndIsNotDrawn
   EXPECT_EQ(past.Items(), (size_t) 1);  // only the path
 }
 
-TEST(LowerText, TextOnAPathWithAMethodOrASideOrATransformItDoesNotLowerIsRefused) {
+TEST(LowerText, TextOnAPathWithAMethodASideOrATransformIsLowered) {
   Fonts f;
   Lowered stretch, right, moved;
   LowerOnPath(f, "", "method=\"stretch\"", "A", stretch);
-  EXPECT_NE(stretch.Refusal(GVEC_LOWER_TEXT), nullptr);
   LowerOnPath(f, "", "side=\"right\"", "A", right);
-  EXPECT_NE(right.Refusal(GVEC_LOWER_TEXT), nullptr);
   LowerOnPath(f, "transform=\"translate(5)\"", "", "A", moved);
-  EXPECT_NE(moved.Refusal(GVEC_LOWER_TEXT), nullptr);
+  EXPECT_EQ(stretch.Refusals() + right.Refusals() + moved.Refusals(), (size_t) 0);
+  GSHSCENE_Glyph_Run a, b, c, d;
+  Lowered plain;
+  ASSERT_TRUE(LowerOnPath(f, "", "", "A", plain));
+  ASSERT_TRUE(ReadRun(plain, 1, a));
+  ASSERT_TRUE(ReadRun(stretch, 1, b));
+  ASSERT_TRUE(ReadRun(moved, 1, c));
+  ASSERT_TRUE(ReadRun(right, 1, d));
+  EXPECT_DOUBLE_EQ(a.glyphs[0].x, b.glyphs[0].x);          // stretch is read as align
+  EXPECT_NEAR(c.glyphs[0].x, a.glyphs[0].x + 5.0, 1e-9);   // the path's own transform moves it
+  EXPECT_GT(d.glyphs[0].x, a.glyphs[0].x + 50.0);          // side right starts at the path's far end
 }
 
 namespace {
@@ -635,6 +634,17 @@ TEST(LowerText, TextOnARectIsSetAlongItsOutlineAndADecorationOnAPathIsCutAtEachG
   EXPECT_EQ(line.Refusals(), (size_t) 0);
   ASSERT_TRUE(LowerBody(f, "<path id=\"p\" d=\"M 10 50 L 310 50\"/><text><textPath href=\"#p\">AB</textPath></text>", plain));
   EXPECT_GT(line.Items(), plain.Items());  // a line for each glyph on the path
+}
+
+TEST(LowerText, ADecorationOverGlyphsOnDifferentBaselinesOrTurnedIsAPieceForEachGlyph) {
+  Fonts f;
+  Lowered flat, dy, turned;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\" text-decoration=\"underline\"", "AB", flat));
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\" dy=\"0 10\" text-decoration=\"underline\"", "AB", dy));
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\" rotate=\"0 20\" text-decoration=\"underline\"", "AB", turned));
+  EXPECT_EQ(flat.Refusals() + dy.Refusals() + turned.Refusals(), (size_t) 0);
+  EXPECT_EQ(dy.Items(), flat.Items() + 1);      // one line across both glyphs, or one under each
+  EXPECT_GT(turned.Items(), flat.Items() + 1);  // a piece for each glyph, and the turned glyph a run of its own
 }
 
 int main(int argc, char ** argv) {

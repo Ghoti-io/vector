@@ -182,6 +182,8 @@ typedef struct gvec_lw_ctx {
    * inverted, and `item_local` is the map of the shape being drawn within the picture. */
   const GVEC_Svg_Instance * context_inst;
   bool box_stroke;                   ///< A group's box takes in the strokes of its shapes (the size of a document that gives none).
+  bool paint_pre_set;                ///< While the paint of one piece of text is resolved: `paint_pre` takes the paint's space to the piece's own (the inverse of the piece's turn), so that the paint stays where the text's element puts it.
+  GSHGEOM_Map paint_pre;
   bool paint_box_set;                ///< While the paint of text is resolved: `paint_box` is the box a paint server is placed in (the text's, whatever span is painted).
   GSHGEOM_Bounds paint_box;
   bool context_box_set;              ///< `context_box` is the box (a `use` has no geometry of its own); otherwise it is that of the shape `context_inst`.

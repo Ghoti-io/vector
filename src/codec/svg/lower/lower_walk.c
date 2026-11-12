@@ -956,6 +956,8 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     }
     ctx->item_crisp = gvec_lw_keyword_is(&v, "optimizespeed");
     ctx->paint_box_set = true;
+    /* A piece that is turned (a glyph on a path, a rotated character) is drawn under its turn; the paint is not turned with it. */
+    ctx->paint_pre_set = gvec_lw_invert(&text.pieces[i].map, &ctx->paint_pre) && text.pieces[i].map.kind != 0;
     GSHSCENE_Paint paint;
     GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
     gvec_lw_paint_decision fill_decision;
@@ -966,6 +968,7 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
       r = gvec_lw_stroke_of(ctx, span, &stroke);
     }
     ctx->paint_box_set = false;
+    ctx->paint_pre_set = false;
     if (r != GVEC_OK || fill_decision == GVEC_LW_PAINT_REFUSED || stroke.decision == GVEC_LW_PAINT_REFUSED) {
       return r;
     }
