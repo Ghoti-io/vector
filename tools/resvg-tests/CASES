@@ -23,20 +23,13 @@ text/alignment-baseline/*	OUT_OF_SCOPE	this text property is read in a later sto
 text/baseline-shift/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/direction/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/dominant-baseline/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/font-kerning/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/font-size-adjust/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/font-variant/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/glyph-orientation-horizontal/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/glyph-orientation-vertical/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/kerning/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/lengthAdjust/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/letter-spacing/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/text-decoration/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/textLength/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/textPath/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/tref/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/unicode-bidi/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/word-spacing/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/writing-mode/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 structure/image/*	OUT_OF_SCOPE	the image element is a milestone 1 non-goal, read in a later milestone
 painting/image-rendering/*	OUT_OF_SCOPE	image rendering applies to the image element, a milestone 1 non-goal, read in a later milestone

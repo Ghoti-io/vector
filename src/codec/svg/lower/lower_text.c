@@ -146,12 +146,34 @@ static GVEC_Result read_style(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
 }
 
 /* A property of the text group with no longhand in the style layer (`font-variant` and `font-kerning` are shorthands or not registered): the
- * attributes of the element and of every element it inherits from, and their `style`, are read for it. True when one gives a value that
- * is not the initial one. */
-static bool chain_sets(const GVEC_Svg_Instance * inst, const char * name, const char * initial) {
+ * value the nearest element that gives one has, in `out`, read from its attribute (when `attributes`) and from its `style`; an `inherit`
+ * looks further up. False when no element gives one. */
+static bool chain_value(const GVEC_Svg_Instance * inst, const char * name, bool attributes, char * out, size_t capacity) {
   size_t name_length = strlen(name);
   for (; inst; inst = gvec_svg_instance_parent(inst)) {
     const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+    const char * found = NULL;
+    size_t found_length = 0;
+    /* The `font` shorthand in an element's style resets the properties it covers that this reads. */
+    for (size_t i = 0; i < e->attribute_count; i++) {
+      const GVEC_Svg_Attribute * a = &e->attributes[i];
+      size_t n;
+      const char * t = gvec_svg_attribute_raw(a, &n);
+      if (a->ns || !t || strcmp(a->name, "style") != 0 || (strcmp(name, "font-kerning") != 0 && strcmp(name, "font-variant") != 0)) {
+        continue;
+      }
+      for (size_t k = 0; k + 4 < n; k++) {
+        if (strncmp(t + k, "font", 4) == 0 && (k == 0 || is_space(t[k - 1]) || t[k - 1] == ';')) {
+          size_t v = k + 4;
+          while (v < n && is_space(t[v])) {
+            v++;
+          }
+          if (v < n && t[v] == ':') {
+            return false;
+          }
+        }
+      }
+    }
     for (size_t i = 0; i < e->attribute_count; i++) {
       const GVEC_Svg_Attribute * a = &e->attributes[i];
       size_t n;
@@ -159,36 +181,102 @@ static bool chain_sets(const GVEC_Svg_Instance * inst, const char * name, const 
       if (a->ns || !t) {
         continue;
       }
-      if (strcmp(a->name, name) == 0) {
-        size_t begin = 0;
-        while (begin < n && is_space(t[begin])) {
-          begin++;
-        }
-        size_t end = n;
-        while (end > begin && is_space(t[end - 1])) {
-          end--;
-        }
-        if (!(end - begin == strlen(initial) && strncmp(t + begin, initial, end - begin) == 0) && !(end - begin == 7 && strncmp(t + begin, "inherit", 7) == 0)) {
-          return true;
-        }
+      if (attributes && strcmp(a->name, name) == 0) {
+        found = t, found_length = n;
       }
       else if (strcmp(a->name, "style") == 0) {
         for (size_t k = 0; k + name_length < n; k++) {
           if (strncmp(t + k, name, name_length) == 0 && (k == 0 || !(t[k - 1] == '-' || (t[k - 1] >= 'a' && t[k - 1] <= 'z')))) {
             size_t v = k + name_length;
-            while (v < n && (is_space(t[v]) || t[v] == ':')) {
+            while (v < n && is_space(t[v])) {
               v++;
             }
-            size_t initial_length = strlen(initial);
-            if (!(v + initial_length <= n && strncmp(t + v, initial, initial_length) == 0) && !(v + 7 <= n && strncmp(t + v, "inherit", 7) == 0)) {
-              return true;
+            if (v >= n || t[v] != ':') {
+              continue;
             }
+            v++;
+            size_t end = v;
+            while (end < n && t[end] != ';') {
+              end++;
+            }
+            found = t + v, found_length = end - v;
           }
         }
       }
     }
+    if (found) {
+      while (found_length && is_space(*found)) {
+        found++, found_length--;
+      }
+      while (found_length && is_space(found[found_length - 1])) {
+        found_length--;
+      }
+      if (!(found_length == 7 && strncmp(found, "inherit", 7) == 0)) {
+        size_t n = found_length < capacity - 1 ? found_length : capacity - 1;
+        memcpy(out, found, n);
+        out[n] = 0;
+        return true;
+      }
+    }
   }
   return false;
+}
+
+/* The length a `letter-spacing` or `word-spacing` of the cascade says, in user units: it comes as written (`5`, `1mm`, `5%`, `normal`). A
+ * percentage is of the font size. False for what this does not read. */
+static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Value * v, double font_size, double * out) {
+  *out = 0;
+  if (v->kind == GVEC_SVG_STYLE_LENGTH || v->kind == GVEC_SVG_STYLE_NUMBER) {
+    *out = v->number;
+    return true;
+  }
+  if (v->kind != GVEC_SVG_STYLE_KEYWORD || !v->keyword || gvec_lw_keyword_is(v, "normal")) {
+    return v->kind != GVEC_SVG_STYLE_KEYWORD || !v->keyword || gvec_lw_keyword_is(v, "normal");
+  }
+  size_t length = strlen(v->keyword);
+  size_t pos = 0;
+  double number;
+  if (!gvec_svg_scan_number(v->keyword, length, &pos, &number, NULL)) {
+    return false;
+  }
+  const char * unit = v->keyword + pos;
+  GVEC_Svg_Length l;
+  l.value = number;
+  if (strcmp(unit, "") == 0) {
+    l.unit = GVEC_SVG_UNIT_NONE;
+  }
+  else if (strcmp(unit, "px") == 0) {
+    l.unit = GVEC_SVG_UNIT_PX;
+  }
+  else if (strcmp(unit, "mm") == 0) {
+    l.unit = GVEC_SVG_UNIT_MM;
+  }
+  else if (strcmp(unit, "cm") == 0) {
+    l.unit = GVEC_SVG_UNIT_CM;
+  }
+  else if (strcmp(unit, "in") == 0) {
+    l.unit = GVEC_SVG_UNIT_IN;
+  }
+  else if (strcmp(unit, "pt") == 0) {
+    l.unit = GVEC_SVG_UNIT_PT;
+  }
+  else if (strcmp(unit, "pc") == 0) {
+    l.unit = GVEC_SVG_UNIT_PC;
+  }
+  else if (strcmp(unit, "%") == 0) {
+    double vw, vh;
+    gvec_svg_instance_viewport(inst, &vw, &vh);
+    *out = number * vw / 100.0;
+    return true;
+  }
+  else if (strcmp(unit, "em") == 0) {
+    *out = number * font_size;
+    return true;
+  }
+  else {
+    return false;
+  }
+  return gvec_lw_absolute_length(&l, out);
 }
 
 /* What a later story of the milestone lowers is refused, not drawn without it: the element is refused whole when any of these is not its
@@ -199,8 +287,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     const char * initial[4]; ///< The keywords that mean the initial value; a length or a number of zero does too.
     const char * what;
   } checks[] = {
-      {GVEC_SVG_PROP_LETTER_SPACING, {"normal", NULL, NULL, NULL}, "letter-spacing"},
-      {GVEC_SVG_PROP_WORD_SPACING, {"normal", NULL, NULL, NULL}, "word-spacing"},
       {GVEC_SVG_PROP_TEXT_DECORATION, {"none", NULL, NULL, NULL}, "text-decoration"},
       {GVEC_SVG_PROP_BASELINE_SHIFT, {"baseline", NULL, NULL, NULL}, "baseline-shift"},
       {GVEC_SVG_PROP_DOMINANT_BASELINE, {"auto", NULL, NULL, NULL}, "dominant-baseline"},
@@ -235,13 +321,24 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, message);
     }
   }
-  if (chain_sets(inst, "font-variant", "normal") || chain_sets(inst, "font-kerning", "auto")) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "font-variant and font-kerning on text are not lowered yet");
+  {
+    char value[32];
+    if (chain_value(inst, "font-variant", true, value, sizeof value) && strcmp(value, "normal") != 0 && strcmp(value, "small-caps") != 0) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "this font-variant on text is not lowered yet");
+    }
+    /* `writing-mode` is read as written as well: the legacy values (`tb`) are not values of the property, and the cascade drops them. */
+    if (chain_value(inst, "writing-mode", true, value, sizeof value) && strcmp(value, "lr-tb") != 0 && strcmp(value, "lr") != 0 &&
+        strcmp(value, "horizontal-tb") != 0) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "writing-mode on text is not lowered yet");
+    }
+    if (chain_value(inst, "kerning", true, value, sizeof value) && strcmp(value, "auto") != 0 && strcmp(value, "0") != 0) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a kerning other than auto and 0 on text is not lowered yet");
+    }
   }
   for (size_t i = 0; i < e->attribute_count; i++) {
     const GVEC_Svg_Attribute * a = &e->attributes[i];
-    if (!a->ns && (strcmp(a->name, "rotate") == 0 || strcmp(a->name, "textLength") == 0 || strcmp(a->name, "lengthAdjust") == 0)) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "rotation and length adjustment of text are not lowered yet");
+    if (!a->ns && strcmp(a->name, "rotate") == 0) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "rotation of text is not lowered yet");
     }
   }
   *clear = true;
@@ -258,13 +355,14 @@ typedef struct tstyle {
   const char ** families;
   size_t family_count;
   double size, weight, width, anchor;
+  double letter_spacing, word_spacing;
   int italic;
-  bool visible;
+  bool visible, small_caps, kerning_off;
 } tstyle;
 
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count) {
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || a->small_caps != b->small_caps || a->kerning_off != b->kerning_off) {
     return false;
   }
   for (size_t i = 0; i < a->family_count; i++) {
@@ -291,6 +389,15 @@ typedef struct tlist {
   const GVEC_Svg_Instance * inst;
 } tlist;
 
+/** A `textLength` of an element: the content from `start` to `end` is to take `length`. */
+typedef struct tlength {
+  size_t start, end;
+  double length;
+  bool glyphs; ///< `lengthAdjust` is `spacingAndGlyphs`: the glyphs are stretched too.
+  const GVEC_Svg_Instance * inst;
+  GSHGEOM_Map map; ///< The stretch, once laid out (spacingAndGlyphs).
+} tlength;
+
 typedef struct tctx {
   gvec_lw_ctx * lw;
   tstyle * styles;
@@ -299,6 +406,8 @@ typedef struct tctx {
   size_t count, capacity;
   tlist * lists;
   size_t list_count, list_capacity;
+  tlength * lengths;
+  size_t length_count, length_capacity;
   bool last_space;
   bool refused;
 } tctx;
@@ -361,6 +470,29 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, uint32_t
     return r;
   }
   st->visible = !(gvec_lw_keyword_is(&v, "hidden") || gvec_lw_keyword_is(&v, "collapse"));
+  r = read_style(ctx, inst, GVEC_SVG_PROP_LETTER_SPACING, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  bool good = spacing_of(inst, &v, st->size, &st->letter_spacing);
+  if (good) {
+    r = read_style(ctx, inst, GVEC_SVG_PROP_WORD_SPACING, &v, &ok);
+    if (r != GVEC_OK || !ok) {
+      t->refused = true;
+      return r;
+    }
+    good = spacing_of(inst, &v, st->size, &st->word_spacing);
+  }
+  if (!good) {
+    t->refused = true;
+    return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_TEXT, "a letter-spacing or word-spacing in a unit this does not read");
+  }
+  char value[32];
+  st->small_caps = chain_value(inst, "font-variant", true, value, sizeof value) && strcmp(value, "small-caps") == 0;
+  /* `font-kerning` counts only in a style (a presentation attribute of it is ignored, as the references do), and `kerning` of 0 is the same. */
+  st->kerning_off = (chain_value(inst, "font-kerning", false, value, sizeof value) && strcmp(value, "none") == 0) ||
+      (chain_value(inst, "kerning", true, value, sizeof value) && strcmp(value, "0") == 0);
   *index = (uint32_t) t->style_count++;
   return GVEC_OK;
 }
@@ -453,6 +585,16 @@ static GVEC_Result record_list(tctx * t, const GVEC_Svg_Instance * inst, const c
   return GVEC_OK;
 }
 
+static bool length_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Length * length, bool horizontal, double * out) {
+  if (length->unit == GVEC_SVG_UNIT_PERCENT) {
+    double vw, vh;
+    gvec_svg_instance_viewport(inst, &vw, &vh);
+    *out = length->value * (horizontal ? vw : vh) / 100.0;
+    return true;
+  }
+  return gvec_lw_absolute_length(length, out);
+}
+
 static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited_preserve, size_t depth) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -533,17 +675,27 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       t->lists[i].end = t->count; /* The element's content is done: its lists apply to these characters and no others. */
     }
   }
-  return GVEC_OK;
-}
-
-static bool length_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Length * length, bool horizontal, double * out) {
-  if (length->unit == GVEC_SVG_UNIT_PERCENT) {
-    double vw, vh;
-    gvec_svg_instance_viewport(inst, &vw, &vh);
-    *out = length->value * (horizontal ? vw : vh) / 100.0;
-    return true;
+  const GVEC_Svg_Attribute * tl = gvec_svg_element_find_attribute(e, "textLength");
+  GVEC_Svg_Length length;
+  if (tl && t->count > start && gvec_svg_attribute_class(tl) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_length(tl, &length)) {
+    double value;
+    if (!length_of(inst, &length, true, &value)) {
+      t->refused = true;
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a textLength in a unit that needs the font or the window is not lowered");
+    }
+    if (value > 0 && t->length_count < t->length_capacity) {
+      tlength * entry = &t->lengths[t->length_count++];
+      entry->start = start;
+      entry->end = t->count;
+      entry->length = value;
+      size_t n;
+      const GVEC_Svg_Attribute * adjust = gvec_svg_element_find_attribute(e, "lengthAdjust");
+      const char * a = adjust ? gvec_svg_attribute_raw(adjust, &n) : NULL;
+      entry->glyphs = a && n == 16 && strncmp(a, "spacingAndGlyphs", 16) == 0;
+      entry->inst = inst;
+    }
   }
-  return gvec_lw_absolute_length(length, out);
+  return GVEC_OK;
 }
 
 static GVEC_Result apply_lists(tctx * t) {
@@ -570,12 +722,20 @@ static GVEC_Result apply_lists(tctx * t) {
 // Layout: chunks, runs of one span, glyphs
 //-----------------------------------------------------------------------------
 
+/* Whether a character is of a cursive script, whose letters are joined: letter-spacing does not apply to it (CSS Text 3, 7.2). */
+static bool cursive(uint32_t cp) {
+  return (cp >= 0x0600 && cp <= 0x077F) || (cp >= 0x08A0 && cp <= 0x08FF) || (cp >= 0xFB50 && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF);
+}
+
 typedef struct tglyph {
   const GFNT_Face * face;
   uint32_t id;
   double x, y;
   double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
   uint32_t style;
+  size_t ch;        ///< The character the glyph is of (its cluster's first).
+  uint32_t group;   ///< One more than the textLength entry that stretches the glyphs, or 0.
+  double size;      ///< The em size the glyph is drawn at (a small capital is smaller).
 } tglyph;
 
 /* Shape the characters [from, to) of one span: the faces its characters need (the first name of the list that maps each), shaped with fallback;
@@ -588,6 +748,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   if (!(st->size > 0) || st->size - st->size != 0) {
     return GVEC_OK; /* A size of nothing draws nothing and takes no room. */
   }
+  const double size = st->size;
   uint32_t * cps = gvec_arena_array(&ctx->arena, count, sizeof *cps, sizeof *cps);
   if (!cps) {
     return GVEC_ERR_OOM;
@@ -635,6 +796,26 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   }
   GFNT_ShapeOptions shape;
   memset(&shape, 0, sizeof shape);
+  GFNT_ShapeFeature features[4];
+  size_t feature_count = 0;
+  if (st->kerning_off) {
+    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('k', 'e', 'r', 'n'), 0, 0, GFNT_SHAPE_END};
+  }
+  if (st->small_caps) {
+    /* Small capitals are the face's own (`smcp`), as the references draw them. */
+    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('s', 'm', 'c', 'p'), 1, 0, GFNT_SHAPE_END};
+  }
+  bool spaced = false;
+  for (size_t i = from; i < to; i++) {
+    spaced = spaced || (t->styles[t->chars[i].style].letter_spacing != 0 && !cursive(t->chars[i].cp));
+  }
+  if (spaced) {
+    /* Letters that are spaced apart are not joined into ligatures (CSS Text 3, 7.2). */
+    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('l', 'i', 'g', 'a'), 0, 0, GFNT_SHAPE_END};
+    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('c', 'l', 'i', 'g'), 0, 0, GFNT_SHAPE_END};
+  }
+  shape.features = feature_count ? features : NULL;
+  shape.feature_count = feature_count;
   GFNT_FaceRuns runs;
   memset(&runs, 0, sizeof runs);
   GFNT_Result sr = gfnt_faces_shape_bidi(faces, face_count, cps, count, GFNT_BIDI_LTR, &shape, NULL, &runs, NULL);
@@ -649,7 +830,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       result = gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a face of the fonts has no size to scale by");
       break;
     }
-    double s = st->size / (double) upem;
+    double s = size / (double) upem;
     GFNT_LineMetrics line;
     if (gfnt_face_line_metrics(faces[fr->face], GFNT_LINE_METRICS_FONT, NULL, &line, NULL) != GFNT_OK) {
       line.ascent = upem;
@@ -674,7 +855,22 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       out->cell_x1 = *pen_x + (double) sg->x_advance * s;
       out->cell_y0 = *pen_y - (double) line.ascent * s;
       out->cell_y1 = *pen_y - (double) line.descent * s;
+      out->ch = ch;
+      out->group = 0;
+      out->size = size;
       *pen_x += (double) sg->x_advance * s;
+      /* The spacing after a character (a cluster of glyphs takes it once, after its last): letter-spacing, and word-spacing after a space. */
+      bool last_of_cluster = g + 1 >= fr->run.count || fr->run.glyphs[g + 1].cluster != sg->cluster;
+      if (last_of_cluster) {
+        const tstyle * cs = &t->styles[t->chars[ch].style];
+        if (!cursive(t->chars[ch].cp)) {
+          *pen_x += cs->letter_spacing;
+        }
+        if (t->chars[ch].cp == ' ' || t->chars[ch].cp == 0xA0) {
+          *pen_x += cs->word_spacing;
+        }
+        out->cell_x1 = *pen_x;
+      }
     }
   }
   gfnt_face_runs_free(&runs);
@@ -720,8 +916,10 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   t.capacity = bytes + 1;
   t.styles = gvec_arena_array(&ctx->arena, t.style_capacity, sizeof *t.styles, sizeof(void *));
   t.lists = gvec_arena_array(&ctx->arena, t.list_capacity, sizeof *t.lists, sizeof(void *));
+  t.length_capacity = elements + 1;
+  t.lengths = gvec_arena_array(&ctx->arena, t.length_capacity, sizeof *t.lengths, sizeof(void *));
   t.chars = gvec_arena_array(&ctx->arena, t.capacity, sizeof *t.chars, sizeof(double));
-  if (!t.styles || !t.lists || !t.chars) {
+  if (!t.styles || !t.lists || !t.chars || !t.lengths) {
     return GVEC_ERR_OOM;
   }
   GVEC_Result r = walk(&t, inst, false, 0);
@@ -775,6 +973,62 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     if (r != GVEC_OK) {
       return r;
     }
+    /* The textLength of an element in this chunk: its glyphs take the length asked for (the spacing between them, or the glyphs too). */
+    for (size_t k = 0; r == GVEC_OK && k < t.length_count; k++) {
+      tlength * tl = &t.lengths[k];
+      if (tl->end <= i || tl->start >= j) {
+        continue;
+      }
+      if (tl->start < i || tl->end > j) {
+        return gvec_lw_refuse(ctx, gvec_svg_instance_element(tl->inst), GVEC_LOWER_TEXT, "a textLength over several text chunks is not lowered");
+      }
+      size_t ga = SIZE_MAX, gb = 0;
+      for (size_t g = chunk_first_glyph; g < glyph_count; g++) {
+        if (glyphs[g].ch >= tl->start && glyphs[g].ch < tl->end) {
+          if (ga == SIZE_MAX) {
+            ga = g;
+          }
+          gb = g + 1;
+        }
+      }
+      if (ga == SIZE_MAX) {
+        continue;
+      }
+      double x0 = glyphs[ga].cell_x0;
+      double width = glyphs[gb - 1].cell_x1 - x0;
+      if (!(width > 0)) {
+        continue;
+      }
+      double grow = tl->length - width;
+      if (tl->glyphs) {
+        double factor = tl->length / width;
+        GSHGEOM_Map move, stretch, back, partial;
+        if (gshgeom_map_translate(2, x0, 0, 0, &move) != GSHGEOM_OK || gshgeom_map_scale(2, factor, 1, 1, &stretch) != GSHGEOM_OK ||
+            gshgeom_map_translate(2, -x0, 0, 0, &back) != GSHGEOM_OK || !gvec_lw_compose(&move, &stretch, &partial) || !gvec_lw_compose(&partial, &back, &tl->map)) {
+          return gvec_lw_refuse(ctx, gvec_svg_instance_element(tl->inst), GVEC_LOWER_LIMIT, "a textLength stretch is past the range the waist can carry");
+        }
+        for (size_t g = ga; g < gb; g++) {
+          glyphs[g].group = (uint32_t) (k + 1);
+          glyphs[g].cell_x0 = x0 + (glyphs[g].cell_x0 - x0) * factor;
+          glyphs[g].cell_x1 = x0 + (glyphs[g].cell_x1 - x0) * factor;
+        }
+      }
+      else if (gb - ga > 1) {
+        double extra = grow / (double) (gb - ga - 1);
+        for (size_t g = ga; g < gb; g++) {
+          double shift = extra * (double) (g - ga);
+          glyphs[g].x += shift;
+          glyphs[g].cell_x0 += shift;
+          glyphs[g].cell_x1 += shift;
+        }
+      }
+      for (size_t g = gb; g < glyph_count; g++) {
+        glyphs[g].x += grow;
+        glyphs[g].cell_x0 += grow;
+        glyphs[g].cell_x1 += grow;
+      }
+      pen_x += grow;
+    }
     /* The anchor of the chunk's first character moves the whole chunk by its whole advance. */
     double shift = -t.styles[t.chars[i].style].anchor * (pen_x - start_x);
     for (size_t g = chunk_first_glyph; shift != 0 && g < glyph_count; g++) {
@@ -805,7 +1059,7 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   }
   for (size_t g = 0; r == GVEC_OK && g < glyph_count;) {
     size_t h = g + 1;
-    while (h < glyph_count && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face) {
+    while (h < glyph_count && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group && glyphs[h].size == glyphs[g].size) {
       h++;
     }
     const tstyle * st = &t.styles[glyphs[g].style];
@@ -832,7 +1086,7 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     memset(&run, 0, sizeof run);
     run.source = GSHSCENE_GLYPHS_FROM_FONT;
     run.face = face_resource;
-    run.size = st->size;
+    run.size = glyphs[g].size;
     run.hint_mode = GSHSCENE_HINT_NONE;
     run.glyph_count = h - g;
     run.glyphs = list;
@@ -849,6 +1103,12 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     }
     out->pieces[out->count].run = resource;
     out->pieces[out->count].inst = st->inst;
+    if (glyphs[g].group) {
+      out->pieces[out->count].map = t.lengths[glyphs[g].group - 1].map;
+    }
+    else {
+      gshgeom_map_identity(2, &out->pieces[out->count].map);
+    }
     out->count++;
     g = h;
   }

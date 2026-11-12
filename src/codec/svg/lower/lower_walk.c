@@ -943,6 +943,10 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   size_t n = 0;
   for (size_t i = 0; i < text.count; i++) {
     const GVEC_Svg_Instance * span = text.pieces[i].inst;
+    GSHGEOM_Map piece_map;
+    if (!gvec_lw_compose(&c.local, &text.pieces[i].map, &piece_map)) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text's stretch is past the range the waist can carry");
+    }
     const GVEC_Svg_Element * se = gvec_svg_instance_element(span);
     GVEC_Svg_Style_Value v;
     /* `text-rendering` of the text element (not of a span) says whether the glyphs are antialiased; `shape-rendering` does not affect text. */
@@ -968,13 +972,13 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     gvec_lw_node * fill_node = NULL;
     gvec_lw_node * stroke_node = NULL;
     if (fill_decision == GVEC_LW_PAINT_DRAW) {
-      r = shape_node(ctx, e, &c.local, text.pieces[i].run, &paint, rule, NULL, &fill_node);
+      r = shape_node(ctx, e, &piece_map, text.pieces[i].run, &paint, rule, NULL, &fill_node);
       if (r != GVEC_OK) {
         return r;
       }
     }
     if (stroke.decision == GVEC_LW_PAINT_DRAW) {
-      r = shape_node(ctx, e, &c.local, text.pieces[i].run, &stroke.paint, GSHGEOM_FILL_NONZERO, stroke.style, &stroke_node);
+      r = shape_node(ctx, e, &piece_map, text.pieces[i].run, &stroke.paint, GSHGEOM_FILL_NONZERO, stroke.style, &stroke_node);
       if (r != GVEC_OK) {
         return r;
       }

@@ -290,6 +290,71 @@ TEST(LowerText, ARotateAListOfLengthsInEmAndTextPathAreRefusedUntilTheyAreLowere
   EXPECT_NE(path.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
+TEST(LowerText, LetterSpacingFollowsEveryCharacterAndWordSpacingEverySpace) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" letter-spacing=\"10\" word-spacing=\"5\"", "A A", l));
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_EQ(run.glyphs[0].x, 0.0);
+  EXPECT_EQ(run.glyphs[1].x, 70.0);    // 60 and the letter-spacing
+  EXPECT_EQ(run.glyphs[2].x, 70.0 + 30.0 + 10.0 + 5.0);  // the space's 30, its letter-spacing and its word-spacing
+}
+
+TEST(LowerText, ASpanHasItsOwnLetterSpacingAndAPercentageIsOfTheViewport) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0\"", "A<tspan letter-spacing=\"20\">A</tspan>A", l));
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_EQ(run.glyphs[0].x, 60.0);
+  Lowered p;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" letter-spacing=\"5%\"", "AA", p));
+  ASSERT_TRUE(ReadRun(p, 0, run));
+  EXPECT_EQ(run.glyphs[1].x, 60.0 + 20.0);  // 5% of the 400 wide viewport
+}
+
+TEST(LowerText, TextLengthSpreadsTheGlyphsAndSpacingAndGlyphsStretchesThem) {
+  Fonts f;
+  Lowered spaced, stretched;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" textLength=\"300\"", "AAA", spaced));
+  ASSERT_TRUE(ReadRun(spaced, 0, run));
+  EXPECT_EQ(run.glyphs[0].x, 0.0);
+  EXPECT_EQ(run.glyphs[1].x, 60.0 + 60.0);  // 180 wide, 300 asked: 120 more over the two gaps
+  EXPECT_EQ(run.glyphs[2].x, 240.0);
+  ASSERT_TRUE(LowerText(f, "x=\"10\" textLength=\"360\" lengthAdjust=\"spacingAndGlyphs\"", "AAA", stretched));
+  ASSERT_TRUE(ReadRun(stretched, 0, run));
+  EXPECT_EQ(run.glyphs[1].x, 70.0);   // the glyphs keep their positions; the map stretches the run about the start of the text
+  EXPECT_EQ(stretched.Item(0).map.m[0][0], 2.0);
+  EXPECT_EQ(stretched.Item(0).map.t[0], -10.0);
+}
+
+TEST(LowerText, KerningCanBeSwitchedOffSmallCapsAskForTheFacesOwnAndAnInvalidLengthIsIgnored) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "style=\"font-kerning: none\"", "AA", l));
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 2);
+  Lowered caps, negative;
+  ASSERT_TRUE(LowerText(f, "font-variant=\"small-caps\"", "aA", caps));
+  EXPECT_EQ(caps.Refusals(), (size_t) 0);
+  ASSERT_TRUE(LowerText(f, "textLength=\"-50\"", "AA", negative));
+  ASSERT_TRUE(ReadRun(negative, 0, run));
+  EXPECT_EQ(run.glyphs[1].x, 60.0);
+}
+
+TEST(LowerText, WritingModeAndFontSizeAdjustAreRefusedUntilTheyAreLowered) {
+  Fonts f;
+  Lowered tb, adjust;
+  LowerText(f, "writing-mode=\"tb\"", "A", tb);
+  EXPECT_NE(tb.Refusal(GVEC_LOWER_TEXT), nullptr);
+  LowerText(f, "font-size-adjust=\"0.5\"", "A", adjust);
+  EXPECT_NE(adjust.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

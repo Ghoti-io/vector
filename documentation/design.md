@@ -582,8 +582,8 @@ first character's) times its whole advance. A glyph run of the waist has one fac
 (its paint) or the face changes, each filled with the paint of its span; spans that are not visible keep their room and draw nothing. The runs are
 unhinted (the references draw outlines), the size is `font-size` in user units, and the glyphs carry their absolute positions in the element's
 user space. The face is interned in the scene through `font`'s glyph provider, so the `GVEC_Fonts` must outlive the scene. Whatever a later story
-of milestone 3 lowers (`rotate`, `textLength`, spacing, `font-variant` and `font-kerning`, a decoration, a baseline, a writing mode, a direction,
-text on a path, `tref`) refuses the element whole.
+of milestone 3 lowers (`rotate`, a decoration, a baseline, a writing mode, a direction, `font-size-adjust`, text on a path, `tref`) refuses the
+element whole.
 
 **H22 Paint on text.** Each run is filled and stroked with the paint of the span it is of, in that span's `paint-order` (the scene strokes a glyph run's
 centerline, so a stroke is an item over the same run); the opacity of a span other than the text element is a group around that span's runs; and
@@ -592,7 +592,15 @@ glyphs' cells, each an advance wide and the face's ascent and descent high (the 
 outlines). `text-rendering: optimizeSpeed` on the text element asks for no antialiasing; `shape-rendering` does not affect text, and
 `text-rendering` on a span is ignored.
 
-## Threads
+**H23 Spacing and adjustment.** After a character (the last glyph of its cluster) the pen moves by the span's `letter-spacing`, except for a
+character of a cursive script (Arabic and its neighbors), which is not spaced; after a space it moves by `word-spacing` too. A percentage is of the
+viewport's width (the references take it so). Letters that are spaced apart are shaped with `liga` and `clig` off. `font-kerning: none` (read from a
+style only, and reset by a `font` shorthand nearer the text) and `kerning="0"` turn `kern` off; `font-variant: small-caps` turns `smcp` on, so the
+small capitals are the face's. A `textLength` is applied to the glyphs of its element's characters in one chunk, after the chunk is laid out and before
+it is anchored: `spacing` spreads the extra length over the gaps between the glyphs and moves what follows; `spacingAndGlyphs` leaves the positions
+and stretches the run's map about the start of the element's glyphs, so the outlines are stretched with them. A length of zero or less is ignored,
+and one over several chunks is refused.
+
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
 stream, a document, a diagnostics list) is used by one thread at a time; different objects may be
