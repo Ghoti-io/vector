@@ -1664,7 +1664,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         tglyph * gl = &glyphs[g];
         double mid = gl->cell_x0 + gl->advance / 2;
         GSHGEOM_Measured_Frame fr;
-        if (!m || !(mid >= 0 && mid <= length) || gshgeom_measured_at(m, mid, &fr) != GSHGEOM_OK || !fr.has_tangent) {
+        if (!m || !(mid >= 0 && mid <= length) || gshgeom_measured_at_clamped(m, mid, &fr) != GSHGEOM_OK || !fr.has_tangent) {
           gl->hidden = true;
           continue;
         }

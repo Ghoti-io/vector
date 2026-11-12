@@ -46,6 +46,8 @@ GR = "src/codec/svg/lower/lower_gradient.c"
 # Clips.
 CL = "src/codec/svg/lower/lower_clip.c"
 BS = "src/codec/svg/lower/lower_basic_shape.c"
+# Text.
+TX = "src/codec/svg/lower/lower_text.c"
 
 # (rule, source file, text, replacement, what the defect is)
 PLANTS = [
@@ -195,6 +197,11 @@ PLANTS = [
     ("X2", PR, "  if (!(w > 0) || !(h > 0)) {", "  if (!(w > 0) && !(h > 0)) {", "a rect of no width or no height is drawn"),
     ("X2", PR, "      p.r[i].rx = rx;\n      p.r[i].ry = ry;", "      p.r[i].rx = ry;\n      p.r[i].ry = rx;", "a corner's radii are exchanged"),
     ("X3", PR, "      ry = rx;\n      ry_auto = rx_auto;", "      ry = rx * 2;\n      ry_auto = rx_auto;", "a circle is an ellipse of unequal radii"),
+    ("H26", TX, "      anchor = 1.0 - anchor;", "      anchor = anchor;", "the start of right-to-left text is its left edge"),
+    ("H27", TX, "(out->sideways ? 90.0 : 0.0)", "(out->sideways ? 0.0 : 0.0)", "a letter of vertical text does not lie on its side"),
+    ("H27", TX, "    if (t->vertical && baseline == 0) {", "    if (t->vertical && baseline == 99) {", "vertical text is not set on its central baseline"),
+    ("H28", TX, "!(mid >= 0 && mid <= length)", "!(mid >= 0 && mid <= length + 1e9)", "a glyph past the end of the path is drawn"),
+    ("H29", TX, "      add_characters(t, buffer, length, preserve, style);", "      (void) buffer;", "a tref has no characters"),
     ("P7", W, '  *rule = gvec_lw_keyword_is(&n, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;', "  *rule = GSHGEOM_FILL_NONZERO;",
      "evenodd is nonzero"),
     ("P7", S, "    double alpha = paint->color.color.rgba[3] * opacity;", "    double alpha = paint->color.color.rgba[3] * (opacity * 0 + 1);",
@@ -260,7 +267,7 @@ PLANTS = [
      "a box of no height is a place for a clip"),
     ("H11", CL, "      if (box.empty || !(box.max.x > box.min.x) || !(box.max.y > box.min.y)) {", "      if (box.empty || !(box.max.x > box.min.x) || !(box.max.y > box.min.y - 1)) {",
      "a group box of no height is a place for a clip"),
-    ("H9", CL, "  if (shapes > 1) {", "  if (shapes > 99) {", "a clipPath of several shapes is clipped to the last"),
+    ("H9", CL, "  if (shapes > 1 || list[0].preset) {", "  if (shapes > 99 || list[0].preset) {", "a clipPath of several shapes is clipped to the last"),
     ("H9", CL, "bool shown = !gvec_lw_keyword_is(&v, \"none\") && !gvec_svg_element_conditional_false(child);", "bool shown = !gvec_svg_element_conditional_false(child);",
      "a shape of display none is part of the clip"),
     ("H9", CL, "    *state = GVEC_LW_CLIP_ALL; /* A clip of nothing lets nothing through. */", "    *state = GVEC_LW_CLIP_NONE;",

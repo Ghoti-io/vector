@@ -269,7 +269,10 @@ static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path
         member->inst = ci;
         member->preset = true;
         member->resource = region;
-        member->rule = gvec_lw_keyword_is(&rv, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
+        member->rule = GSHGEOM_FILL_NONZERO;
+        if (gvec_lw_keyword_is(&rv, "evenodd")) {
+          member->rule = GSHGEOM_FILL_EVEN_ODD;
+        }
         if (!gvec_lw_compose(&text_map, &piece->map, &member->pre)) {
           *refused = true;
           return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text in a clipPath is placed past the range the waist can carry");
