@@ -665,12 +665,43 @@ static void add_characters(tctx * t, const char * text, size_t n, bool preserve,
   }
 }
 
+/* The numbers of an attribute the document did not type (an element of a kind it does not know, a tref): plain numbers, separated by white
+ * space or commas. False when the value has anything else in it. */
+static bool raw_numbers(gvec_lw_ctx * ctx, const GVEC_Svg_Attribute * a, const double ** out, size_t * count) {
+  size_t n = a->raw_length, pos = 0, found = 0;
+  double * values = gvec_arena_array(&ctx->arena, n / 2 + 1, sizeof *values, sizeof *values);
+  if (!values) {
+    return false;
+  }
+  for (;;) {
+    while (pos < n && (gvec_svg_is_wsp((unsigned char) a->raw[pos]) || a->raw[pos] == ',')) {
+      pos++;
+    }
+    if (pos >= n) {
+      break;
+    }
+    if (!gvec_svg_scan_number(a->raw, n, &pos, &values[found], NULL)) {
+      return false;
+    }
+    found++;
+  }
+  *out = values;
+  *count = found;
+  return found > 0;
+}
+
 static GVEC_Result record_list(tctx * t, const GVEC_Svg_Instance * inst, const char * name, int kind, size_t start) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(e, name);
-  const GVEC_Svg_Length * items;
+  const GVEC_Svg_Length * items = NULL;
+  const double * numbers = NULL;
   size_t count;
-  if (!a || gvec_svg_attribute_class(a) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_lengths(a, &items, &count) || count == 0) {
+  if (a && strcmp(e->name, "tref") == 0) {
+    if (!raw_numbers(t->lw, a, &numbers, &count)) {
+      return GVEC_OK;
+    }
+  }
+  else if (!a || gvec_svg_attribute_class(a) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_lengths(a, &items, &count) || count == 0) {
     return GVEC_OK;
   }
   if (t->list_count == t->list_capacity) {
@@ -680,7 +711,7 @@ static GVEC_Result record_list(tctx * t, const GVEC_Svg_Instance * inst, const c
   l->start = start;
   l->end = SIZE_MAX;
   l->items = items;
-  l->numbers = NULL;
+  l->numbers = numbers;
   l->count = count;
   l->kind = kind;
   l->inst = inst;
@@ -692,7 +723,12 @@ static GVEC_Result record_rotate(tctx * t, const GVEC_Svg_Instance * inst, size_
   const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(e, "rotate");
   const double * numbers;
   size_t count;
-  if (!a || gvec_svg_attribute_class(a) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_numbers(a, &numbers, &count) || count == 0) {
+  if (a && strcmp(e->name, "tref") == 0) {
+    if (!raw_numbers(t->lw, a, &numbers, &count)) {
+      return GVEC_OK;
+    }
+  }
+  else if (!a || gvec_svg_attribute_class(a) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_numbers(a, &numbers, &count) || count == 0) {
     return GVEC_OK;
   }
   if (t->list_count == t->list_capacity) {
@@ -752,6 +788,49 @@ static GVEC_Result decoration_flags(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
   return GVEC_OK;
 }
 
+/* The element a `tref` names (by `href`, or `xlink:href`), or NULL. */
+static const GVEC_Svg_Element * tref_target(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * tref) {
+  const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(tref, "href");
+  if (!a) {
+    a = gvec_svg_element_find_attribute(tref, "xlink:href");
+  }
+  if (!a || !a->raw || a->raw[0] != '#') {
+    return NULL;
+  }
+  return gvec_svg_find_by_id(ctx->document, a->raw + 1);
+}
+
+/* The character data of a text element and of the spans in it, and, for a tref in it, of the text that names: appended to `buffer` (`*length`
+ * of `capacity` used). False when it does not fit. */
+static bool collect_text(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, size_t depth, char * buffer, size_t * length, size_t capacity) {
+  if (depth > 16) {
+    return true;
+  }
+  for (const GVEC_Svg_Node * node = gvec_svg_element_first_node(e); node; node = gvec_svg_node_next(node)) {
+    size_t n;
+    const char * text = gvec_svg_node_text(node, &n);
+    if (text) {
+      if (*length + n > capacity) {
+        return false;
+      }
+      memcpy(buffer + *length, text, n);
+      *length += n;
+      continue;
+    }
+    const GVEC_Svg_Element * child = gvec_svg_node_element(node);
+    if (!child || gvec_svg_element_conditional_false(child)) {
+      continue;
+    }
+    GVEC_Svg_Kind kind = gvec_svg_element_kind(child);
+    if (kind == GVEC_SVG_KIND_TSPAN || kind == GVEC_SVG_KIND_A) {
+      if (!collect_text(ctx, child, depth + 1, buffer, length, capacity)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited_preserve, size_t depth, const tstyle * parent) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -784,7 +863,25 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
     t->refused = true;
     return r;
   }
-  for (const GVEC_Svg_Node * node = gvec_svg_element_first_node(e); node; node = gvec_svg_node_next(node)) {
+  const bool is_tref = strcmp(e->name, "tref") == 0;
+  if (is_tref) {
+    /* A tref is the character data of the text it names, in the tref's own style; what is inside the tref is not drawn. */
+    const GVEC_Svg_Element * target = tref_target(ctx, e);
+    if (target && gvec_svg_element_kind(target) != GVEC_SVG_KIND_UNKNOWN) { /* An element of the SVG language: what is not one gives no text. */
+      size_t capacity = t->capacity - t->count;
+      char * buffer = gvec_arena_alloc(&ctx->arena, capacity + 1, 1);
+      size_t length = 0;
+      if (!buffer) {
+        return GVEC_ERR_OOM;
+      }
+      if (!collect_text(ctx, target, 0, buffer, &length, capacity)) {
+        t->refused = true;
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text a tref names has more characters than the lowering shapes");
+      }
+      add_characters(t, buffer, length, preserve, style);
+    }
+  }
+  for (const GVEC_Svg_Node * node = is_tref ? NULL : gvec_svg_element_first_node(e); node; node = gvec_svg_node_next(node)) {
     size_t n;
     const char * text = gvec_svg_node_text(node, &n);
     if (text) {
@@ -840,11 +937,7 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       t->pending_break = true;
       on_path = true;
     }
-    if (kind != GVEC_SVG_KIND_TSPAN && kind != GVEC_SVG_KIND_A && !on_path) {
-      if (strcmp(child->name, "tref") == 0) {
-        t->refused = true;
-        return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT, "tref is not lowered yet");
-      }
+    if (kind != GVEC_SVG_KIND_TSPAN && kind != GVEC_SVG_KIND_A && !on_path && strcmp(child->name, "tref") != 0) {
       continue; /* title, desc, metadata and what SVG does not put in text carry no characters. */
     }
     if (gvec_svg_element_conditional_false(child)) {
@@ -936,7 +1029,7 @@ static GVEC_Result apply_lists(tctx * t) {
     }
     for (size_t j = 0; j < l->count && l->start + j < l->end && l->start + j < t->count; j++) {
       double v;
-      if (!length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v)) {
+      if (l->items ? !length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v) : (v = l->numbers[j], false)) {
         return gvec_lw_refuse(t->lw, gvec_svg_instance_element(l->inst), GVEC_LOWER_STYLE, "a text position that needs the font or the window is not lowered");
       }
       tchar * c = &t->chars[l->start + j];
@@ -1275,7 +1368,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "no fonts were given, so text cannot be drawn");
   }
   /* The room the content can take: its bytes bound its characters, its elements bound its spans and lists. */
-  size_t bytes = 0, elements = 0;
+  size_t bytes = 0, elements = 0, trefs = 0;
   {
     const GVEC_Svg_Element * stack[TEXT_DEPTH_MAX + 2];
     size_t depth = 0;
@@ -1283,6 +1376,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     while (depth) {
       const GVEC_Svg_Element * cur = stack[--depth];
       elements++;
+      trefs += strcmp(cur->name, "tref") == 0;
       for (const GVEC_Svg_Node * node = gvec_svg_element_first_node(cur); node; node = gvec_svg_node_next(node)) {
         size_t n;
         if (gvec_svg_node_text(node, &n)) {
@@ -1303,6 +1397,11 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   t.style_capacity = elements + 1 + TEXT_DEPTH_MAX;
   t.list_capacity = 5 * (elements + 1);
   t.capacity = bytes + 1;
+  if (trefs) {
+    /* A tref brings the characters of the text it names: at most all the document's. */
+    size_t extra = ctx->document->text_bytes > TEXT_CHARACTERS_MAX / trefs ? TEXT_CHARACTERS_MAX : ctx->document->text_bytes * trefs;
+    t.capacity += extra;
+  }
   t.styles = gvec_arena_array(&ctx->arena, t.style_capacity, sizeof *t.styles, sizeof(void *));
   t.lists = gvec_arena_array(&ctx->arena, t.list_capacity, sizeof *t.lists, sizeof(void *));
   t.length_capacity = elements + 1;

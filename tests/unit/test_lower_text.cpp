@@ -282,13 +282,6 @@ TEST(LowerText, AHiddenSpanKeepsItsRoomAndDrawsNothing) {
   EXPECT_EQ(run.glyphs[0].x, 180.0);
 }
 
-TEST(LowerText, TrefIsRefusedUntilItIsLowered) {
-  Fonts f;
-  Lowered path;
-  LowerText(f, "", "A<tref href=\"#p\"/>", path);
-  EXPECT_NE(path.Refusal(GVEC_LOWER_TEXT), nullptr);
-}
-
 TEST(LowerText, EachGlyphHasItsRotateAndTheLastValueRepeats) {
   Fonts f;
   Lowered l;
@@ -554,6 +547,48 @@ TEST(LowerText, TextOnAPathWithAMethodOrASideOrATransformItDoesNotLowerIsRefused
   EXPECT_NE(right.Refusal(GVEC_LOWER_TEXT), nullptr);
   LowerOnPath(f, "transform=\"translate(5)\"", "", "A", moved);
   EXPECT_NE(moved.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
+namespace {
+bool LowerBody(Fonts & f, const std::string & body, Lowered & l) {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"", body), l, 0, 0, &options);
+  return true;
+}
+}  // namespace
+
+TEST(LowerText, ATrefIsTheCharacterDataOfTheElementItNamesInTheTrefsOwnStyle) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerBody(f, "<defs><text id=\"t\">AB<tspan>A</tspan></text></defs><text y=\"50\"><tref href=\"#t\" x=\"7\" fill=\"#ff0000\"/></text>", l));
+  ASSERT_EQ(l.Items(), (size_t) 1);
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 3);
+  EXPECT_DOUBLE_EQ(run.glyphs[0].x, 7.0);       // the tref's own x is read
+  EXPECT_GT(l.Item(0).paint.rgba[0], 0.9);      // and its own fill
+}
+
+TEST(LowerText, ATrefToATrefOrToNothingDrawsNothing) {
+  Fonts f;
+  Lowered nested, missing;
+  ASSERT_TRUE(LowerBody(f, "<defs><text id=\"a\"><tref href=\"#b\"/></text><text id=\"b\">A</text></defs><text y=\"50\"><tref href=\"#a\"/></text>", nested));
+  EXPECT_EQ(nested.Items(), (size_t) 0);
+  ASSERT_TRUE(LowerBody(f, "<text y=\"50\"><tref href=\"#nothing\"/></text>", missing));
+  EXPECT_EQ(missing.Items(), (size_t) 0);
+}
+
+TEST(LowerText, TextInAClipPathIsTheClipOfItsGlyphsOutlines) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerBody(f, "<clipPath id=\"c\"><text x=\"0\" y=\"80\">AB</text></clipPath><rect width=\"300\" height=\"100\" clip-path=\"url(#c)\"/>", l));
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  ASSERT_GE(l.Items(), (size_t) 3);
+  EXPECT_EQ(l.Item(0).kind, GSHSCENE_ITEM_CLIP_PUSH);
+  EXPECT_EQ(l.Item(1).kind, GSHSCENE_ITEM_FILL);
+  EXPECT_EQ(l.Item(2).kind, GSHSCENE_ITEM_CLIP_POP);
 }
 
 int main(int argc, char ** argv) {

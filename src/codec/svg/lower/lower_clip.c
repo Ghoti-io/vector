@@ -36,6 +36,7 @@
 #include <ghoti.io/shape-geometry/arc.h>
 #include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/clip_union.h>
+#include <ghoti.io/shape-scene/glyph.h>
 
 #include "lower_internal.h"
 
@@ -148,10 +149,31 @@ typedef struct clip_child {
   const GVEC_Svg_Element * shape;
   const GVEC_Svg_Instance * inst;
   GSHGEOM_Map pre;
+  bool preset;                      ///< A piece of text: its region is `resource` under `pre`, by `rule`, and nothing is read from `shape`.
+  const GSHSCENE_Resource * resource;
+  GSHGEOM_Fill_Rule rule;
 } clip_child;
 
+/* Room for one more entry of the list, which grows as the text in the clip brings pieces. */
+static GVEC_Result grow_list(gvec_lw_ctx * ctx, clip_child ** list, size_t * capacity, size_t count) {
+  if (count < *capacity) {
+    return GVEC_OK;
+  }
+  size_t grown = *capacity ? *capacity * 2 : 8;
+  clip_child * more = gvec_arena_alloc(&ctx->arena, grown * sizeof *more, sizeof(double));
+  if (!more) {
+    return GVEC_ERR_OOM;
+  }
+  if (count) {
+    memcpy(more, *list, count * sizeof *more);
+  }
+  *list = more;
+  *capacity = grown;
+  return GVEC_OK;
+}
+
 /* The shapes of a clipPath that are drawn, in document order. A `use` child names its shape (SVG 2, 14.3.5): one that names anything
- * else (a group, a symbol, nothing) is not a valid child and adds nothing. Text is refused. *refused is set when the element is. */
+ * else (a group, a symbol, nothing) is not a valid child and adds nothing. Text is its glyphs. *refused is set when the element is. */
 static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path, clip_child ** out, size_t * count, bool * refused) {
   gvec_lw_ctx * ctx = c->ctx;
   const GVEC_Svg_Element * e = c->element;
@@ -160,6 +182,7 @@ static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path
     n++;
   }
   clip_child * list = gvec_arena_alloc(&ctx->arena, (n ? n : 1) * sizeof *list, sizeof(double));
+  size_t capacity = n ? n : 1;
   if (!list) {
     return GVEC_ERR_OOM;
   }
@@ -172,8 +195,87 @@ static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path
     bool drawn;
     GVEC_Result r;
     if (ck == GVEC_SVG_KIND_TEXT) {
-      *refused = true;
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "text in a clipPath is not lowered yet");
+      /* Text is its glyphs' outlines (and its decorations' lines), each piece with the clip-rule of the span it is of. */
+      r = child_drawn(ctx, child, &ci, &drawn);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      if (!drawn) {
+        continue;
+      }
+      const GVEC_Svg_Element * own_target;
+      int own;
+      r = clip_reference(ctx, ci, &own, &own_target);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      if (own != 0) {
+        *refused = true;
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a text in a clipPath that has a clip-path of its own is not lowered yet");
+      }
+      GSHGEOM_Map text_map;
+      bool usable;
+      r = own_transform(ctx, ci, e, &text_map, &usable);
+      if (r != GVEC_OK || !usable) {
+        *refused = !usable;
+        return r;
+      }
+      gvec_lw_text laid;
+      r = gvec_lw_text_layout(ctx, ci, &laid, &usable);
+      if (r != GVEC_OK || !usable) {
+        *refused = !usable;
+        return r;
+      }
+      for (size_t k = 0; k < laid.count; k++) {
+        const gvec_lw_text_piece * piece = &laid.pieces[k];
+        const GSHSCENE_Resource * region = piece->run;
+        if (!piece->decoration) {
+          GSHGEOM_Path * outlines = NULL;
+          GSHSCENE_Result gr = gshscene_glyph_run_centerline(piece->run, NULL, NULL, &outlines, NULL);
+          if (gr == GSHSCENE_ERR_OOM) {
+            return GVEC_ERR_OOM;
+          }
+          if (gr != GSHSCENE_OK) {
+            *refused = true;
+            return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the outlines of the text in a clipPath could not be made");
+          }
+          GSHSCENE_Result ir = gshscene_store_intern_path(ctx->store, outlines, &region);
+          gshgeom_path_destroy(outlines);
+          if (ir == GSHSCENE_ERR_OOM) {
+            return GVEC_ERR_OOM;
+          }
+          if (ir != GSHSCENE_OK) {
+            *refused = true;
+            return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the outlines of the text in a clipPath are past what the waist can carry");
+          }
+          r = gvec_lw_hold(ctx, region);
+          if (r != GVEC_OK) {
+            return r;
+          }
+        }
+        GVEC_Svg_Style_Value rv;
+        r = gvec_lw_read_property(ctx, piece->inst, GVEC_SVG_PROP_CLIP_RULE, GVEC_LOWER_STYLE, &rv, &usable);
+        if (r != GVEC_OK || !usable) {
+          *refused = !usable;
+          return r;
+        }
+        r = grow_list(ctx, &list, &capacity, *count);
+        if (r != GVEC_OK) {
+          return r;
+        }
+        *out = list;
+        clip_child * member = &list[(*count)++];
+        member->shape = child;
+        member->inst = ci;
+        member->preset = true;
+        member->resource = region;
+        member->rule = gvec_lw_keyword_is(&rv, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
+        if (!gvec_lw_compose(&text_map, &piece->map, &member->pre)) {
+          *refused = true;
+          return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text in a clipPath is placed past the range the waist can carry");
+        }
+      }
+      continue;
     }
     if (ck == GVEC_SVG_KIND_USE) {
       r = child_drawn(ctx, child, &ci, &drawn);
@@ -250,9 +352,15 @@ static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path
         *refused = true;
         return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the use is placed past the range the waist can carry");
       }
+      r = grow_list(ctx, &list, &capacity, *count);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      *out = list;
       list[*count].shape = target;
       list[*count].inst = clone;
       list[*count].pre = placed;
+      list[*count].preset = false;
       (*count)++;
       continue;
     }
@@ -266,8 +374,14 @@ static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path
     if (!drawn) {
       continue;
     }
+    r = grow_list(ctx, &list, &capacity, *count);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    *out = list;
     list[*count].shape = child;
     list[*count].inst = ci;
+    list[*count].preset = false;
     if (gshgeom_map_identity(2, &list[*count].pre) != GSHGEOM_OK) {
       return GVEC_ERR_INTERNAL;
     }
@@ -344,6 +458,13 @@ static GVEC_Result add_union(chain * c, const clip_child * list, const GSHGEOM_M
   }
   size_t count = 0;
   for (size_t i = 0; i < shapes; i++) {
+    if (list[i].preset) {
+      members[count].resource = list[i].resource;
+      members[count].map = list[i].pre;
+      members[count].rule = list[i].rule;
+      count++;
+      continue;
+    }
     const GVEC_Svg_Element * child = list[i].shape;
     const GVEC_Svg_Instance * ci = list[i].inst;
     GVEC_Result r;
@@ -778,7 +899,7 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the clip's map is past the range the waist can carry");
     }
   }
-  if (shapes > 1) {
+  if (shapes > 1 || list[0].preset) {
     return add_union(c, list, &map, shapes, state);
   }
   r = own_transform(ctx, shape_inst, e, &t, &usable);

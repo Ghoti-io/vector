@@ -636,6 +636,13 @@ off); a glyph whose middle is beyond either end is not drawn. The text after the
 (clamped to the path's end). A `textPath` with no path to follow has no characters (a space after it is kept). Refused: a path with a
 `transform`, an element that is not a `path`, `method="stretch"`, `side="right"`, a decoration, and text on a path in vertical text.
 
+**H29 `tref`, and text in a clip.** A `tref` is a span whose characters are the character data of the element its `href` names, in the
+`tref`'s own style and with its own `x`, `y`, `dx`, `dy` and `rotate` (read from the attribute as written, since the document does not type the
+attributes of an element it does not know), under its own `xml:space`; what is inside the `tref`, a `tref` inside the named element, and an
+element that is not of the SVG language give no characters. Text in a `clipPath` is a member of the clip's union for each of its glyph runs
+(the run's outlines, made as the scene makes the centerline of a run, under the run's map) and for each line of a decoration, each with the
+`clip-rule` of the span it is of; its fill, stroke and paint do not matter, and a `clip-path` on the text is refused.
+
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
 stream, a document, a diagnostics list) is used by one thread at a time; different objects may be
