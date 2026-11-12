@@ -140,15 +140,14 @@ TEST(LowerPaint, AnInvalidForegroundIsRefusedBeforeAnythingIsDone) {
   gshscene_scene_destroy(scene);
 }
 
-TEST(LowerPaint, GradientAndPatternPaintsRefuseTheElementWhole) {
+TEST(LowerPaint, AGradientPaintThatCannotBeUsedRefusesTheElementWhole) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient><pattern id=\"p\"/></defs>"
-               "<path d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/><path d=\"M0 0H4V4H0Z\" fill=\"url(#p) red\"/>"),
+               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient></defs>"
+               "<path d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/>"),
       l);
   EXPECT_EQ(l.Items(), (size_t) 0);
   EXPECT_NE(l.Refusal(GVEC_LOWER_GRADIENT), nullptr);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_PATTERN), nullptr);
 }
 
 TEST(LowerPaint, AReferenceToNothingIsItsFallbackOrNone) {

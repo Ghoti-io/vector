@@ -122,6 +122,9 @@ typedef struct gvec_lw_table {
 
 #define GVEC_LW_NO_SITE UINT32_MAX
 
+/** Patterns whose tiles may be inside one another. */
+#define GVEC_LW_PATTERN_NESTING 8
+
 /** The structural limits of the scene the drawing is checked against, so that both emitters are given a tree that fits. */
 typedef struct gvec_lw_caps {
   size_t node_depth;    ///< Levels of nodes in a version, an instance's target counting as its child.
@@ -177,6 +180,8 @@ typedef struct gvec_lw_ctx {
   gvec_lw_table * tables;
   size_t table_count, table_capacity;
   struct gradient_cache * gradients; ///< What of each paint server does not depend on the element that uses it (lower_gradient.c).
+  const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
+  size_t pattern_depth;
   gvec_lw_node root;                 ///< The root of the tree: only its children are drawn.
 } gvec_lw_ctx;
 
@@ -253,6 +258,20 @@ typedef enum gvec_lw_paint_decision {
 /** The paint of `paint` for the element of `inst` with its alpha multiplied by `opacity` (AD-23); a pattern or a context paint of a pattern refuses the element. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
     double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
+/**
+ * A `pattern` paint for the element of `inst` (lower_pattern.c): the pattern resource, its tile a picture of the pattern's content
+ * made while the element is walked. A pattern that is not rendered (no size, a transform with no inverse, a box of no area, a pattern
+ * that paints its own content with itself) is `NONE` with a notice; one with no content is `NONE`.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_pattern_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
+    double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
+/**
+ * The children of `holder` as a picture of the store (a list of its own, closed and interned): the tile of a pattern. `*out` is a
+ * reference the caller releases, or NULL when a limit of the scene was reached (the element of the node that failed is refused).
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_emit_picture(gvec_lw_ctx * ctx, const gvec_lw_node * holder, const GSHSCENE_Resource ** out);
 
 /**
  * A `linearGradient` or `radialGradient` paint for the element of `inst` (lower_gradient.c): the gradient resource, with the

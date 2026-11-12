@@ -509,7 +509,7 @@ rotated or skewed shape is boxed by its segments, one with an arc by its box, `d
 do not. A group that holds a `use`, text, an image or a nested viewport is refused with `clip-path`, as is a transform that needs a box of
 its own. A gradient that `context-fill` or `context-stroke` names is placed in the box of the context element, in that element's user
 space: for a marker, the shape the marker is on (the picture's placement and the drawn shape's own map are undone), for a `use`, what its
-referent draws, moved by `x` and `y`. A paint a shape takes from an outer context, or a pattern, stays refused.
+referent draws, moved by `x` and `y`. A paint a shape takes from an outer context stays refused, and so does a pattern one.
 
 The same box sizes a document that gives no size. With no `viewBox`, a missing `width` is the right edge of the drawing and a missing `height`
 its bottom edge, from the origin, with each stroke reaching half its width past its shape (a join or cap that reaches further is not counted):
@@ -528,6 +528,18 @@ fallback, when the paint has one. A paint with no fallback is `none` either way.
 **H16 A negative size on the root.** A negative `width` or `height` of the root `svg` is an error and nothing is drawn, with the notice that
 rendering is disabled, as for a size of zero. SVG 1.1 says it is an error, SVG 2 is silent on a negative one, and the browsers and `resvg`
 all draw nothing, so there is no flag. A negative size on a nested `svg` or a shape is as it was.
+
+**H17 Patterns.** A `pattern` paint on a fill or a stroke is the waist's pattern resource. The cell is `x`, `y`, `width` and `height` (read through the
+`href` chain, as are `patternUnits`, `patternContentUnits`, `patternTransform`, `viewBox` and `preserveAspectRatio`), the steps are the cell's size, both
+axes repeat, and `patternTransform` is the map from pattern space to the user space of the element painted. With `patternUnits` of `objectBoundingBox`
+(the default) the cell is a fraction of the element's box, a percentage being that over 100; in `userSpaceOnUse` a percentage is of the viewport. The
+tile is a picture of the content of the first pattern in the chain that has a child element, walked as the content of a picture, under the move to the
+cell's corner and then the viewBox's map into the cell, or the scale of the box when `patternContentUnits` is `objectBoundingBox` and there is no viewBox. A
+pattern of no width or height, of a transform with no inverse, or of a box with no area (with no fallback) is not rendered, with a notice, and paints
+nothing; a pattern with no content paints nothing and no notice. A pattern whose content paints with the pattern itself, at any depth, is a reference cycle: the style layer cuts the reference that closes it (a notice) and
+the paint reads as its fallback or none; the lowering also refuses to nest a pattern in its own tile, and patterns nest to eight deep and to the scene's picture depth. `overflow` of `visible` or `auto` asks the scene for the unclipped tile (SVG 2),
+which no reference engine draws; no case of the suite has content outside its cell, so none tells the two apart. A `context-fill` that names a pattern is
+refused (GVEC_LOWER_PATTERN). The pattern's items are not traced: a refusal inside a tile is reported for the element that has it.
 
 ## Threads
 

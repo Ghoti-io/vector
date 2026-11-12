@@ -24,6 +24,5 @@ structure/image/*	OUT_OF_SCOPE	the image element is a milestone 1 non-goal, read
 painting/image-rendering/*	OUT_OF_SCOPE	image rendering applies to the image element, a milestone 1 non-goal, read in a later milestone
 structure/style/*	OUT_OF_SCOPE	style sheets and selectors are a milestone 1 non-goal, read in a later milestone
 masking/mask/*	OUT_OF_SCOPE	masks are a milestone 1 non-goal, read in a later milestone
-paint-servers/pattern/*	OUT_OF_SCOPE	patterns are a milestone 1 non-goal, read in a later milestone
 painting/mix-blend-mode/*	OUT_OF_SCOPE	blend modes are a milestone 1 non-goal, read in a later milestone
 painting/isolation/*	OUT_OF_SCOPE	isolation exists for blend modes, a milestone 1 non-goal, read in a later milestone

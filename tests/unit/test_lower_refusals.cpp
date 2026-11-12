@@ -31,7 +31,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
   static const char * const square = "<path d=\"M0 0H4V4H0Z\"/>";
   const Case cases[] = {
       {"vector-effect", GVEC_LOWER_VECTOR_EFFECT, "\n<path d=\"M0 0H4V4H0Z\" stroke=\"red\" style=\"vector-effect: non-scaling-size\"/>", "path", 2, 0},
-      {"pattern", GVEC_LOWER_PATTERN, "<defs><pattern id=\"p\"/></defs>\n<path d=\"M0 0H4V4H0Z\" fill=\"url(#p)\"/>", "path", 2, 0},
+      {"pattern", GVEC_LOWER_PATTERN, "<defs><pattern id=\"p\" width=\"2\" height=\"2\"/><marker id=\"m\"><path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/></marker></defs>\n<path d=\"M10 10L30 10L30 30\" fill=\"url(#p)\" marker-start=\"url(#m)\"/>", "path", 1, 0},
       {"clip-path", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path shape", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\" style=\"clip-path: inset(1px)\"/><rect width=\"2\" height=\"2\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path group", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<g clip-path=\"url(#c)\"><path d=\"M0 0H4V4H0Z\"/></g>", "g", 2, 0},
@@ -87,7 +87,7 @@ TEST(LowerRefusals, TheExpansionLimitIsReportedAtTheUse) {
 TEST(LowerRefusals, ASinkSeenElementIsRefusedOnceHoweverOftenItIsDrawn) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><pattern id=\"g\"/><path id=\"a\" d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
+               "<defs><filter id=\"g\"/><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
       l);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
 }

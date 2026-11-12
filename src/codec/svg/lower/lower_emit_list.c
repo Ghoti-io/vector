@@ -151,6 +151,35 @@ static GVEC_Result emit_nodes(gvec_lw_ctx * ctx, GSHSCENE_List * list, size_t ta
   return GVEC_OK;
 }
 
+GVEC_Result gvec_lw_emit_picture(gvec_lw_ctx * ctx, const gvec_lw_node * holder, const GSHSCENE_Resource ** out) {
+  *out = NULL;
+  GSHSCENE_List * picture_list = NULL;
+  GSHSCENE_Result g = gshscene_list_create(ctx->scene_allocator, ctx->scene_limits, ctx->store, &picture_list);
+  bool skipped;
+  GVEC_Result r = scene_failure(ctx, holder, g, &skipped);
+  if (r != GVEC_OK || skipped) {
+    return r;
+  }
+  size_t table = 0;
+  r = gvec_lw_table_new(ctx, &table);
+  if (r == GVEC_OK) {
+    r = emit_nodes(ctx, picture_list, table, holder->first);
+  }
+  const GSHSCENE_Resource * picture = NULL;
+  if (r == GVEC_OK) {
+    g = gshscene_list_close(picture_list);
+    if (g == GSHSCENE_OK) {
+      g = gshscene_store_intern_picture(ctx->store, picture_list, &picture);
+    }
+    r = scene_failure(ctx, holder, g, &skipped);
+  }
+  gshscene_list_destroy(picture_list);
+  if (r == GVEC_OK && !skipped) {
+    *out = picture;
+  }
+  return r;
+}
+
 GVEC_Result gvec_lw_emit_list(gvec_lw_ctx * ctx, GSHSCENE_List * list) {
   size_t table = 0;
   GVEC_Result r = gvec_lw_table_new(ctx, &table);

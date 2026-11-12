@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!-- A pattern is a tile of its content on a lattice: in the box's fractions and in user units, with a transform, a viewBox, an href chain, a nested pattern and a stroke (G7). -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="96" height="96" viewBox="0 0 96 96">
+  <defs>
+    <pattern id="boxed" width="0.25" height="0.25"><rect width="8" height="8" fill="#c0392b"/><rect x="8" y="8" width="8" height="8" fill="#2980b9"/></pattern>
+    <pattern id="user" patternUnits="userSpaceOnUse" x="2" y="3" width="12" height="12" patternTransform="rotate(30) scale(0.8)"><circle cx="6" cy="6" r="4" fill="#27ae60"/></pattern>
+    <pattern id="scaled" patternContentUnits="objectBoundingBox" width="0.5" height="0.5"><rect width="0.2" height="0.2" fill="#8e44ad"/></pattern>
+    <pattern id="viewbox" patternUnits="userSpaceOnUse" width="16" height="16" viewBox="0 0 4 4"><path d="M0 0H4V2H2V4H0Z" fill="#f39c12"/></pattern>
+    <pattern id="chain" xlink:href="#viewbox" width="8" height="8"/>
+    <pattern id="inner" patternUnits="userSpaceOnUse" width="4" height="4"><rect width="2" height="2" fill="#16a085"/></pattern>
+    <pattern id="nested" patternUnits="userSpaceOnUse" width="16" height="16"><rect width="16" height="16" fill="url(#inner)" fill-opacity="0.8"/></pattern>
+    <pattern id="empty" width="8" height="8"/>
+  </defs>
+  <rect x="4" y="4" width="40" height="40" fill="url(#boxed)"/>
+  <rect x="52" y="4" width="40" height="40" fill="url(#user)" stroke="#34495e"/>
+  <rect x="4" y="52" width="40" height="40" fill="url(#scaled)"/>
+  <path d="M52 52H92V92H52Z" fill="url(#chain)"/>
+  <path d="M56 56H88V88H56Z" fill="none" stroke="url(#nested)" stroke-width="6"/>
+  <rect x="8" y="8" width="4" height="4" fill="url(#empty)"/>
+</svg>
