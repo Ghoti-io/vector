@@ -47,6 +47,8 @@
 #include <ghoti.io/vector/svg.h>
 
 #include "../../../core/core_internal.h"
+#include <ghoti.io/font/face.h>
+
 #include "../svg_arena.h"
 #include "../svg_doc.h"
 
@@ -337,6 +339,30 @@ typedef enum gvec_lw_clip_state {
   GVEC_LW_CLIP_ALL,      ///< The clip holds nothing, so nothing of the element is seen.
   GVEC_LW_CLIP_REFUSED   ///< The element is refused (already reported).
 } gvec_lw_clip_state;
+
+/**
+ * A face of the fonts for `codepoint`, in the style given (`weight` 1 to 1000, `italic` 0 normal, 1 italic, 2 oblique, `width` in percent):
+ * the first family of the list that has a face that maps it, else any face of the set that does. `*found` is false when none does.
+ * The face is owned by the fonts and is open for their life.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_fonts_face(const GVEC_Fonts * fonts, const char * const * families, size_t family_count, double weight,
+    int italic, double width, uint32_t codepoint, const GFNT_Face ** out, bool * found);
+
+/** The face resource of `face` in `store`, with a reference the caller releases (the scene font is made on first use and kept). */
+GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
+    const GVEC_Fonts * fonts, const GFNT_Face * face, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);
+
+/** The glyph runs of a `text` element, each in the text's own space (the origin is the start of the text chunk, y down). */
+typedef struct gvec_lw_text {
+  const GSHSCENE_Resource ** pieces; ///< The runs (held by the context), one for each face the text used; empty when nothing is drawn.
+  size_t count;
+} gvec_lw_text;
+
+/**
+ * Shape the character data of the `text` element of `inst` with the fonts of the options (lower_text.c). `*usable` is false when the
+ * element was refused (and reported). Nothing is drawn for a text with no characters: `count` is 0.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable);
 
 /** What `mask` makes of an element. */
 typedef enum gvec_lw_mask_state {

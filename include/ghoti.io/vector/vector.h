@@ -38,6 +38,7 @@
 #include <ghoti.io/vector/allocator.h>
 #include <ghoti.io/vector/codec.h>
 #include <ghoti.io/vector/core.h>
+#include <ghoti.io/vector/fonts.h>
 #include <ghoti.io/vector/lower.h>
 #include <ghoti.io/vector/stream.h>
 #include <ghoti.io/vector/style.h>

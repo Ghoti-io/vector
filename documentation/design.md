@@ -567,6 +567,19 @@ mask, blend or isolation) makes no group, so its children blend with what was pa
 the operator source-over. The waist drops a group node that is all defaults (it is a container, and a list would push a layer for it where an edit
 would not), so the isolated group names the space it blends in, sRGB-encoded as CSS blends, which keeps it a group in both.
 
+**H21 Text: fonts and glyph runs.** The caller gives the fonts (`GVEC_Fonts` over a `GFNT_FontSet`; the library scans nothing and reads no
+environment, so a drawing of text is a function of the document and the fonts). A `text` element with only character data is shaped with
+`gfnt_faces_shape_bidi` over the faces its characters need: for each character, the first name of the `font-family` list that has a face
+mapping it (the generic families are the set's aliases), else the set's `serif`, else any face that maps it, in the weight, style and width the
+cascade gives; the faces are listed in the order they are first needed and the shaper gives a character to the first of them that maps its whole
+cluster. A glyph run of the waist has one face, so text that falls back to another face is several runs, each filled with the element's paint, and
+the pen's advance runs on across them. The runs are unhinted (the references draw outlines), the size is `font-size` in user units, the text
+chunk's start is the element's `x` and `y`, `text-anchor` moves the whole line by the whole advance, and white space is `xml:space`'s (stripped
+and collapsed by default, kept as spaces when preserved). The face is interned in the scene through `font`'s glyph provider, so the `GVEC_Fonts`
+must outlive the scene. Whatever a later story of milestone 3 lowers (spans, position lists, `dx` and `dy`, `rotate`, `textLength`, spacing,
+`font-variant` and `font-kerning`, a decoration, a baseline, a writing mode, a direction, a stroke, a gradient or a pattern) refuses the element
+whole.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a

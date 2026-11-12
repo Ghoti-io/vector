@@ -30,7 +30,7 @@ PROJECT := vector
 # The libraries this one depends on, by the end of the milestone: the fourth
 # field of its line in suite/libraries.txt, without the optional ones.
 # Each is found by pkg-config and is a hard error when it is not.
-DEPS := cutil compress text shape-scene shape-geometry color math
+DEPS := cutil compress text shape-scene shape-geometry color math font
 
 # The libraries whose headers this one may include and whose shared objects it
 # may link (check-edges), as a regular expression alternation. Itself is always
@@ -40,7 +40,7 @@ DEPS := cutil compress text shape-scene shape-geometry color math
 # shape-scene is a front end's only edge into the shape family; every sink
 # (shape-cpu and the rest) stays outside the list, which is how check-edges
 # enforces that this library never links or includes one.
-EDGES_ALLOWED := cutil|compress|text|shape-scene|shape-geometry|color|math
+EDGES_ALLOWED := cutil|compress|text|shape-scene|shape-geometry|color|math|font
 
 # no, for every library: nothing is exempt from check-libm; elementary
 # functions come from math. Anything else fails check-gates.
@@ -415,7 +415,7 @@ run-examples: $(EXAMPLES) ## Build and run every example; fail on one that exits
 # the shared object's NEEDED list, none of which see these). They are installed
 # before this library in the suite's order; a missing one is a hard error here,
 # naming the fix, and only for the targets that build the runner.
-CONF_DEPS := shape-cpu shape-geometry shape-scene image
+CONF_DEPS := shape-cpu shape-geometry shape-scene image font
 CONF_PCS := $(foreach d,$(CONF_DEPS),ghoti.io-$(d)$(BRANCH))
 CONF_RUNNER := $(APP_DIR)/conformance/runner$(EXE_EXTENSION)
 CONF_SOURCES := $(wildcard tests/conformance/*.c)

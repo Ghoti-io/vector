@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ghoti.io/font/discover.h>
 #include <ghoti.io/image/image.h>
 #include <ghoti.io/shape-cpu/shape-cpu.h>
 #include <ghoti.io/shape-scene/shape-scene.h>
@@ -56,6 +57,7 @@
 
 static int g_failed;
 static const char * g_ppm_dir;
+static GVEC_Fonts * g_fonts; /* The test font of tests/data/fonts, beside the goldens' directory; text in a fixture is drawn with it. */
 
 static void fail(const char * name, const char * what) {
   fprintf(stderr, "lower_gate: %s: %s\n", name, what);
@@ -241,11 +243,12 @@ static void check_fixture(const char * path, const char * golden_dir, int update
   GVEC_Lower_Options options;
   memset(&options, 0, sizeof options);
   options.store = gshscene_scene_store(scene);
+  options.fonts = g_fonts;
   if (gvec_doc_lower_list(doc, &options, list, &by_list) != GVEC_OK || gshscene_list_close(list) != GSHSCENE_OK) {
     fail(name, "lowering into a list");
     goto done;
   }
-  if (gshscene_scene_open_edit(scene, NULL, &edit) != GSHSCENE_OK || gvec_doc_lower_edit(doc, NULL, edit, &by_edit) != GVEC_OK ||
+  if (gshscene_scene_open_edit(scene, NULL, &edit) != GSHSCENE_OK || gvec_doc_lower_edit(doc, &options, edit, &by_edit) != GVEC_OK ||
       gshscene_scene_publish(scene, edit, NULL, &version) != GSHSCENE_OK || gshscene_version_list(version, &emitted) != GSHSCENE_OK) {
     fail(name, "lowering into an edit and publishing it");
     goto done;
@@ -345,9 +348,22 @@ int main(int argc, char ** argv) {
     fprintf(stderr, "usage: lower_gate [--update] [--ppm DIR] --golden DIR FIXTURE.svg...\n");
     return 2;
   }
+  /* The test font is beside the goldens' directory (tests/golden/lower, tests/data/fonts); a document with text has none without it. */
+  GFNT_FontSet * font_set = NULL;
+  {
+    char dir[1024];
+    snprintf(dir, sizeof dir, "%s/../../data/fonts", golden_dir);
+    const char * dirs[1] = {dir};
+    static const GFNT_FontAlias aliases[] = {{"sans-serif", "Vector Test"}, {"serif", "Vector Test"}};
+    if (gfnt_fontset_scan(dirs, 1, aliases, 2, NULL, &font_set, NULL) == GFNT_OK && gvec_fonts_new(font_set, NULL, &g_fonts) != GVEC_OK) {
+      g_fonts = NULL;
+    }
+  }
   for (int i = first; i < argc; i++) {
     check_fixture(argv[i], golden_dir, update);
   }
+  gvec_fonts_free(g_fonts);
+  gfnt_fontset_free(font_set);
   if (!g_failed) {
     printf("lower_gate: %d fixtures, lists equal, rasters equal%s\n", argc - first, update ? ", goldens written" : ", goldens match");
   }

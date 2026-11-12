@@ -912,6 +912,121 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
 }
 
 //-----------------------------------------------------------------------------
+// `text`
+//-----------------------------------------------------------------------------
+
+/* The first value of a coordinate list attribute (`x`, `y`) in user units: 0 when it has none; false when it needs the font or the window. */
+static bool first_coordinate(const GVEC_Svg_Instance * inst, const char * name, bool horizontal, double * out) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(e, name);
+  const GVEC_Svg_Length * items;
+  size_t count;
+  *out = 0;
+  if (!a || gvec_svg_attribute_class(a) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_lengths(a, &items, &count) || count == 0) {
+    return true;
+  }
+  if (items[0].unit == GVEC_SVG_UNIT_PERCENT) {
+    double vw, vh;
+    gvec_svg_instance_viewport(inst, &vw, &vh);
+    *out = items[0].value * (horizontal ? vw : vh) / 100.0;
+    return true;
+  }
+  return gvec_lw_absolute_length(&items[0], out);
+}
+
+/* `text`: its character data as glyph runs, filled. Spans, a stroke and a paint server are lowered by the stories after this. */
+static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  common c;
+  GVEC_Result r = prepare(ctx, inst, frame, true, &c);
+  if (r != GVEC_OK || !c.draw) {
+    return r;
+  }
+  ctx->item_local = c.local;
+  ctx->item_crisp = false;
+  GVEC_Svg_Style_Value fv;
+  bool usable;
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_FILL, GVEC_LOWER_STYLE, &fv, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  if (fv.paint.kind == GVEC_SVG_PAINT_SERVER) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a gradient or a pattern on text is not lowered yet");
+  }
+  GSHSCENE_Paint paint;
+  GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
+  gvec_lw_paint_decision fill_decision;
+  r = fill_of(ctx, inst, &paint, &rule, &fill_decision);
+  if (r != GVEC_OK || fill_decision == GVEC_LW_PAINT_REFUSED) {
+    return r;
+  }
+  gvec_lw_stroke stroke;
+  r = gvec_lw_stroke_of(ctx, inst, &stroke);
+  if (r != GVEC_OK || stroke.decision == GVEC_LW_PAINT_REFUSED) {
+    return r;
+  }
+  GVEC_Svg_Style_Value sv;
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_STROKE, GVEC_LOWER_STYLE, &sv, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  if (stroke.decision == GVEC_LW_PAINT_DRAW || (sv.kind == GVEC_SVG_STYLE_PAINT && sv.paint.kind != GVEC_SVG_PAINT_NONE)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "stroked text is not lowered yet");
+  }
+  if (fill_decision != GVEC_LW_PAINT_DRAW) {
+    return GVEC_OK;
+  }
+  double x, y;
+  if (!first_coordinate(inst, "x", true, &x) || !first_coordinate(inst, "y", false, &y)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a text position that needs the font or the window is not lowered");
+  }
+  gvec_lw_text text;
+  r = gvec_lw_text_layout(ctx, inst, &text, &usable);
+  if (r != GVEC_OK || !usable || text.count == 0) {
+    return r;
+  }
+  GSHGEOM_Map move, placed;
+  if (gshgeom_map_translate(2, x, y, 0, &move) != GSHGEOM_OK || !gvec_lw_compose(&c.local, &move, &placed)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text's position leaves the range the waist can carry");
+  }
+  gvec_lw_node ** sequence = gvec_arena_alloc(&ctx->arena, text.count * sizeof *sequence, sizeof(void *));
+  if (!sequence) {
+    return GVEC_ERR_OOM;
+  }
+  for (size_t i = 0; i < text.count; i++) {
+    r = shape_node(ctx, e, &placed, text.pieces[i], &paint, rule, NULL, &sequence[i]);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    /* Each run of one text has its own node, told apart by its place among them. */
+    sequence[i]->key = gvec_lw_key(e->key, ctx->chain ^ (uint64_t) (i + 1) * UINT64_C(0x9E3779B97F4A7C15), GVEC_LW_ROLE_SHAPE);
+    sequence[i]->site = gvec_lw_new_site(ctx, e, sequence[i]->key);
+    if (sequence[i]->site == GVEC_LW_NO_SITE) {
+      return GVEC_ERR_OOM;
+    }
+  }
+  gvec_lw_node * group;
+  bool skip;
+  r = opacity_group(ctx, e, &c, &group, &skip);
+  if (r != GVEC_OK || skip) {
+    return r;
+  }
+  if (ctx->levels + 1 > ctx->caps.node_depth) {
+    r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the drawing nests deeper than the scene's limits allow");
+  }
+  else {
+    r = gvec_lw_append_all(ctx, TARGET(group, parent), sequence, text.count);
+  }
+  if (group) {
+    gvec_lw_wrap_leave(ctx);
+    if (r == GVEC_OK) {
+      r = gvec_lw_attach(ctx, parent, group);
+    }
+  }
+  return r;
+}
+
+//-----------------------------------------------------------------------------
 // Viewports: `svg`, and `symbol` drawn by a `use`
 //-----------------------------------------------------------------------------
 
@@ -1350,7 +1465,7 @@ static GVEC_Result lw_content(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     r = lw_shape(ctx, inst, frame, parent);
     break;
   case GVEC_SVG_KIND_TEXT:
-    r = lw_refused_kind(ctx, inst, GVEC_LOWER_TEXT, "text is not lowered yet", false);
+    r = lw_text(ctx, inst, frame, parent);
     break;
   case GVEC_SVG_KIND_IMAGE:
     r = lw_refused_kind(ctx, inst, GVEC_LOWER_IMAGE, "images are not lowered yet", true);

@@ -25,6 +25,7 @@ CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "load")
 CORPUS_STYLE = os.path.join(ROOT, "tests", "fuzz", "corpus", "style")
 CORPUS_LOWER = os.path.join(ROOT, "tests", "fuzz", "corpus", "lower")
 LOWER_FIXTURES = os.path.join(ROOT, "tests", "data", "svg-lower")
+FONTS = os.path.join(ROOT, "tests", "data", "fonts")
 
 SVG_NS = "http://www.w3.org/2000/svg"
 MINIMAL = ('<svg xmlns="%s" width="10" height="10"/>\n' % SVG_NS).encode()
@@ -359,11 +360,101 @@ def lower_corpus():
     return c
 
 
+def test_font(bold):
+    """A TrueType font of boxes, for the text tests: every character of ASCII from space to tilde maps to a glyph that is a rectangle as
+    wide as the glyph's advance less 50 units each side and as high as its code point says, so a shaped line is checked by arithmetic and
+    needs no real font. The bold face is wider (700 against 600 units) and says so in `OS/2`, so matching by weight has two faces to pick."""
+    upem = 1000
+    first, last = 32, 126
+    advance = 700 if bold else 600
+    glyphs = [b""]  # .notdef is filled in below
+    widths = [advance]
+
+    def box(x0, y0, x1, y1):
+        out = struct.pack(">hhhhh", 1, x0, y0, x1, y1) + struct.pack(">H", 3) + struct.pack(">H", 0)
+        out += bytes([1, 1, 1, 1])
+        points = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+        out += b"".join(struct.pack(">h", x - px) for (x, _), (px, _) in zip(points, ((0, 0),) + points))
+        out += b"".join(struct.pack(">h", y - py) for (_, y), (_, py) in zip(points, ((0, 0),) + points))
+        return out + (b"\0" if len(out) % 2 else b"")
+
+    glyphs[0] = box(50, 0, advance - 50, 700)
+    for cp in range(first, last + 1):
+        if cp == 32:
+            glyphs.append(b"")
+            widths.append(300)
+        else:
+            glyphs.append(box(50, 0, advance - 50, 400 + (cp % 8) * 50))
+            widths.append(advance)
+    glyf = b""
+    loca = [0]
+    for g in glyphs:
+        glyf += g
+        loca.append(len(glyf))
+    n = len(glyphs)
+    head = struct.pack(">IIIIHHQQhhhhHHhhh", 0x00010000, 0x00010000, 0, 0x5F0F3CF5, 0x000B, upem, 0, 0, 50, 0, advance, 750, 1 if bold else 0, 8, 2, 0, 0)
+    hhea = struct.pack(">IhhhH" + "h" * 11 + "H", 0x00010000, 800, -200, 0, advance, 50, 50, advance, 1, 0, 0, 0, 0, 0, 0, 0, n)
+    maxp = struct.pack(">IHHHHHHHHHHHHHH", 0x00010000, n, 4, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0)
+    hmtx = b"".join(struct.pack(">Hh", w, 50) for w in widths)
+    loca_t = b"".join(struct.pack(">H", o // 2) for o in loca)
+    # cmap format 4: one segment for the ASCII range, one for the end mark.
+    seg = [(first, last, (1 - first) & 0xFFFF), (0xFFFF, 0xFFFF, 1)]
+    sub = struct.pack(">HHHHHHH", 4, 16 + 8 * len(seg), 0, 2 * len(seg), 4, 1, 0)
+    sub += b"".join(struct.pack(">H", e) for _, e, _ in seg) + struct.pack(">H", 0)
+    sub += b"".join(struct.pack(">H", b) for b, _, _ in seg)
+    sub += b"".join(struct.pack(">H", d) for _, _, d in seg)
+    sub += b"".join(struct.pack(">H", 0) for _ in seg)
+    cmap = struct.pack(">HH", 0, 1) + struct.pack(">HHI", 3, 1, 12) + sub
+    style = "Bold" if bold else "Regular"
+
+    def name_rec(nid, text):
+        return (3, 1, 0x409, nid, text.encode("utf-16-be"))
+    recs = [name_rec(1, "Vector Test"), name_rec(2, style), name_rec(4, "Vector Test " + style), name_rec(6, "VectorTest-" + style)]
+    strings = b""
+    entries = b""
+    for plat, enc, lang, nid, data in recs:
+        entries += struct.pack(">HHHHHH", plat, enc, lang, nid, len(data), len(strings))
+        strings += data
+    name = struct.pack(">HHH", 0, len(recs), 6 + 12 * len(recs)) + entries + strings
+    os2 = struct.pack(">HhHHH" + "h" * 11, 3, advance, 700 if bold else 400, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    os2 += bytes(10) + struct.pack(">IIII", 0, 0, 0, 0) + b"VCTR" + struct.pack(">HHHhhhHHII", 0x20 if bold else 0x40, first, last, 800, -200, 0, 800, 200, 1, 0)
+    os2 += struct.pack(">hhHHH", 500, 700, 0, 32, 1)
+    post = struct.pack(">IIhhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0)
+    tables = {b"OS/2": os2, b"cmap": cmap, b"glyf": glyf, b"head": head, b"hhea": hhea, b"hmtx": hmtx, b"loca": loca_t, b"maxp": maxp,
+              b"name": name, b"post": post}
+    tags = sorted(tables)
+    offset = 12 + 16 * len(tags)
+    directory = b""
+    body = b""
+
+    def checksum(data):
+        data += b"\0" * (-len(data) % 4)
+        return sum(struct.unpack(">%dI" % (len(data) // 4), data)) & 0xFFFFFFFF
+    for tag in tags:
+        data = tables[tag]
+        directory += tag + struct.pack(">III", checksum(data), offset + len(body), len(data))
+        body += data + b"\0" * (-len(data) % 4)
+    search = 1
+    log = 0
+    while search * 2 <= len(tags):
+        search *= 2
+        log += 1
+    font = struct.pack(">IHHHH", 0x00010000, len(tags), search * 16, log, len(tags) * 16 - search * 16) + directory + body
+    adjust = (0xB1B0AFBA - checksum(font)) & 0xFFFFFFFF
+    head_at = font.index(b"head" + struct.pack(">I", checksum(head)))
+    head_offset = struct.unpack(">I", font[head_at + 8:head_at + 12])[0]
+    return font[:head_offset + 8] + struct.pack(">I", adjust) + font[head_offset + 12:]
+
+
+def font_fixtures():
+    return {"vector-test.ttf": test_font(False), "vector-test-bold.ttf": test_font(True)}
+
+
 def main():
     check = "--check" in sys.argv[1:]
     fx = fixtures()
     bad = (write_all(DATA, fx, check) + write_all(CORPUS, corpus(fx), check) + write_all(CORPUS_STYLE, style_corpus(), check) +
-           write_all(CORPUS_LOWER, lower_corpus(), check))
+           write_all(CORPUS_LOWER, lower_corpus(), check) + write_all(FONTS, font_fixtures(), check))
     if check:
         if bad:
             for b in bad:

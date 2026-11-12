@@ -63,6 +63,7 @@
 #ifndef GHOTI_IO_GVEC_LOWER_H
 #define GHOTI_IO_GVEC_LOWER_H
 
+#include <ghoti.io/vector/fonts.h>
 #include <ghoti.io/vector/macros.h>
 
 #include <stddef.h>
@@ -198,6 +199,11 @@ typedef struct GVEC_Lower_Options {
    * would pass it is refused with GVEC_LOWER_LIMIT, whole, and reported.
    */
   size_t max_marker_instances;
+  /**
+   * The fonts text is drawn with (fonts.h): NULL for none, and then an element with text is refused (GVEC_LOWER_TEXT). They must outlive the
+   * scene the lowering makes.
+   */
+  const GVEC_Fonts * fonts;
   uint8_t _reserved[8];                  ///< Zero.
 } GVEC_Lower_Options;
 

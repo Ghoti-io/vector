@@ -275,6 +275,7 @@ typedef struct Options {
   Conf_Lower_Fn lower;
   int timeout_s;
   const char * dump;
+  GVEC_Fonts * fonts; ///< The corpus's fonts, under the generic families its references use.
 } Options;
 
 static const char * diag_first_refusal(const GVEC_Diagnostics * d, char * buf, size_t n) {
@@ -344,6 +345,7 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   memset(&lower, 0, sizeof lower);
   lower.store = store;
   lower.trace = trace;
+  lower.fonts = o->fonts;
   lower.flags = GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN | GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK; /* the reference images are resvg's */
   GVEC_Result lr = o->lower(doc, &lower, list, &diag);
   if (lr != GVEC_OK) {
@@ -549,7 +551,7 @@ static int usage(void) {
 }
 
 int main(int argc, char ** argv) {
-  Options o = {NULL, NULL, 0, 0, gvec_doc_lower_list, DEFAULT_TIMEOUT_S, NULL};
+  Options o = {NULL, NULL, 0, 0, gvec_doc_lower_list, DEFAULT_TIMEOUT_S, NULL, NULL};
   int have_diff = 0, have_ppm = 0;
   for (int i = 1; i < argc; i++) {
     const char * arg = argv[i];
@@ -587,6 +589,21 @@ int main(int argc, char ** argv) {
   if (!o.corpus || !o.list || !have_diff || !have_ppm || o.timeout_s <= 0) {
     return usage();
   }
+  /* The fonts of the corpus, with the generic families of the references' renderer (resvg's test configuration). */
+  GFNT_FontSet * fontset = NULL;
+  {
+    char dir[4096];
+    snprintf(dir, sizeof dir, "%s/fonts", o.corpus);
+    const char * dirs[1] = {dir};
+    static const GFNT_FontAlias aliases[] = {{"serif", "Noto Serif"}, {"sans-serif", "Noto Sans"}, {"cursive", "Yellowtail"},
+        {"fantasy", "Sedgwick Ave Display"}, {"monospace", "Noto Mono"}};
+    /* A corpus with no fonts (the self-test's) draws no text: every element with text is refused. */
+    if (gfnt_fontset_scan(dirs, 1, aliases, 5, NULL, &fontset, NULL) != GFNT_OK || gvec_fonts_new(fontset, NULL, &o.fonts) != GVEC_OK) {
+      gfnt_fontset_free(fontset);
+      fontset = NULL;
+      o.fonts = NULL;
+    }
+  }
   FILE * list = fopen(o.list, "r");
   if (!list) {
     fprintf(stderr, "runner: cannot read %s\n", o.list);
@@ -607,5 +624,7 @@ int main(int argc, char ** argv) {
     fflush(stdout);
   }
   fclose(list);
+  gvec_fonts_free(o.fonts);
+  gfnt_fontset_free(fontset);
   return 0;
 }

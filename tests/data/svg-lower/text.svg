@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- Text: a line in the test font (every glyph a box), anchors, a bold face, a size, a fill, and white space (G11). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80" font-family="sans-serif" font-size="12">
+  <text x="4" y="14">ABC abc</text>
+  <text x="60" y="30" text-anchor="middle" font-weight="bold" fill="#c0392b">Bold line</text>
+  <text x="116" y="46" text-anchor="end" font-size="8" fill="#2980b9" opacity="0.7">End anchor</text>
+  <text x="4" y="62" fill="#27ae60">  collapsed
+     white   space  </text>
+</svg>
