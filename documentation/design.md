@@ -618,6 +618,14 @@ shaped, joined and reordered as the font library does it; the glyphs of a chunk 
 every character the direction of `direction` and no reordering: the text is cut into its scripts, each is shaped in that direction, and the
 stretches are laid in that direction's order. `unicode-bidi: embed` and `isolate` change nothing a single line shows.
 
+**H27 Vertical text.** `writing-mode` of `tb`, `tb-rl`, `vertical-rl` or `vertical-lr` on the `text` element (it applies to no other
+element, and `rl` and `lr` are the legacy spellings of a direction and an order that change nothing here) lays the text out as if it were
+horizontal in a frame turned a quarter: the line runs down, the next one to the left. The lists of positions trade axes with the frame, and
+the glyphs are put back when the layout is done. The ideographs, kana, Hangul and full-width forms stand upright, shaped on the vertical axis
+(`vert`, the face's vertical advances and origins, which put each glyph on the middle of the line); every other character lies on its side,
+shaped as horizontal text and turned a quarter about its own origin, on the central baseline. A decoration on vertical text, and a stretched
+`textLength`, are refused.
+
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
 stream, a document, a diagnostics list) is used by one thread at a time; different objects may be

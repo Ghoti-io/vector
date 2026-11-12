@@ -20,4 +20,5 @@
   <g stroke="#c0392b" text-decoration="line-through"><text x="70" y="90" font-size="8" fill="#2c3e50">Strike <tspan text-decoration="overline" fill="#27ae60">over</tspan></text></g>
   <text x="190" y="100" font-size="8" direction="rtl">Right</text>
   <text x="100" y="100" font-size="8" direction="rtl" unicode-bidi="bidi-override" text-anchor="middle">Over</text>
+  <text x="150" y="110" font-size="8" writing-mode="tb">Down</text>
 </svg>

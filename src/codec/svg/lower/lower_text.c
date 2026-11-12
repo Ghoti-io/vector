@@ -288,7 +288,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     const char * initial[4]; ///< The keywords that mean the initial value; a length or a number of zero does too.
     const char * what;
   } checks[] = {
-      {GVEC_SVG_PROP_WRITING_MODE, {"horizontal-tb", "lr-tb", "lr", NULL}, "writing-mode"},
       {GVEC_SVG_PROP_FONT_SIZE_ADJUST, {"none", NULL, NULL, NULL}, "font-size-adjust"},
   };
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -320,11 +319,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     char value[32];
     if (chain_value(inst, "font-variant", true, true, value, sizeof value) && strcmp(value, "normal") != 0 && strcmp(value, "small-caps") != 0) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "this font-variant on text is not lowered yet");
-    }
-    /* `writing-mode` is read as written as well: the legacy values (`tb`) are not values of the property, and the cascade drops them. */
-    if (chain_value(inst, "writing-mode", true, true, value, sizeof value) && strcmp(value, "lr-tb") != 0 && strcmp(value, "lr") != 0 &&
-        strcmp(value, "horizontal-tb") != 0) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "writing-mode on text is not lowered yet");
     }
     if (chain_value(inst, "kerning", true, true, value, sizeof value) && strcmp(value, "auto") != 0 && strcmp(value, "0") != 0) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a kerning other than auto and 0 on text is not lowered yet");
@@ -416,6 +410,7 @@ typedef struct tctx {
   size_t decor_count, decor_capacity;
   bool last_space;
   bool refused;
+  bool vertical; ///< `writing-mode` of the text is vertical: the layout is made in a frame turned a quarter, and the glyphs are put back.
 } tctx;
 
 #define TEXT_DEPTH_MAX 64
@@ -909,6 +904,7 @@ typedef struct tglyph {
   double x, y;
   double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
   uint32_t style;
+  bool sideways;    ///< Vertical text: a glyph of a script that lies on its side.
   size_t ch;        ///< The character the glyph is of (its cluster's first).
   double base;      ///< The baseline the glyph sits on.
   double rotate;    ///< Degrees about the origin of the glyph at the start of the glyph's cluster.
@@ -916,6 +912,14 @@ typedef struct tglyph {
   uint32_t group;   ///< One more than the textLength entry that stretches the glyphs, or 0.
   double size;      ///< The em size the glyph is drawn at (a small capital is smaller).
 } tglyph;
+
+/* Whether a character stands upright in vertical text (Unicode's Vertical_Orientation U and Tu, in the blocks that matter): the ideographs,
+ * the kana, Hangul, the full-width forms and the punctuation of the CJK blocks. The others lie on their side. */
+static bool upright(uint32_t cp) {
+  return (cp >= 0x1100 && cp <= 0x11FF) || (cp >= 0x2E80 && cp <= 0x9FFF) || (cp >= 0xA960 && cp <= 0xA97F) || (cp >= 0xAC00 && cp <= 0xD7FF) ||
+      (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFE10 && cp <= 0xFE1F) || (cp >= 0xFE30 && cp <= 0xFE6F) || (cp >= 0xFF00 && cp < 0xFF61) || (cp >= 0xFFE0 && cp <= 0xFFEF) ||
+      (cp >= 0x20000 && cp <= 0x3FFFF) || (cp >= 0x1B000 && cp <= 0x1B16F);
+}
 
 /* The script a character belongs to for the stretches of an override: 1 Arabic, 2 Hebrew, 3 Devanagari, 0 for any other (it joins its neighbor). */
 static int script_class(uint32_t cp) {
@@ -1014,14 +1018,29 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   shape.feature_count = feature_count;
   /* The stretches shaped on their own, in the order they are drawn: the whole text (the bidirectional algorithm orders it), or, under an
    * override, its script runs, which are shaped each in the direction the override gives, and in that direction's order. */
-  size_t * seg = gvec_arena_array(&ctx->arena, 2 * (count + 1), sizeof *seg, sizeof *seg);
+  size_t * seg = gvec_arena_array(&ctx->arena, 3 * (count + 1), sizeof *seg, sizeof *seg);
   if (!seg) {
     return GVEC_ERR_OOM;
   }
   size_t seg_count = 0;
-  if (!st->bidi_override) {
-    seg[0] = 0;
-    seg[1] = count;
+#define SEG(n, f) seg[3 * (n) + (f)]
+  if (t->vertical) {
+    /* Upright characters are shaped on the vertical axis (mode 2), the others lie on their side and are shaped as horizontal text (mode 0). */
+    size_t start = 0;
+    for (size_t i = 1; i <= count; i++) {
+      if (i == count || upright(cps[i]) != upright(cps[start])) {
+        SEG(seg_count, 0) = start;
+        SEG(seg_count, 1) = i - start;
+        SEG(seg_count, 2) = upright(cps[start]) ? 2 : 0;
+        seg_count++;
+        start = i;
+      }
+    }
+  }
+  else if (!st->bidi_override) {
+    SEG(0, 0) = 0;
+    SEG(0, 1) = count;
+    SEG(0, 2) = 0;
     seg_count = 1;
   }
   else {
@@ -1030,8 +1049,9 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     for (size_t i = 0; i <= count; i++) {
       int cls = i < count ? script_class(cps[i]) : -1;
       if (i == count || (cls != 0 && cls_previous != 0 && cls != cls_previous)) {
-        seg[2 * seg_count] = start;
-        seg[2 * seg_count + 1] = i - start;
+        SEG(seg_count, 0) = start;
+        SEG(seg_count, 1) = i - start;
+        SEG(seg_count, 2) = 1;
         seg_count++;
         start = i;
       }
@@ -1040,26 +1060,28 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
     }
     for (size_t k = 0; st->rtl && k < seg_count / 2; k++) {
-      size_t a0 = seg[2 * k], a1 = seg[2 * k + 1];
-      seg[2 * k] = seg[2 * (seg_count - 1 - k)];
-      seg[2 * k + 1] = seg[2 * (seg_count - 1 - k) + 1];
-      seg[2 * (seg_count - 1 - k)] = a0;
-      seg[2 * (seg_count - 1 - k) + 1] = a1;
+      for (size_t f = 0; f < 3; f++) {
+        size_t tmp = SEG(k, f);
+        SEG(k, f) = SEG(seg_count - 1 - k, f);
+        SEG(seg_count - 1 - k, f) = tmp;
+      }
     }
   }
   GVEC_Result result = GVEC_OK;
   size_t last_base_ch = SIZE_MAX, last_base_index = 0;
   for (size_t si = 0; result == GVEC_OK && si < seg_count; si++) {
-  const size_t seg_from = seg[2 * si];
+  const size_t seg_from = SEG(si, 0), seg_len = SEG(si, 1);
+  const bool is_upright = SEG(si, 2) == 2;
   GFNT_FaceRuns runs;
   memset(&runs, 0, sizeof runs);
   GFNT_Result sr;
-  if (st->bidi_override) {
-    shape.direction = st->rtl ? GFNT_DIRECTION_RTL : GFNT_DIRECTION_LTR;
-    sr = gfnt_faces_shape(faces, face_count, cps + seg_from, seg[2 * si + 1], &shape, NULL, &runs, NULL);
+  if (SEG(si, 2) == 1 || is_upright) {
+    shape.direction = is_upright ? GFNT_DIRECTION_TTB : st->rtl ? GFNT_DIRECTION_RTL : GFNT_DIRECTION_LTR;
+    sr = gfnt_faces_shape(faces, face_count, cps + seg_from, seg_len, &shape, NULL, &runs, NULL);
   }
   else {
-    sr = gfnt_faces_shape_bidi(faces, face_count, cps, count, st->rtl ? GFNT_BIDI_RTL : GFNT_BIDI_LTR, &shape, NULL, &runs, NULL);
+    shape.direction = GFNT_DIRECTION_LTR; /* A vertical direction left by an upright stretch would shape this one as a single vertical run. */
+    sr = gfnt_faces_shape_bidi(faces, face_count, cps + seg_from, seg_len, st->rtl ? GFNT_BIDI_RTL : GFNT_BIDI_LTR, &shape, NULL, &runs, NULL);
   }
   if (sr != GFNT_OK) {
     return sr == GFNT_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the text could not be shaped with the fonts given");
@@ -1087,6 +1109,9 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     double ascent = (double) line.ascent * s, descent = (double) line.descent * s;
     double x_height = os2 && os2->x_height > 0 ? (double) os2->x_height * s : 0.5 * size;
     int baseline = st->alignment >= 0 ? st->alignment : st->dominant;
+    if (t->vertical && baseline == 0) {
+      baseline = 1; /* The central baseline is the one vertical text is set on. */
+    }
     double down = 0;
     switch (baseline) {
     case 1: down = (ascent + descent) / 2; break;
@@ -1110,26 +1135,35 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
       *pen_x += t->chars[ch].dx;
       *pen_y += t->chars[ch].dy;
+      const double advance = is_upright ? -(double) sg->y_advance * s : (double) sg->x_advance * s;
       t->chars[ch].dx = t->chars[ch].dy = 0; /* A character shaped into several glyphs moves the pen once. */
       tglyph * out = &glyphs[(*glyph_count)++];
       out->face = faces[fr->face];
       out->id = sg->glyph;
-      out->x = *pen_x + (double) sg->x_offset * s;
-      out->y = *pen_y + down - (double) sg->y_offset * s;
+      out->sideways = t->vertical && !is_upright;
+      if (is_upright) {
+        /* The glyph's vertical origin is where the pen is; in the frame that is turned, the offsets trade places. */
+        out->x = *pen_x - (double) sg->y_offset * s;
+        out->y = *pen_y - (double) sg->x_offset * s;
+      }
+      else {
+        out->x = *pen_x + (double) sg->x_offset * s;
+        out->y = *pen_y + down - (double) sg->y_offset * s;
+      }
       out->style = t->chars[ch].style; /* The paint of a glyph is that of the span its character is in. */
       out->cell_x0 = *pen_x;
-      out->cell_x1 = *pen_x + (double) sg->x_advance * s;
-      out->cell_y0 = *pen_y + down - (double) line.ascent * s;
-      out->cell_y1 = *pen_y + down - (double) line.descent * s;
+      out->cell_x1 = *pen_x + advance;
+      out->cell_y0 = is_upright ? *pen_y - size / 2 : *pen_y + down - (double) line.ascent * s;
+      out->cell_y1 = is_upright ? *pen_y + size / 2 : *pen_y + down - (double) line.descent * s;
       out->ch = ch;
       out->base = *pen_y + down;
       size_t head = ch;
       while (head > from && combining(t->chars[head].cp)) {
         head--; /* A mark turns with the character it is on: the angle is that of the start of the cluster. */
       }
-      out->rotate = t->chars[head].has_rotate ? t->chars[head].rotate : 0;
+      out->rotate = (t->chars[head].has_rotate ? t->chars[head].rotate : 0) + (out->sideways ? 90.0 : 0.0);
       size_t own_index = (size_t) (out - glyphs);
-      if (head == ch) {
+      if (head == ch || out->sideways) {
         last_base_ch = ch;
         last_base_index = own_index;
         out->pivot = own_index;
@@ -1139,7 +1173,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
       out->group = 0;
       out->size = size;
-      *pen_x += (double) sg->x_advance * s;
+      *pen_x += advance;
       /* The spacing after a character (a cluster of glyphs takes it once, after its last): letter-spacing, and word-spacing after a space. */
       bool last_of_cluster = g + 1 >= fr->run.count || fr->run.glyphs[g + 1].cluster != sg->cluster;
       if (last_of_cluster) {
@@ -1247,6 +1281,35 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   r = apply_lists(&t);
   if (r != GVEC_OK) {
     return r;
+  }
+  {
+    char mode[32];
+    t.vertical = chain_value(inst, "writing-mode", true, true, mode, sizeof mode) &&
+        (strcmp(mode, "tb") == 0 || strcmp(mode, "tb-rl") == 0 || strcmp(mode, "vertical-rl") == 0 || strcmp(mode, "vertical-lr") == 0);
+  }
+  if (t.vertical) {
+    /* The text is laid out as if it were horizontal in a frame turned a quarter (down is the line's direction, left is the next one's), and
+     * the glyphs are put back afterwards: the lists of positions trade axes with it. */
+    if (t.decor_count) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration on vertical text is not lowered yet");
+    }
+    for (size_t k = 0; k < t.length_count; k++) {
+      if (t.lengths[k].glyphs) {
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a stretched textLength on vertical text is not lowered yet");
+      }
+    }
+    for (size_t k = 0; k < t.count; k++) {
+      tchar * c = &t.chars[k];
+      bool hx = c->has_x, hy = c->has_y;
+      double x = c->x, y = c->y, dx = c->dx, dy = c->dy;
+      c->has_x = hy;
+      c->x = y;
+      c->has_y = hx;
+      c->y = -x;
+      c->dx = dy;
+      c->dy = -dx;
+      c->has_dy = c->dy != 0;
+    }
   }
   if (t.count == 0) {
     *usable = true;
@@ -1457,6 +1520,19 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
       }
     }
     i = j;
+  }
+  if (t.vertical) {
+    for (size_t g = 0; g < glyph_count; g++) {
+      tglyph * gl = &glyphs[g];
+      double x0 = -gl->cell_y1, x1 = -gl->cell_y0, y0 = gl->cell_x0, y1 = gl->cell_x1;
+      double nx = -gl->y, ny = gl->x;
+      gl->x = nx;
+      gl->y = ny;
+      gl->cell_x0 = x0;
+      gl->cell_x1 = x1;
+      gl->cell_y0 = y0;
+      gl->cell_y1 = y1;
+    }
   }
   /* The box the text's paint is placed in: the union of its glyphs' cells (the text's height is the font's, not the outlines'). */
   out->box.empty = 1;

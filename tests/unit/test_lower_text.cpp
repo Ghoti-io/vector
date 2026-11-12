@@ -407,10 +407,10 @@ TEST(LowerText, KerningCanBeSwitchedOffSmallCapsAskForTheFacesOwnAndAnInvalidLen
   EXPECT_EQ(run.glyphs[1].x, 60.0);
 }
 
-TEST(LowerText, WritingModeAndFontSizeAdjustAreRefusedUntilTheyAreLowered) {
+TEST(LowerText, DecorationOnVerticalTextAndFontSizeAdjustAreRefusedUntilTheyAreLowered) {
   Fonts f;
   Lowered tb, adjust;
-  LowerText(f, "writing-mode=\"tb\"", "A", tb);
+  LowerText(f, "writing-mode=\"tb\" text-decoration=\"underline\"", "A", tb);
   EXPECT_NE(tb.Refusal(GVEC_LOWER_TEXT), nullptr);
   LowerText(f, "font-size-adjust=\"0.5\"", "A", adjust);
   EXPECT_NE(adjust.Refusal(GVEC_LOWER_TEXT), nullptr);
@@ -490,6 +490,23 @@ TEST(LowerText, ABidiOverrideSetsTheCharactersInTheDirectionsOrder) {
   ASSERT_EQ(b.glyph_count, (size_t) 2);
   EXPECT_EQ(a.glyphs[0].id, b.glyphs[1].id);  // the glyphs come in the opposite order
   EXPECT_EQ(a.glyphs[1].id, b.glyphs[0].id);
+}
+
+TEST(LowerText, VerticalTextRunsDownTheLineAndItsLettersLieOnTheirSide) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run a, b;
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\"", "AB", l));
+  ASSERT_EQ(l.Items(), (size_t) 2);  // each turned glyph is a run of its own
+  ASSERT_TRUE(ReadRun(l, 0, a));
+  ASSERT_TRUE(ReadRun(l, 1, b));
+  EXPECT_DOUBLE_EQ(a.glyphs[0].y, 10.0);          // the first glyph is at the position of the text
+  EXPECT_GT(b.glyphs[0].y, a.glyphs[0].y);        // the next one is below it
+  EXPECT_DOUBLE_EQ(a.glyphs[0].x, b.glyphs[0].x); // on the same line
+  EXPECT_LT(a.glyphs[0].x, 50.0);                 // whose middle is at x: the baseline is left of it
+  Lowered h;
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"lr-tb\"", "AB", h));
+  ASSERT_EQ(h.Items(), (size_t) 1);               // the legacy horizontal values change nothing
 }
 
 int main(int argc, char ** argv) {
