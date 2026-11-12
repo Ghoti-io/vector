@@ -30,6 +30,9 @@
 #include <ghoti.io/vector/macros.h>
 
 #include <math.h>
+
+#include <ghoti.io/math/elementary.h>
+#include <ghoti.io/shape-geometry/along.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -365,6 +368,8 @@ typedef struct tchar {
   uint32_t cp;
   uint32_t style;
   bool has_x, has_y, has_dy, has_rotate;
+  bool chunk_start;   ///< A textPath begins or ends before the character: a new chunk.
+  uint32_t tpath;     ///< One more than the textPath the character is in, or 0.
   double x, y, dx, dy;
   double rotate; ///< Degrees, about the glyph's origin.
 } tchar;
@@ -396,6 +401,15 @@ typedef struct tdecor {
   unsigned flags; ///< 1 underline, 2 overline, 4 line-through.
 } tdecor;
 
+/** A `textPath`: the path it follows, where the text starts on it, and the path measured (by the layout). */
+#define TPATH_MAX 16
+typedef struct ttpath {
+  const GVEC_Svg_Element * path;
+  double offset;
+  bool percent;
+  GSHGEOM_Measured * measured;
+} ttpath;
+
 typedef struct tctx {
   gvec_lw_ctx * lw;
   tstyle * styles;
@@ -410,6 +424,10 @@ typedef struct tctx {
   size_t decor_count, decor_capacity;
   bool last_space;
   bool refused;
+  ttpath tpaths[TPATH_MAX];
+  size_t tpath_count;
+  uint32_t current_tpath;
+  bool pending_break;
   bool vertical; ///< `writing-mode` of the text is vertical: the layout is made in a frame turned a quarter, and the glyphs are put back.
 } tctx;
 
@@ -640,6 +658,9 @@ static void add_characters(tctx * t, const char * text, size_t n, bool preserve,
     t->chars[t->count].style = style;
     t->chars[t->count].has_x = t->chars[t->count].has_y = t->chars[t->count].has_dy = t->chars[t->count].has_rotate = false;
     t->chars[t->count].x = t->chars[t->count].y = t->chars[t->count].dx = t->chars[t->count].dy = t->chars[t->count].rotate = 0;
+    t->chars[t->count].chunk_start = t->pending_break;
+    t->chars[t->count].tpath = t->current_tpath;
+    t->pending_break = false;
     t->count++;
   }
 }
@@ -753,8 +774,8 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
   size_t start = t->count;
   size_t first_list = t->list_count;
   static const char * const names[4] = {"x", "y", "dx", "dy"};
-  for (int k = 0; r == GVEC_OK && k < 4; k++) {
-    r = record_list(t, inst, names[k], k, start);
+  for (int k = gvec_svg_element_kind(e) == GVEC_SVG_KIND_TEXT_PATH ? 2 : 0; r == GVEC_OK && k < 4; k++) {
+    r = record_list(t, inst, names[k], k, start); /* A textPath has no positions of its own. */
   }
   if (r == GVEC_OK) {
     r = record_rotate(t, inst, start);
@@ -775,10 +796,54 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       continue;
     }
     GVEC_Svg_Kind kind = gvec_svg_element_kind(child);
-    if (kind != GVEC_SVG_KIND_TSPAN && kind != GVEC_SVG_KIND_A) {
-      if (kind == GVEC_SVG_KIND_TEXT_PATH || strcmp(child->name, "tref") == 0) {
+    bool on_path = false;
+    if (kind == GVEC_SVG_KIND_TEXT_PATH) {
+      if (depth != 0) {
+        continue; /* A textPath is a child of the text only; one inside a span or another textPath has no characters. */
+      }
+      if (gvec_svg_element_conditional_false(child)) {
+        continue;
+      }
+      const GVEC_Svg_Element * target = gvec_svg_element_href_target(child);
+      if (!target || gvec_svg_element_kind(target) == GVEC_SVG_KIND_TEXT_PATH) {
+        t->last_space = false; /* What is left of the text is set as if the element had been a character that is not a space. */
+        continue; /* A path that is not there gives the text nowhere to be. */
+      }
+      const GVEC_Svg_Attribute * method = gvec_svg_element_find_attribute(child, "method");
+      const GVEC_Svg_Attribute * side = gvec_svg_element_find_attribute(child, "side");
+      if (gvec_svg_element_kind(target) != GVEC_SVG_KIND_PATH || gvec_svg_element_find_attribute(target, "transform") ||
+          (method && method->raw && strcmp(method->raw, "stretch") == 0) || (side && side->raw && strcmp(side->raw, "right") == 0)) {
         t->refused = true;
-        return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT, "text on a path and tref are not lowered yet");
+        return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT,
+            "a textPath on a shape, on a path with a transform, with method stretch or with side right is not lowered yet");
+      }
+      if (t->tpath_count == TPATH_MAX) {
+        t->refused = true;
+        return gvec_lw_refuse(ctx, child, GVEC_LOWER_LIMIT, "the text has more textPath elements than the lowering keeps");
+      }
+      ttpath * tp = &t->tpaths[t->tpath_count++];
+      memset(tp, 0, sizeof *tp);
+      tp->path = target;
+      const GVEC_Svg_Attribute * so = gvec_svg_element_find_attribute(child, "startOffset");
+      GVEC_Svg_Length sl;
+      if (so && gvec_svg_attribute_class(so) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_length(so, &sl)) {
+        if (sl.unit == GVEC_SVG_UNIT_PERCENT) {
+          tp->percent = true;
+          tp->offset = sl.value / 100.0;
+        }
+        else if (!gvec_lw_absolute_length(&sl, &tp->offset)) {
+          t->refused = true;
+          return gvec_lw_refuse(ctx, child, GVEC_LOWER_STYLE, "a startOffset in a unit that needs the font or the window is not lowered");
+        }
+      }
+      t->current_tpath = (uint32_t) t->tpath_count;
+      t->pending_break = true;
+      on_path = true;
+    }
+    if (kind != GVEC_SVG_KIND_TSPAN && kind != GVEC_SVG_KIND_A && !on_path) {
+      if (strcmp(child->name, "tref") == 0) {
+        t->refused = true;
+        return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT, "tref is not lowered yet");
       }
       continue; /* title, desc, metadata and what SVG does not put in text carry no characters. */
     }
@@ -805,6 +870,10 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       continue; /* A span that is not displayed has no characters and takes no room. */
     }
     r = walk(t, ci, preserve, depth + 1, &t->styles[style]);
+    if (on_path) {
+      t->current_tpath = 0;
+      t->pending_break = true;
+    }
     if (r != GVEC_OK || t->refused) {
       return r;
     }
@@ -904,6 +973,8 @@ typedef struct tglyph {
   double x, y;
   double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
   uint32_t style;
+  bool hidden;      ///< On a path: the glyph's middle is off the path's end, and it is not drawn.
+  double advance;   ///< The advance of the glyph alone, without the spacing after it.
   bool sideways;    ///< Vertical text: a glyph of a script that lies on its side.
   size_t ch;        ///< The character the glyph is of (its cluster's first).
   double base;      ///< The baseline the glyph sits on.
@@ -1152,6 +1223,8 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
       out->style = t->chars[ch].style; /* The paint of a glyph is that of the span its character is in. */
       out->cell_x0 = *pen_x;
+      out->advance = advance;
+      out->hidden = false;
       out->cell_x1 = *pen_x + advance;
       out->cell_y0 = is_upright ? *pen_y - size / 2 : *pen_y + down - (double) line.ascent * s;
       out->cell_y1 = is_upright ? *pen_y + size / 2 : *pen_y + down - (double) line.descent * s;
@@ -1193,7 +1266,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   return result;
 }
 
-GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable) {
+static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable, GSHGEOM_Measured ** held) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   memset(out, 0, sizeof *out);
   *usable = false;
@@ -1287,6 +1360,12 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     t.vertical = chain_value(inst, "writing-mode", true, true, mode, sizeof mode) &&
         (strcmp(mode, "tb") == 0 || strcmp(mode, "tb-rl") == 0 || strcmp(mode, "vertical-rl") == 0 || strcmp(mode, "vertical-lr") == 0);
   }
+  if (t.vertical && t.tpath_count) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "text on a path in vertical text is not lowered yet");
+  }
+  if (t.tpath_count && t.decor_count) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration on text on a path is not lowered yet");
+  }
   if (t.vertical) {
     /* The text is laid out as if it were horizontal in a frame turned a quarter (down is the line's direction, left is the next one's), and
      * the glyphs are put back afterwards: the lists of positions trade axes with it. */
@@ -1315,6 +1394,25 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     *usable = true;
     return GVEC_OK;
   }
+  for (size_t k = 0; k < t.tpath_count; k++) {
+    gvec_lw_geometry geometry;
+    const GSHSCENE_Resource * resource = NULL;
+    r = gvec_lw_path_of(ctx, t.tpaths[k].path, true, &geometry, &resource);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the path of a textPath is past what the waist can carry");
+    }
+    if (geometry == GVEC_LW_GEOMETRY_EMPTY || !resource) {
+      continue; /* A path with nothing on it: its text is not drawn. */
+    }
+    GSHGEOM_Result mr = gshgeom_measured_create(NULL, NULL, gshscene_resource_path(resource), 0, &held[k]);
+    if (mr != GSHGEOM_OK) {
+      return mr == GSHGEOM_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the path of a textPath could not be measured");
+    }
+    t.tpaths[k].measured = held[k];
+  }
   tglyph * glyphs = gvec_arena_array(&ctx->arena, t.count * 4 + 4, sizeof *glyphs, sizeof(double));
   size_t glyph_capacity = t.count * 4 + 4;
   if (!glyphs) {
@@ -1333,16 +1431,28 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   for (size_t i = 0; r == GVEC_OK && i < t.count;) {
     /* A text chunk begins at an absolute x or y (and at the start of the text). */
     size_t j = i + 1;
-    while (j < t.count && !t.chars[j].has_x && !t.chars[j].has_y) {
+    const uint32_t tp_index = t.chars[i].tpath;
+    while (j < t.count && t.chars[j].tpath == tp_index && !t.chars[j].chunk_start && !t.chars[j].has_x && (tp_index || !t.chars[j].has_y)) {
       j++;
     }
-    if (t.chars[i].has_x) {
-      pen_x = t.chars[i].x;
+    if (tp_index) {
+      /* On a path the text starts at its offset along it, on the path (the positions of the characters are not read). */
+      const ttpath * tpp = &t.tpaths[tp_index - 1];
+      double length = tpp->measured ? gshgeom_measured_length(tpp->measured) : 0;
+      /* An absolute x is a distance along the path (a y has no place on it). */
+      pen_x = t.chars[i].has_x ? t.chars[i].x : tpp->percent ? tpp->offset * length : tpp->offset;
+      pen_y = 0;
     }
-    if (t.chars[i].has_y) {
-      pen_y = t.chars[i].y;
+    else {
+      if (t.chars[i].has_x) {
+        pen_x = t.chars[i].x;
+      }
+      if (t.chars[i].has_y) {
+        pen_y = t.chars[i].y;
+      }
     }
     double start_x = pen_x;
+    const double before_x = pen_x, before_y = pen_y;
     chunk_first_glyph = glyph_count;
     for (size_t k = i; r == GVEC_OK && k < j;) {
       size_t m = k + 1;
@@ -1421,10 +1531,41 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
       anchor = 1.0 - anchor;
     }
     double shift = -anchor * (pen_x - start_x);
+    const double pen_x_end = pen_x + shift;
     for (size_t g = chunk_first_glyph; shift != 0 && g < glyph_count; g++) {
       glyphs[g].x += shift;
       glyphs[g].cell_x0 += shift;
       glyphs[g].cell_x1 += shift;
+    }
+    if (tp_index) {
+      /* Each glyph is put on the path, its middle at the distance its middle is along the line, turned to the path's direction there, the
+       * baseline on the path; a glyph whose middle is past an end of the path is not drawn. */
+      const GSHGEOM_Measured * m = t.tpaths[tp_index - 1].measured;
+      double length = m ? gshgeom_measured_length(m) : 0;
+      for (size_t g = chunk_first_glyph; g < glyph_count; g++) {
+        tglyph * gl = &glyphs[g];
+        double mid = gl->cell_x0 + gl->advance / 2;
+        GSHGEOM_Measured_Frame fr;
+        if (!m || !(mid >= 0 && mid <= length) || gshgeom_measured_at(m, mid, &fr) != GSHGEOM_OK || !fr.has_tangent) {
+          gl->hidden = true;
+          continue;
+        }
+        double ox = gl->x - mid, oy = gl->y;
+        double tx = fr.tangent.x, ty = fr.tangent.y;
+        gl->x = fr.point.x + ox * tx - oy * ty;
+        gl->y = fr.point.y + ox * ty + oy * tx;
+        gl->rotate += gmath_atan2(ty, tx) * (180.0 / 3.14159265358979323846);
+        gl->pivot = g;
+      }
+      /* The text after the path goes on from where the text on it ended (the end of the line is clamped to the path). */
+      pen_x = before_x;
+      pen_y = before_y;
+      GSHGEOM_Measured_Frame end;
+      double end_s = pen_x_end;
+      if (m && gshgeom_measured_at_clamped(m, end_s, &end) == GSHGEOM_OK) {
+        pen_x = end.point.x;
+        pen_y = end.point.y;
+      }
     }
     /* The lines of the decorations that cover characters of this chunk, across the glyphs of those characters. */
     for (size_t d = 0; d < t.decor_count; d++) {
@@ -1537,6 +1678,9 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   /* The box the text's paint is placed in: the union of its glyphs' cells (the text's height is the font's, not the outlines'). */
   out->box.empty = 1;
   for (size_t g = 0; g < glyph_count; g++) {
+    if (glyphs[g].hidden) {
+      continue;
+    }
     if (out->box.empty) {
       out->box.min.x = glyphs[g].cell_x0, out->box.max.x = glyphs[g].cell_x1;
       out->box.min.y = glyphs[g].cell_y0, out->box.max.y = glyphs[g].cell_y1;
@@ -1580,11 +1724,11 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     for (size_t g = 0; r == GVEC_OK && g < glyph_count;) {
       size_t h = g + 1;
       while (h < glyph_count && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group &&
-          glyphs[h].size == glyphs[g].size && glyphs[h].rotate == glyphs[g].rotate && (glyphs[g].rotate == 0 || glyphs[h].pivot == glyphs[g].pivot)) {
+          glyphs[h].size == glyphs[g].size && glyphs[h].hidden == glyphs[g].hidden && glyphs[h].rotate == glyphs[g].rotate && (glyphs[g].rotate == 0 || glyphs[h].pivot == glyphs[g].pivot)) {
         h++;
       }
       const tstyle * st = &t.styles[glyphs[g].style];
-      if (!st->visible) {
+      if (!st->visible || glyphs[g].hidden) {
         g = h;
         continue;
       }
@@ -1653,4 +1797,14 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   }
   *usable = true;
   return GVEC_OK;
+}
+
+GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable) {
+  GSHGEOM_Measured * held[TPATH_MAX];
+  memset(held, 0, sizeof held);
+  GVEC_Result r = text_layout(ctx, inst, out, usable, held);
+  for (size_t i = 0; i < TPATH_MAX; i++) {
+    gshgeom_measured_destroy(held[i]);
+  }
+  return r;
 }

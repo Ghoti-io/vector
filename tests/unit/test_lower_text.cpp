@@ -282,10 +282,10 @@ TEST(LowerText, AHiddenSpanKeepsItsRoomAndDrawsNothing) {
   EXPECT_EQ(run.glyphs[0].x, 180.0);
 }
 
-TEST(LowerText, TextPathIsRefusedUntilItIsLowered) {
+TEST(LowerText, TrefIsRefusedUntilItIsLowered) {
   Fonts f;
   Lowered path;
-  LowerText(f, "", "A<textPath href=\"#p\">B</textPath>", path);
+  LowerText(f, "", "A<tref href=\"#p\"/>", path);
   EXPECT_NE(path.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
@@ -507,6 +507,53 @@ TEST(LowerText, VerticalTextRunsDownTheLineAndItsLettersLieOnTheirSide) {
   Lowered h;
   ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"lr-tb\"", "AB", h));
   ASSERT_EQ(h.Items(), (size_t) 1);               // the legacy horizontal values change nothing
+}
+
+namespace {
+// A text whose content has a textPath on a straight path along x from 10 to 110 at y 50.
+bool LowerOnPath(Fonts & f, const std::string & path_attributes, const std::string & text_path, const std::string & content, Lowered & l) {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"",
+               "<path id=\"p\" d=\"M 10 50 L 110 50\" " + path_attributes + "/><text><textPath href=\"#p\" " + text_path + ">" + content + "</textPath></text>"),
+      l, 0, 0, &options);
+  return true;
+}
+}  // namespace
+
+TEST(LowerText, TextOnAPathIsSetAlongItWithEachGlyphCentredOnItsDistance) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerOnPath(f, "", "", "A", l));
+  ASSERT_GE(l.Items(), (size_t) 2);  // the path's own stroke, then the text
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  ASSERT_EQ(run.glyph_count, (size_t) 1);
+  EXPECT_NEAR(run.glyphs[0].y, 50.0, 1e-9);  // on the path: the glyph origin is on the line
+  EXPECT_NEAR(run.glyphs[0].x, 10.0, 1e-9);  // a glyph that starts at the path's start has its origin there
+}
+
+TEST(LowerText, StartOffsetMovesTheTextAlongThePathAndAGlyphPastTheEndIsNotDrawn) {
+  Fonts f;
+  Lowered shifted, past;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerOnPath(f, "", "startOffset=\"20\"", "A", shifted));
+  ASSERT_TRUE(ReadRun(shifted, 1, run));
+  EXPECT_NEAR(run.glyphs[0].x, 30.0, 1e-9);
+  ASSERT_TRUE(LowerOnPath(f, "", "startOffset=\"500\"", "A", past));
+  EXPECT_EQ(past.Items(), (size_t) 1);  // only the path
+}
+
+TEST(LowerText, TextOnAPathWithAMethodOrASideOrATransformItDoesNotLowerIsRefused) {
+  Fonts f;
+  Lowered stretch, right, moved;
+  LowerOnPath(f, "", "method=\"stretch\"", "A", stretch);
+  EXPECT_NE(stretch.Refusal(GVEC_LOWER_TEXT), nullptr);
+  LowerOnPath(f, "", "side=\"right\"", "A", right);
+  EXPECT_NE(right.Refusal(GVEC_LOWER_TEXT), nullptr);
+  LowerOnPath(f, "transform=\"translate(5)\"", "", "A", moved);
+  EXPECT_NE(moved.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
 int main(int argc, char ** argv) {

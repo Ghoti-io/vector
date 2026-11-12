@@ -21,4 +21,6 @@
   <text x="190" y="100" font-size="8" direction="rtl">Right</text>
   <text x="100" y="100" font-size="8" direction="rtl" unicode-bidi="bidi-override" text-anchor="middle">Over</text>
   <text x="150" y="110" font-size="8" writing-mode="tb">Down</text>
+  <path id="arc" d="M 20 150 C 40 180 80 180 100 150" fill="none" stroke="#bbbbbb" stroke-width="0.5"/>
+  <text font-size="8"><textPath href="#arc" startOffset="4">Along a curve</textPath></text>
 </svg>

@@ -626,6 +626,16 @@ the glyphs are put back when the layout is done. The ideographs, kana, Hangul an
 shaped as horizontal text and turned a quarter about its own origin, on the central baseline. A decoration on vertical text, and a stretched
 `textLength`, are refused.
 
+**H28 Text on a path.** A `textPath` that is a child of the `text` and names a `path` starts a chunk of its own, and so does the text after it.
+The chunk is laid out as a straight line (its glyphs, kerning, spacing, anchor and `textLength` as any chunk's) that starts at the
+`startOffset` along the path, or at an absolute `x` of its first character, which is a distance along the path too (a `y` has no place on it,
+and a `textPath` has no positions of its own). The path is measured (shape-geometry's measured path, so a curve's length is the arc length,
+and the subpaths run one after the other). Each glyph is then put with the middle of its advance at the distance of that middle along the
+line, turned to the direction of the path there, with its baseline on the path (a `dy`, a baseline shift and the dominant baseline move it
+off); a glyph whose middle is beyond either end is not drawn. The text after the `textPath` goes on from where the text on the path ended
+(clamped to the path's end). A `textPath` with no path to follow has no characters (a space after it is kept). Refused: a path with a
+`transform`, an element that is not a `path`, `method="stretch"`, `side="right"`, a decoration, and text on a path in vertical text.
+
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
 stream, a document, a diagnostics list) is used by one thread at a time; different objects may be
