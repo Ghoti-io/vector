@@ -591,6 +591,25 @@ TEST(LowerText, TextInAClipPathIsTheClipOfItsGlyphsOutlines) {
   EXPECT_EQ(l.Item(2).kind, GSHSCENE_ITEM_CLIP_POP);
 }
 
+TEST(LowerText, EmAndExInAListOfPositionsAreTheFontSizeAndHalfOfIt) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0.5em\" y=\"50\" dx=\"1ex\"", "A", l));
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].x, 100.0);  // half of 100, then half of 100
+}
+
+TEST(LowerText, ATextPathThatNamesWhatIsNoShapeHasNoCharacters) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerBody(f, "<text id=\"t\">A</text><text y=\"50\">B<textPath href=\"#t\">C</textPath></text>", l));
+  ASSERT_GE(l.Items(), (size_t) 2);
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 1);  // only the B
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -643,6 +643,10 @@ element that is not of the SVG language give no characters. Text in a `clipPath`
 (the run's outlines, made as the scene makes the centerline of a run, under the run's map) and for each line of a decoration, each with the
 `clip-rule` of the span it is of; its fill, stroke and paint do not matter, and a `clip-path` on the text is refused.
 
+**H30 What text does not read.** An `em` or an `ex` in a list of positions is the element's font size, or half of it. `glyph-orientation-horizontal`
+and `-vertical` are not read (SVG 2 dropped them, and the references ignore them); `font-size-adjust` refuses the text, as do the other
+refusals `refusals.md` lists for `GVEC_LOWER_TEXT`. A `textPath` whose `href` names something that is not a shape has no characters.
+
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
 stream, a document, a diagnostics list) is used by one thread at a time; different objects may be

@@ -19,8 +19,5 @@
 # that matches no case, a case matched by two rules, and a glob outside
 # OUT_OF_SCOPE.
 filters/*	OUT_OF_SCOPE	filters are milestone 1 non-goal, read in a later milestone
-text/font-size-adjust/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/glyph-orientation-horizontal/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/glyph-orientation-vertical/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 structure/image/*	OUT_OF_SCOPE	the image element is a milestone 1 non-goal, read in a later milestone
 painting/image-rendering/*	OUT_OF_SCOPE	image rendering applies to the image element, a milestone 1 non-goal, read in a later milestone

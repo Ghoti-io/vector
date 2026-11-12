@@ -908,7 +908,14 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       }
       const GVEC_Svg_Attribute * method = gvec_svg_element_find_attribute(child, "method");
       const GVEC_Svg_Attribute * side = gvec_svg_element_find_attribute(child, "side");
-      if (gvec_svg_element_kind(target) != GVEC_SVG_KIND_PATH || gvec_svg_element_find_attribute(target, "transform") ||
+      GVEC_Svg_Kind target_kind = gvec_svg_element_kind(target);
+      if (target_kind != GVEC_SVG_KIND_PATH && target_kind != GVEC_SVG_KIND_RECT && target_kind != GVEC_SVG_KIND_CIRCLE &&
+          target_kind != GVEC_SVG_KIND_ELLIPSE && target_kind != GVEC_SVG_KIND_LINE && target_kind != GVEC_SVG_KIND_POLYLINE &&
+          target_kind != GVEC_SVG_KIND_POLYGON) {
+        t->last_space = false;
+        continue; /* What is not a shape is no path to follow. */
+      }
+      if (target_kind != GVEC_SVG_KIND_PATH || gvec_svg_element_find_attribute(target, "transform") ||
           (method && method->raw && strcmp(method->raw, "stretch") == 0) || (side && side->raw && strcmp(side->raw, "right") == 0)) {
         t->refused = true;
         return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT,
@@ -1029,7 +1036,19 @@ static GVEC_Result apply_lists(tctx * t) {
     }
     for (size_t j = 0; j < l->count && l->start + j < l->end && l->start + j < t->count; j++) {
       double v;
-      if (l->items ? !length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v) : (v = l->numbers[j], false)) {
+      bool font_relative = l->items && (l->items[j].unit == GVEC_SVG_UNIT_EM || l->items[j].unit == GVEC_SVG_UNIT_EX);
+      if (font_relative) {
+        /* An em is the element's font size, an ex half of it (the references take the x-height so). */
+        GVEC_Svg_Style_Value fv;
+        bool ok;
+        GVEC_Result fr = read_style(t->lw, l->inst, GVEC_SVG_PROP_FONT_SIZE, &fv, &ok);
+        if (fr != GVEC_OK || !ok) {
+          t->refused = true;
+          return fr;
+        }
+        v = l->items[j].value * (fv.kind == GVEC_SVG_STYLE_LENGTH ? fv.number : 16.0) * (l->items[j].unit == GVEC_SVG_UNIT_EX ? 0.5 : 1.0);
+      }
+      else if (l->items ? !length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v) : (v = l->numbers[j], false)) {
         return gvec_lw_refuse(t->lw, gvec_svg_instance_element(l->inst), GVEC_LOWER_STYLE, "a text position that needs the font or the window is not lowered");
       }
       tchar * c = &t->chars[l->start + j];
