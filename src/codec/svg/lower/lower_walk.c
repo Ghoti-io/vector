@@ -33,6 +33,9 @@
 
 #include <ghoti.io/cutil/safemath.h>
 
+#include <ghoti.io/shape-geometry/path.h>
+#include <ghoti.io/shape-scene/glyph.h>
+
 #include "../../../codec/codec_internal.h"
 #include "../style/svg_style.h"
 #include "lower_internal.h"
@@ -915,8 +918,8 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
 // `text`
 //-----------------------------------------------------------------------------
 
-/* `text`: its content as glyph runs, each filled with the paint of the span it is of. A stroke and a paint server are lowered by a later
- * story, and refuse the element whole. */
+/* `text`: its content as glyph runs, each filled and stroked with the paint of the span it is of, in the span's paint order, under the
+ * span's opacity; a gradient or a pattern is placed in the box of the whole text. */
 static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   common c;
@@ -932,49 +935,118 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   if (r != GVEC_OK || !usable || text.count == 0) {
     return r;
   }
-  gvec_lw_node ** sequence = gvec_arena_alloc(&ctx->arena, text.count * sizeof *sequence, sizeof(void *));
+  ctx->paint_box = text.box;
+  gvec_lw_node ** sequence = gvec_arena_alloc(&ctx->arena, 2 * text.count * sizeof *sequence, sizeof(void *));
   if (!sequence) {
     return GVEC_ERR_OOM;
   }
   size_t n = 0;
   for (size_t i = 0; i < text.count; i++) {
     const GVEC_Svg_Instance * span = text.pieces[i].inst;
-    GVEC_Svg_Style_Value fv, sv;
-    r = gvec_lw_read_property(ctx, span, GVEC_SVG_PROP_FILL, GVEC_LOWER_STYLE, &fv, &usable);
+    const GVEC_Svg_Element * se = gvec_svg_instance_element(span);
+    GVEC_Svg_Style_Value v;
+    /* `text-rendering` of the text element (not of a span) says whether the glyphs are antialiased; `shape-rendering` does not affect text. */
+    r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TEXT_RENDERING, GVEC_LOWER_STYLE, &v, &usable);
     if (r != GVEC_OK || !usable) {
       return r;
     }
-    if (fv.paint.kind == GVEC_SVG_PAINT_SERVER) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a gradient or a pattern on text is not lowered yet");
-    }
-    r = gvec_lw_read_property(ctx, span, GVEC_SVG_PROP_STROKE, GVEC_LOWER_STYLE, &sv, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
-    }
-    if (sv.kind == GVEC_SVG_STYLE_PAINT && sv.paint.kind != GVEC_SVG_PAINT_NONE) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "stroked text is not lowered yet");
-    }
+    ctx->item_crisp = gvec_lw_keyword_is(&v, "optimizespeed");
+    ctx->paint_box_set = true;
     GSHSCENE_Paint paint;
     GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
     gvec_lw_paint_decision fill_decision;
     r = fill_of(ctx, span, &paint, &rule, &fill_decision);
-    if (r != GVEC_OK || fill_decision == GVEC_LW_PAINT_REFUSED) {
+    gvec_lw_stroke stroke;
+    memset(&stroke, 0, sizeof stroke);
+    if (r == GVEC_OK && fill_decision != GVEC_LW_PAINT_REFUSED) {
+      r = gvec_lw_stroke_of(ctx, span, &stroke);
+    }
+    ctx->paint_box_set = false;
+    if (r != GVEC_OK || fill_decision == GVEC_LW_PAINT_REFUSED || stroke.decision == GVEC_LW_PAINT_REFUSED) {
       return r;
     }
-    if (fill_decision != GVEC_LW_PAINT_DRAW) {
+    gvec_lw_node * fill_node = NULL;
+    gvec_lw_node * stroke_node = NULL;
+    if (fill_decision == GVEC_LW_PAINT_DRAW) {
+      r = shape_node(ctx, e, &c.local, text.pieces[i].run, &paint, rule, NULL, &fill_node);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+    if (stroke.decision == GVEC_LW_PAINT_DRAW) {
+      r = shape_node(ctx, e, &c.local, text.pieces[i].run, &stroke.paint, GSHGEOM_FILL_NONZERO, stroke.style, &stroke_node);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+    if (!fill_node && !stroke_node) {
       continue;
     }
-    r = shape_node(ctx, e, &c.local, text.pieces[i].run, &paint, rule, NULL, &sequence[n]);
-    if (r != GVEC_OK) {
-      return r;
+    gvec_lw_node * pair[2];
+    size_t parts = 0;
+    gvec_lw_part order[3] = {GVEC_LW_PART_FILL, GVEC_LW_PART_STROKE, GVEC_LW_PART_MARKERS};
+    if (fill_node && stroke_node) {
+      r = gvec_lw_paint_order(ctx, span, order, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
     }
-    /* Each run of one text has its own node, told apart by its place among them. */
-    sequence[n]->key = gvec_lw_key(e->key, ctx->chain ^ (uint64_t) (i + 1) * UINT64_C(0x9E3779B97F4A7C15), GVEC_LW_ROLE_SHAPE);
-    sequence[n]->site = gvec_lw_new_site(ctx, e, sequence[n]->key);
-    if (sequence[n]->site == GVEC_LW_NO_SITE) {
-      return GVEC_ERR_OOM;
+    bool used[3] = {false, false, false};
+    for (int k = 0; k < 3; k++) {
+      if (order[k] >= 3 || used[order[k]]) {
+        continue;
+      }
+      used[order[k]] = true;
+      if (order[k] == GVEC_LW_PART_FILL && fill_node) {
+        pair[parts++] = fill_node;
+      }
+      else if (order[k] == GVEC_LW_PART_STROKE && stroke_node) {
+        pair[parts++] = stroke_node;
+      }
     }
-    n++;
+    /* Each run has its own nodes, told apart by its place among them. */
+    uint64_t salt = (uint64_t) (i + 1) * UINT64_C(0x9E3779B97F4A7C15);
+    for (size_t k = 0; k < parts; k++) {
+      pair[k]->key = gvec_lw_key(e->key, ctx->chain ^ salt ^ (pair[k] == stroke_node ? UINT64_C(0xA5A5A5A5) : 0), pair[k] == stroke_node ? GVEC_LW_ROLE_STROKE : GVEC_LW_ROLE_SHAPE);
+      pair[k]->site = gvec_lw_new_site(ctx, e, pair[k]->key);
+      if (pair[k]->site == GVEC_LW_NO_SITE) {
+        return GVEC_ERR_OOM;
+      }
+    }
+    /* The opacity of a span other than the text itself is a group of its own around what the span paints. */
+    double span_opacity = 1;
+    if (se != e) {
+      r = gvec_lw_read_property(ctx, span, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+      span_opacity = v.kind == GVEC_SVG_STYLE_NUMBER ? v.number : 1;
+    }
+    if (span_opacity < 1) {
+      if (!(span_opacity > 0)) {
+        continue;
+      }
+      common cc = c;
+      cc.opacity = span_opacity;
+      cc.composite = 0;
+      cc.isolate = false;
+      gvec_lw_node * group;
+      bool skip;
+      r = opacity_group(ctx, se, &cc, &group, &skip);
+      if (r != GVEC_OK || skip) {
+        return r;
+      }
+      r = gvec_lw_append_all(ctx, group, pair, parts);
+      gvec_lw_wrap_leave(ctx);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      sequence[n++] = group;
+      continue;
+    }
+    for (size_t k = 0; k < parts; k++) {
+      sequence[n++] = pair[k];
+    }
   }
   if (n == 0) {
     return GVEC_OK;

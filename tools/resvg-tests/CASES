@@ -32,7 +32,6 @@ text/kerning/*	OUT_OF_SCOPE	this text property is read in a later story of miles
 text/lengthAdjust/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/letter-spacing/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/text-decoration/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/text-rendering/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/textLength/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/textPath/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/tref/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3

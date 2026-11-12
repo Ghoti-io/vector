@@ -583,7 +583,14 @@ first character's) times its whole advance. A glyph run of the waist has one fac
 unhinted (the references draw outlines), the size is `font-size` in user units, and the glyphs carry their absolute positions in the element's
 user space. The face is interned in the scene through `font`'s glyph provider, so the `GVEC_Fonts` must outlive the scene. Whatever a later story
 of milestone 3 lowers (`rotate`, `textLength`, spacing, `font-variant` and `font-kerning`, a decoration, a baseline, a writing mode, a direction,
-text on a path, `tref`, opacity on a span, a stroke, a gradient or a pattern) refuses the element whole.
+text on a path, `tref`) refuses the element whole.
+
+**H22 Paint on text.** Each run is filled and stroked with the paint of the span it is of, in that span's `paint-order` (the scene strokes a glyph run's
+centerline, so a stroke is an item over the same run); the opacity of a span other than the text element is a group around that span's runs; and
+a gradient or a pattern in the units of the bounding box is placed in the box of the whole text, whichever span is painted: the union of its
+glyphs' cells, each an advance wide and the face's ascent and descent high (the references measure a text's height by the font, not by the
+outlines). `text-rendering: optimizeSpeed` on the text element asks for no antialiasing; `shape-rendering` does not affect text, and
+`text-rendering` on a span is ignored.
 
 ## Threads
 

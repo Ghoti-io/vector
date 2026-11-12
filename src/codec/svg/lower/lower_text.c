@@ -209,22 +209,17 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       {GVEC_SVG_PROP_DIRECTION, {"ltr", NULL, NULL, NULL}, "direction"},
       {GVEC_SVG_PROP_UNICODE_BIDI, {"normal", NULL, NULL, NULL}, "unicode-bidi"},
       {GVEC_SVG_PROP_FONT_SIZE_ADJUST, {"none", NULL, NULL, NULL}, "font-size-adjust"},
-      {GVEC_SVG_PROP_OPACITY, {"1", NULL, NULL, NULL}, "opacity on a span"},
   };
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
-  bool span = gvec_svg_element_kind(e) != GVEC_SVG_KIND_TEXT;
   *clear = false;
   for (size_t i = 0; i < sizeof checks / sizeof checks[0]; i++) {
-    if (checks[i].prop == GVEC_SVG_PROP_OPACITY && !span) {
-      continue; /* The text element's own opacity is the group around everything. */
-    }
     GVEC_Svg_Style_Value v;
     bool ok;
     GVEC_Result r = read_style(ctx, inst, checks[i].prop, &v, &ok);
     if (r != GVEC_OK || !ok) {
       return r;
     }
-    bool initial = ((v.kind == GVEC_SVG_STYLE_LENGTH || v.kind == GVEC_SVG_STYLE_NUMBER) && v.number == (checks[i].prop == GVEC_SVG_PROP_OPACITY ? 1 : 0)) ||
+    bool initial = ((v.kind == GVEC_SVG_STYLE_LENGTH || v.kind == GVEC_SVG_STYLE_NUMBER) && v.number == 0) ||
         v.kind == GVEC_SVG_STYLE_NONE;
     for (size_t k = 0; !initial && k < 4 && checks[i].initial[k]; k++) {
       initial = gvec_lw_keyword_is(&v, checks[i].initial[k]);
@@ -232,7 +227,7 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     if (!initial && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
       /* A length that the cascade left as it was written (`0px`) is the initial value when it is zero. */
       double zero;
-      initial = leading_number(v.keyword, &zero) && zero == (checks[i].prop == GVEC_SVG_PROP_OPACITY ? 1 : 0);
+      initial = leading_number(v.keyword, &zero) && zero == 0;
     }
     if (!initial) {
       char message[96];
@@ -579,6 +574,7 @@ typedef struct tglyph {
   const GFNT_Face * face;
   uint32_t id;
   double x, y;
+  double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
   uint32_t style;
 } tglyph;
 
@@ -654,6 +650,11 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       break;
     }
     double s = st->size / (double) upem;
+    GFNT_LineMetrics line;
+    if (gfnt_face_line_metrics(faces[fr->face], GFNT_LINE_METRICS_FONT, NULL, &line, NULL) != GFNT_OK) {
+      line.ascent = upem;
+      line.descent = 0;
+    }
     for (size_t g = 0; g < fr->run.count; g++) {
       const GFNT_ShapedGlyph * sg = &fr->run.glyphs[g];
       size_t ch = from + sg->cluster;
@@ -669,6 +670,10 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       out->x = *pen_x + (double) sg->x_offset * s;
       out->y = *pen_y - (double) sg->y_offset * s;
       out->style = t->chars[ch].style; /* The paint of a glyph is that of the span its character is in. */
+      out->cell_x0 = *pen_x;
+      out->cell_x1 = *pen_x + (double) sg->x_advance * s;
+      out->cell_y0 = *pen_y - (double) line.ascent * s;
+      out->cell_y1 = *pen_y - (double) line.descent * s;
       *pen_x += (double) sg->x_advance * s;
     }
   }
@@ -774,8 +779,24 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     double shift = -t.styles[t.chars[i].style].anchor * (pen_x - start_x);
     for (size_t g = chunk_first_glyph; shift != 0 && g < glyph_count; g++) {
       glyphs[g].x += shift;
+      glyphs[g].cell_x0 += shift;
+      glyphs[g].cell_x1 += shift;
     }
     i = j;
+  }
+  /* The box the text's paint is placed in: the union of its glyphs' cells (the text's height is the font's, not the outlines'). */
+  out->box.empty = 1;
+  for (size_t g = 0; g < glyph_count; g++) {
+    if (out->box.empty) {
+      out->box.min.x = glyphs[g].cell_x0, out->box.max.x = glyphs[g].cell_x1;
+      out->box.min.y = glyphs[g].cell_y0, out->box.max.y = glyphs[g].cell_y1;
+      out->box.empty = 0;
+      continue;
+    }
+    if (glyphs[g].cell_x0 < out->box.min.x) out->box.min.x = glyphs[g].cell_x0;
+    if (glyphs[g].cell_x1 > out->box.max.x) out->box.max.x = glyphs[g].cell_x1;
+    if (glyphs[g].cell_y0 < out->box.min.y) out->box.min.y = glyphs[g].cell_y0;
+    if (glyphs[g].cell_y1 > out->box.max.y) out->box.max.y = glyphs[g].cell_y1;
   }
   /* One run for each stretch of glyphs of one span and one face. */
   out->pieces = gvec_arena_array(&ctx->arena, glyph_count ? glyph_count : 1, sizeof *out->pieces, sizeof(void *));

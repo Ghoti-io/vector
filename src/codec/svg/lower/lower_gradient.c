@@ -303,7 +303,7 @@ static void solid_of(const GSHSCENE_Gradient_Stop * stop, double opacity, GSHSCE
 
 GVEC_Result gvec_lw_gradient_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
     GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
-  return gvec_lw_gradient_paint_in(ctx, inst, paint, opacity, NULL, NULL, out, decision);
+  return gvec_lw_gradient_paint_in(ctx, inst, paint, opacity, NULL, ctx->paint_box_set ? &ctx->paint_box : NULL, out, decision);
 }
 
 GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,

@@ -116,7 +116,7 @@ static uint64_t hash2(uint64_t a, uint64_t b) {
 
 GVEC_Result gvec_lw_pattern_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
     GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
-  return gvec_lw_pattern_paint_in(ctx, inst, paint, opacity, NULL, NULL, out, decision);
+  return gvec_lw_pattern_paint_in(ctx, inst, paint, opacity, NULL, ctx->paint_box_set ? &ctx->paint_box : NULL, out, decision);
 }
 
 GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
@@ -313,7 +313,10 @@ GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
   ctx->context_set = false;
   ctx->context_inst = NULL;
   ctx->pattern_stack[ctx->pattern_depth++] = server;
+  bool saved_paint_box_set = ctx->paint_box_set;
+  ctx->paint_box_set = false; /* The tile's own paints are of the tile's own shapes. */
   r = gvec_lw_children(ctx, source_inst, &placed, holder);
+  ctx->paint_box_set = saved_paint_box_set;
   ctx->pattern_depth--;
   ctx->context_set = saved_set;
   ctx->context_inst = saved_context_inst;

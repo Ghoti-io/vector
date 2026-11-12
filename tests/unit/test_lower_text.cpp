@@ -143,18 +143,53 @@ TEST(LowerText, WithoutFontsTheElementIsRefusedWhole) {
   EXPECT_NE(l.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
-TEST(LowerText, AStrokeAndAGradientAreRefusedUntilTheyAreLowered) {
+TEST(LowerText, AStrokeIsAnItemOfTheRunAndPaintOrderSaysWhichComesFirst) {
   Fonts f;
-  Lowered stroke, gradient;
-  LowerText(f, "stroke=\"red\"", "A", stroke);
-  EXPECT_NE(stroke.Refusal(GVEC_LOWER_TEXT), nullptr);
+  Lowered l, stroke_first;
+  ASSERT_TRUE(LowerText(f, "fill=\"green\" stroke=\"red\" stroke-width=\"3\"", "A", l));
+  ASSERT_EQ(l.Items(), (size_t) 2);
+  EXPECT_EQ(l.Item(0).kind, GSHSCENE_ITEM_FILL);
+  EXPECT_EQ(l.Item(1).kind, GSHSCENE_ITEM_STROKE);
+  EXPECT_EQ(l.Item(0).resource, l.Item(1).resource);  // one run, filled and stroked
+  LowerText(f, "fill=\"green\" stroke=\"red\" paint-order=\"stroke\"", "A", stroke_first);
+  ASSERT_EQ(stroke_first.Items(), (size_t) 2);
+  EXPECT_EQ(stroke_first.Item(0).kind, GSHSCENE_ITEM_STROKE);
+  EXPECT_EQ(stroke_first.Item(1).kind, GSHSCENE_ITEM_FILL);
+}
+
+TEST(LowerText, AGradientIsPlacedInTheBoxOfTheWholeText) {
+  Fonts f;
   GVEC_Lower_Options options;
   memset(&options, 0, sizeof options);
   options.fonts = f.fonts;
-  LowerSvg(Svg("width=\"20\" height=\"20\" font-family=\"sans-serif\"",
-               "<linearGradient id=\"g\"><stop/></linearGradient><text fill=\"url(#g)\">A</text>"),
-      gradient, 0, 0, &options);
-  EXPECT_NE(gradient.Refusal(GVEC_LOWER_TEXT), nullptr);
+  Lowered l;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"",
+               "<linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"/><stop offset=\"1\" stop-color=\"blue\"/></linearGradient>"
+               "<text x=\"10\" y=\"100\" fill=\"url(#g)\">AA</text>"),
+      l, 0, 0, &options);
+  ASSERT_EQ(l.Items(), (size_t) 1);
+  EXPECT_EQ(l.Item(0).paint.kind, GSHSCENE_PAINT_GRADIENT);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+}
+
+TEST(LowerText, TheOpacityOfASpanIsAGroupAroundItsRuns) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "", "A<tspan opacity=\"0.5\">B</tspan>", l));
+  ASSERT_EQ(l.Items(), (size_t) 4);
+  EXPECT_EQ(l.Item(0).kind, GSHSCENE_ITEM_FILL);
+  EXPECT_EQ(l.Item(1).kind, GSHSCENE_ITEM_GROUP_PUSH);
+  EXPECT_EQ(l.Item(1).group.opacity, 0.5);
+  EXPECT_EQ(l.Item(2).kind, GSHSCENE_ITEM_FILL);
+}
+
+TEST(LowerText, OptimizeSpeedAsksForNoAntialiasing) {
+  Fonts f;
+  Lowered crisp, plain;
+  ASSERT_TRUE(LowerText(f, "text-rendering=\"optimizeSpeed\"", "A", crisp));
+  EXPECT_EQ(crisp.Item(0).antialias, (uint32_t) GSHSCENE_ANTIALIAS_NONE);
+  ASSERT_TRUE(LowerText(f, "text-rendering=\"geometricPrecision\"", "A", plain));
+  EXPECT_EQ(plain.Item(0).antialias, (uint32_t) GSHSCENE_ANTIALIAS_AREA);
 }
 
 TEST(LowerText, ASpanWithAnotherStyleIsItsOwnRunAndTheLineContinuesAcrossIt) {

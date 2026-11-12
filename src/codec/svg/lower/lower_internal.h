@@ -182,6 +182,8 @@ typedef struct gvec_lw_ctx {
    * inverted, and `item_local` is the map of the shape being drawn within the picture. */
   const GVEC_Svg_Instance * context_inst;
   bool box_stroke;                   ///< A group's box takes in the strokes of its shapes (the size of a document that gives none).
+  bool paint_box_set;                ///< While the paint of text is resolved: `paint_box` is the box a paint server is placed in (the text's, whatever span is painted).
+  GSHGEOM_Bounds paint_box;
   bool context_box_set;              ///< `context_box` is the box (a `use` has no geometry of its own); otherwise it is that of the shape `context_inst`.
   GSHGEOM_Bounds context_box;
   GSHGEOM_Map context_back;
@@ -361,6 +363,7 @@ typedef struct gvec_lw_text_piece {
 typedef struct gvec_lw_text {
   gvec_lw_text_piece * pieces; ///< The runs, in the order they are drawn; empty when nothing is drawn.
   size_t count;
+  GSHGEOM_Bounds box;          ///< The glyphs' cells, in the element's space: what a gradient or a pattern in the units of the box is placed in.
 } gvec_lw_text;
 
 /**
