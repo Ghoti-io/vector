@@ -405,6 +405,8 @@ typedef struct tdecor {
 #define TPATH_MAX 16
 typedef struct ttpath {
   const GVEC_Svg_Element * path;
+  const GVEC_Svg_Path_Segment * segments; ///< The `path` attribute's own data (SVG 2), which is preferred to `href`; else NULL.
+  size_t segment_count;
   double offset;
   bool percent;
   GSHGEOM_Measured * measured;
@@ -901,21 +903,32 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       if (gvec_svg_element_conditional_false(child)) {
         continue;
       }
-      const GVEC_Svg_Element * target = gvec_svg_element_href_target(child);
-      if (!target || gvec_svg_element_kind(target) == GVEC_SVG_KIND_TEXT_PATH) {
+      const GVEC_Svg_Attribute * own_path = gvec_svg_element_find_attribute(child, "path");
+      const GVEC_Svg_Path_Command * own_commands;
+      const GVEC_Svg_Path_Segment * own_segments = NULL;
+      size_t own_command_count = 0, own_segment_count = 0;
+      if (own_path && gvec_svg_attribute_class(own_path) == GVEC_SVG_ATTR_TYPED &&
+          gvec_svg_attribute_path(own_path, &own_commands, &own_command_count, &own_segments, &own_segment_count) && own_segment_count > 0) {
+        /* A path attribute that parses is the path; one that does not leaves the href to name it. */
+      }
+      else {
+        own_segments = NULL;
+      }
+      const GVEC_Svg_Element * target = own_segments ? child : gvec_svg_element_href_target(child);
+      if (!target || (!own_segments && gvec_svg_element_kind(target) == GVEC_SVG_KIND_TEXT_PATH)) {
         t->last_space = false; /* What is left of the text is set as if the element had been a character that is not a space. */
         continue; /* A path that is not there gives the text nowhere to be. */
       }
       const GVEC_Svg_Attribute * method = gvec_svg_element_find_attribute(child, "method");
       const GVEC_Svg_Attribute * side = gvec_svg_element_find_attribute(child, "side");
-      GVEC_Svg_Kind target_kind = gvec_svg_element_kind(target);
+      GVEC_Svg_Kind target_kind = own_segments ? GVEC_SVG_KIND_PATH : gvec_svg_element_kind(target);
       if (target_kind != GVEC_SVG_KIND_PATH && target_kind != GVEC_SVG_KIND_RECT && target_kind != GVEC_SVG_KIND_CIRCLE &&
           target_kind != GVEC_SVG_KIND_ELLIPSE && target_kind != GVEC_SVG_KIND_LINE && target_kind != GVEC_SVG_KIND_POLYLINE &&
           target_kind != GVEC_SVG_KIND_POLYGON) {
         t->last_space = false;
         continue; /* What is not a shape is no path to follow. */
       }
-      if (target_kind != GVEC_SVG_KIND_PATH || gvec_svg_element_find_attribute(target, "transform") ||
+      if (target_kind != GVEC_SVG_KIND_PATH || (!own_segments && gvec_svg_element_find_attribute(target, "transform")) ||
           (method && method->raw && strcmp(method->raw, "stretch") == 0) || (side && side->raw && strcmp(side->raw, "right") == 0)) {
         t->refused = true;
         return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT,
@@ -928,6 +941,8 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       ttpath * tp = &t->tpaths[t->tpath_count++];
       memset(tp, 0, sizeof *tp);
       tp->path = target;
+      tp->segments = own_segments;
+      tp->segment_count = own_segment_count;
       const GVEC_Svg_Attribute * so = gvec_svg_element_find_attribute(child, "startOffset");
       GVEC_Svg_Length sl;
       if (so && gvec_svg_attribute_class(so) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_length(so, &sl)) {
@@ -1515,7 +1530,8 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   for (size_t k = 0; k < t.tpath_count; k++) {
     gvec_lw_geometry geometry;
     const GSHSCENE_Resource * resource = NULL;
-    r = gvec_lw_path_of(ctx, t.tpaths[k].path, true, &geometry, &resource);
+    r = t.tpaths[k].segments ? gvec_lw_segments_path(ctx, t.tpaths[k].segments, t.tpaths[k].segment_count, &geometry, &resource)
+                             : gvec_lw_path_of(ctx, t.tpaths[k].path, true, &geometry, &resource);
     if (r != GVEC_OK) {
       return r;
     }

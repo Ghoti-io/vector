@@ -633,7 +633,7 @@ and a `textPath` has no positions of its own). The path is measured (shape-geome
 and the subpaths run one after the other). Each glyph is then put with the middle of its advance at the distance of that middle along the
 line, turned to the direction of the path there, with its baseline on the path (a `dy`, a baseline shift and the dominant baseline move it
 off); a glyph whose middle is beyond either end is not drawn. The text after the `textPath` goes on from where the text on the path ended
-(clamped to the path's end). A `textPath` with no path to follow has no characters (a space after it is kept). Refused: a path with a
+(clamped to the path's end). The `path` attribute (SVG 2), when it parses, is the path and is preferred to the `href`; when it does not, the `href` names it. A `textPath` with no path to follow has no characters (a space after it is kept). Refused: a path with a
 `transform`, an element that is not a `path`, `method="stretch"`, `side="right"`, a decoration, and text on a path in vertical text.
 
 **H29 `tref`, and text in a clip.** A `tref` is a span whose characters are the character data of the element its `href` names, in the

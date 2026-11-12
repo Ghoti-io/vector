@@ -610,6 +610,17 @@ TEST(LowerText, ATextPathThatNamesWhatIsNoShapeHasNoCharacters) {
   EXPECT_EQ(run.glyph_count, (size_t) 1);  // only the B
 }
 
+TEST(LowerText, TheDataOfATextPathsPathAttributeIsThePathAndIsPreferredToItsHref) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerBody(f, "<path id=\"p\" d=\"M 0 10 L 100 10\"/><text><textPath href=\"#p\" path=\"M 10 50 L 110 50\">A</textPath></text>", l));
+  ASSERT_GE(l.Items(), (size_t) 2);
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_NEAR(run.glyphs[0].y, 50.0, 1e-9);  // the path attribute's line, not the href's
+  EXPECT_NEAR(run.glyphs[0].x, 10.0, 1e-9);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
