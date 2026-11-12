@@ -160,11 +160,11 @@ TEST(LowerPaint, AReferenceToNothingIsItsFallbackOrNone) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerPaint, ContextPaintIsRefused) {
+TEST(LowerPaint, ContextPaintWithNoContextElementIsNone) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"", "<path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/>"), l);
   EXPECT_EQ(l.Items(), (size_t) 0);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
 TEST(LowerPaint, AStrokeThatCannotBeSeenDrawsNothingAndOneThatCanIsAnItem) {

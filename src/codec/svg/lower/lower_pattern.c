@@ -116,6 +116,11 @@ static uint64_t hash2(uint64_t a, uint64_t b) {
 
 GVEC_Result gvec_lw_pattern_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
     GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
+  return gvec_lw_pattern_paint_in(ctx, inst, paint, opacity, NULL, NULL, out, decision);
+}
+
+GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
+    const GSHGEOM_Map * into, const GSHGEOM_Bounds * given, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision) {
   const GVEC_Svg_Element * shape = gvec_svg_instance_element(inst);
   const GVEC_Svg_Element * server = paint->server;
   *decision = GVEC_LW_PAINT_REFUSED;
@@ -171,18 +176,23 @@ GVEC_Result gvec_lw_pattern_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
   GSHGEOM_Bounds box;
   box.empty = 1;
   if (units_box || content_box) {
-    gvec_lw_geometry geometry;
-    const GSHSCENE_Resource * resource = NULL;
-    bool usable;
-    r = gvec_lw_centerline_of(ctx, inst, &geometry, &resource, &usable);
-    if (r != GVEC_OK || !usable) {
-      return r;
+    if (given) {
+      box = *given;
     }
-    if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
-      return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
-    }
-    if (geometry != GVEC_LW_GEOMETRY_PATH || gshgeom_path_bounds(gshscene_resource_path(resource), &box) != GSHGEOM_OK) {
-      box.empty = 1;
+    else {
+      gvec_lw_geometry geometry;
+      const GSHSCENE_Resource * resource = NULL;
+      bool usable;
+      r = gvec_lw_centerline_of(ctx, inst, &geometry, &resource, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+      if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
+        return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+      }
+      if (geometry != GVEC_LW_GEOMETRY_PATH || gshgeom_path_bounds(gshscene_resource_path(resource), &box) != GSHGEOM_OK) {
+        box.empty = 1;
+      }
     }
     if (box.empty || !(box.max.x > box.min.x) || !(box.max.y > box.min.y)) {
       if (paint->has_fallback) {
@@ -340,6 +350,10 @@ GVEC_Result gvec_lw_pattern_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
   pattern.y_step = h;
   pattern.repeat_x = 1;
   pattern.repeat_y = 1;
+  if (into && !gvec_lw_compose(into, &transform, &transform)) {
+    gshscene_resource_release(tile);
+    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_LIMIT, "the pattern's map is past the range the waist can carry");
+  }
   pattern.map = transform;
   pattern.overflow = overflow_visible ? 1 : 0;
   const GSHSCENE_Resource * resource = NULL;

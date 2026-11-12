@@ -32,7 +32,6 @@ static const struct {
 } gvec_lower_reason_rows[] = {
   {NULL}, /* 0 is no reason */
   {"gradient"}, /* GRADIENT */
-  {"pattern"}, /* PATTERN */
   {"clip-path"}, /* CLIP_PATH */
   {"mask"}, /* MASK */
   {"image"}, /* IMAGE */

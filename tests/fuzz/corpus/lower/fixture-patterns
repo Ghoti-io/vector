@@ -10,6 +10,7 @@
     <pattern id="inner" patternUnits="userSpaceOnUse" width="4" height="4"><rect width="2" height="2" fill="#16a085"/></pattern>
     <pattern id="nested" patternUnits="userSpaceOnUse" width="16" height="16"><rect width="16" height="16" fill="url(#inner)" fill-opacity="0.8"/></pattern>
     <pattern id="empty" width="8" height="8"/>
+    <g id="ctx"><rect x="60" y="4" width="30" height="30" fill="context-fill" stroke="context-stroke" stroke-width="2"/></g>
   </defs>
   <rect x="4" y="4" width="40" height="40" fill="url(#boxed)"/>
   <rect x="52" y="4" width="40" height="40" fill="url(#user)" stroke="#34495e"/>
@@ -17,4 +18,5 @@
   <path d="M52 52H92V92H52Z" fill="url(#chain)"/>
   <path d="M56 56H88V88H56Z" fill="none" stroke="url(#nested)" stroke-width="6"/>
   <rect x="8" y="8" width="4" height="4" fill="url(#empty)"/>
+  <use href="#ctx" fill="url(#boxed)" stroke="url(#user)"/>
 </svg>

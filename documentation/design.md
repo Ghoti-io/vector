@@ -538,8 +538,7 @@ cell's corner and then the viewBox's map into the cell, or the scale of the box 
 pattern of no width or height, of a transform with no inverse, or of a box with no area (with no fallback) is not rendered, with a notice, and paints
 nothing; a pattern with no content paints nothing and no notice. A pattern whose content paints with the pattern itself, at any depth, is a reference cycle: the style layer cuts the reference that closes it (a notice) and
 the paint reads as its fallback or none; the lowering also refuses to nest a pattern in its own tile, and patterns nest to eight deep and to the scene's picture depth. `overflow` of `visible` or `auto` asks the scene for the unclipped tile (SVG 2),
-which no reference engine draws; no case of the suite has content outside its cell, so none tells the two apart. A `context-fill` that names a pattern is
-refused (GVEC_LOWER_PATTERN). The pattern's items are not traced: a refusal inside a tile is reported for the element that has it.
+which no reference engine draws; no case of the suite has content outside its cell, so none tells the two apart. A `context-fill` or `context-stroke` that names a pattern is the pattern of the context element, placed in that element's box (as a gradient is). The pattern's items are not traced: a refusal inside a tile is reported for the element that has it.
 
 **H18 Style sheets.** The `style` elements of the document (of type `text/css` or of none, in document order, the text and CDATA of each) are parsed and
 compiled by `text` and held, once for the document, in one frozen rule index; the rules are matched against the document's own tree through the element

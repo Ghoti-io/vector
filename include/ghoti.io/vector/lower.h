@@ -90,7 +90,6 @@ extern "C" {
  */
 typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_GRADIENT = 1,                 ///< A gradient paint.
-  GVEC_LOWER_PATTERN,                  ///< A pattern paint (G7).
   GVEC_LOWER_CLIP_PATH,                ///< `clip-path` (G4).
   GVEC_LOWER_MASK,                     ///< `mask` (G5).
   GVEC_LOWER_IMAGE,                    ///< `image` (G6).

@@ -124,7 +124,7 @@ TEST(LowerStroke, PaintIsAsAFillAndTheOpacityScalesTheAlphaWithoutAGroup) {
   EXPECT_EQ(current.Item(1).paint.kind, GSHSCENE_PAINT_FOREGROUND);
 }
 
-TEST(LowerStroke, AGradientOrContextStrokeRefusesTheWholeElement) {
+TEST(LowerStroke, AGradientThatCannotBeReadRefusesTheWholeElementAndAContextStrokeWithNoContextIsNone) {
   Lowered g;
   LowerSvg(Svg("width=\"40\" height=\"40\"",
                "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient></defs><path d=\"M2 2L20 2\" stroke=\"url(#g)\"/>"),
@@ -133,8 +133,8 @@ TEST(LowerStroke, AGradientOrContextStrokeRefusesTheWholeElement) {
   EXPECT_EQ(g.Items(), (size_t) 0);  // not even its fill
   Lowered c;
   LowerSvg(Svg("width=\"40\" height=\"40\"", "<path d=\"M2 2L20 2\" stroke=\"context-stroke\"/>"), c);
-  EXPECT_NE(c.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
-  EXPECT_EQ(c.Items(), (size_t) 0);
+  EXPECT_EQ(c.Refusals(), (size_t) 0);
+  EXPECT_EQ(c.Items(), (size_t) 1);  // the fill, which is its own
 }
 
 TEST(LowerStroke, NonScalingStrokeIsADeviceWidthAndTheOtherEffectsAreRefused) {

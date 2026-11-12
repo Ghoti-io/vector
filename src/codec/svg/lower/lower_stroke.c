@@ -69,7 +69,10 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
   case GVEC_SVG_PAINT_CONTEXT_FILL:
   case GVEC_SVG_PAINT_CONTEXT_STROKE:
     if (!ctx->context_set) {
-      return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "context-fill and context-stroke are lowered only inside a marker");
+      /* Outside a marker, a `use` or a pattern's tile there is no context element: the paint is none (SVG 2, 13.5). */
+      *decision = GVEC_LW_PAINT_NONE;
+      return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_STYLE_INVALID, 0, element->node.line, element->node.column,
+          element->node.offset, element->name, "context-fill or context-stroke with no context element is none");
     }
     /* The paint of the element the marker (or `use`) is drawn for. It was resolved when that was entered, but an element that
      * is not itself inside a context has a context paint of its own that names nothing, and following it would not end. The
@@ -82,14 +85,14 @@ GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
       /* A gradient is placed in the box of the context element, which is not the element that is being drawn, and in its user space:
        * the element's own map within the picture is undone, and the picture's map to the context element's space is. */
       GSHGEOM_Map own_back, into;
-      if (gvec_svg_element_kind(named->server) == GVEC_SVG_KIND_PATTERN) {
-        return gvec_lw_refuse(ctx, element, GVEC_LOWER_PATTERN, "a context paint that names a pattern is not lowered yet");
-      }
       if (!ctx->context_inst) {
-        return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "a context paint that names a gradient is not lowered here yet");
+        return gvec_lw_refuse(ctx, element, GVEC_LOWER_CONTEXT_PAINT, "a context paint that names a gradient or a pattern is not lowered here yet");
       }
       if (!gvec_lw_invert(&ctx->item_local, &own_back) || !gvec_lw_compose(&own_back, &ctx->context_back, &into)) {
         return gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the gradient's map is past the range the waist can carry");
+      }
+      if (gvec_svg_element_kind(named->server) == GVEC_SVG_KIND_PATTERN) {
+        return gvec_lw_pattern_paint_in(ctx, ctx->context_inst, named, opacity, &into, ctx->context_box_set ? &ctx->context_box : NULL, out, decision);
       }
       return gvec_lw_gradient_paint_in(ctx, ctx->context_inst, named, opacity, &into, ctx->context_box_set ? &ctx->context_box : NULL, out, decision);
     }

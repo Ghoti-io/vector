@@ -31,7 +31,6 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
   static const char * const square = "<path d=\"M0 0H4V4H0Z\"/>";
   const Case cases[] = {
       {"vector-effect", GVEC_LOWER_VECTOR_EFFECT, "\n<path d=\"M0 0H4V4H0Z\" stroke=\"red\" style=\"vector-effect: non-scaling-size\"/>", "path", 2, 0},
-      {"pattern", GVEC_LOWER_PATTERN, "<defs><pattern id=\"p\" width=\"2\" height=\"2\"/><marker id=\"m\"><path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/></marker></defs>\n<path d=\"M10 10L30 10L30 30\" fill=\"url(#p)\" marker-start=\"url(#m)\"/>", "path", 1, 0},
       {"clip-path", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path shape", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\" style=\"clip-path: inset(1px)\"/><rect width=\"2\" height=\"2\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path group", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<g clip-path=\"url(#c)\"><path d=\"M0 0H4V4H0Z\"/></g>", "g", 2, 0},
@@ -40,7 +39,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"/></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
       {"filter to nothing", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#nothing)\"/>", "path", 2, 0},
       {"text", GVEC_LOWER_TEXT, "\n<text>hello</text>", "text", 2, 0},
-      {"context paint", GVEC_LOWER_CONTEXT_PAINT, "\n<path d=\"M0 0H4V4H0Z\" fill=\"context-stroke\"/>", "path", 2, 0},
+      {"context paint", GVEC_LOWER_CONTEXT_PAINT, "<defs><rect id=\"r\" width=\"4\" height=\"4\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs><use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>\n<use id=\"u1\" href=\"#u2\" stroke=\"green\" fill=\"blue\"/>", "rect", 1, 0},
       {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/>", "path", 2, 0},
       {"foreignObject", GVEC_LOWER_FOREIGN_OBJECT, "\n<foreignObject width=\"4\" height=\"4\"/>", "foreignObject", 2, 0},
       {"external reference", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<use href=\"other.svg#x\"/>", "use", 2, 0},

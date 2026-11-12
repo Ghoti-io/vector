@@ -279,6 +279,10 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_paint_of(gvec_lw_ctx * ctx, const GVEC_Svg
 GVEC_INTERNAL_API GVEC_Result gvec_lw_pattern_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint,
     double opacity, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
 
+/** As gvec_lw_pattern_paint(), for the box of `inst` (or `given`) but a pattern space that `into` takes to the space the paint is used in. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Paint * paint, double opacity,
+    const GSHGEOM_Map * into, const GSHGEOM_Bounds * given, GSHSCENE_Paint * out, gvec_lw_paint_decision * decision);
+
 /**
  * The children of `holder` as a picture of the store (a list of its own, closed and interned): the tile of a pattern. `*out` is a
  * reference the caller releases, or NULL when a limit of the scene was reached (the element of the node that failed is refused).

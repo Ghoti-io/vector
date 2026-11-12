@@ -2,8 +2,8 @@ fixture partial-refusals
 list-hash fcd84fc967432130
 raster-hash 9b718ac20dc6bad5
 diagnostics 2
-diagnostic code=7 detail=6 line=9 column=3 element=path
-diagnostic code=7 detail=7 line=12 column=3 element=text
+diagnostic code=7 detail=5 line=9 column=3 element=path
+diagnostic code=7 detail=6 line=12 column=3 element=text
 list
 gshscene.list 1 items=11 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=fcd84fc967432130
 F res=path:f43bb96fde3669f8 map=03f5566ebbcadb97 rule=0 paint=0 3fe8181818181818 3fcc9c9c9c9c9c9d 3fc5959595959596 3ff0000000000000 space=1:2:0000000000000000 entry=0 resource=0000000000000000 layer=0 depth=0000000000000000

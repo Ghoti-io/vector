@@ -135,9 +135,30 @@ static GVEC_Result prepare_marker(
   m->element = element;
   bool refuse = false, percent;
   double w, h;
-  if (!length_attribute(element, "markerWidth", 3, &w, &percent, &refuse) || percent ||
-      !length_attribute(element, "markerHeight", 3, &h, &percent, &refuse) || percent) {
+  /* A percentage of the marker's size is of the viewport of the element it is drawn for (SVG 2, 11.6.2). */
+  double vw = 0, vh = 0;
+  {
+    const GVEC_Svg_Instance * at;
+    GVEC_Result r = gvec_lw_instance_of(ctx, shape, &at);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    gvec_svg_instance_viewport(at, &vw, &vh);
+  }
+  if (!length_attribute(element, "markerWidth", 3, &w, &percent, &refuse) || !length_attribute(element, "markerHeight", 3, &h, &percent, &refuse)) {
     return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a marker size in a unit that needs the cascade is not lowered");
+  }
+  {
+    bool pw, ph;
+    double ignored;
+    (void) length_attribute(element, "markerWidth", 3, &ignored, &pw, &refuse);
+    (void) length_attribute(element, "markerHeight", 3, &ignored, &ph, &refuse);
+    if (pw) {
+      w = w * vw / 100.0;
+    }
+    if (ph) {
+      h = h * vh / 100.0;
+    }
   }
   GVEC_Svg_View_Box box;
   bool has_box = false;
@@ -165,7 +186,7 @@ static GVEC_Result prepare_marker(
   }
   m->view = view;
   /* The reference point is in the content's coordinates; a percentage (and the keywords, which are 0%, 50% and 100%) is of the
-   * viewBox, or of the viewport without one (SVG 2, 11.6.2). */
+   * viewBox, or of the viewport of the element the marker is drawn for without one (SVG 2, 11.6.2; as `resvg` reads it). */
   double ref[2];
   for (int axis = 0; axis < 2; axis++) {
     double v;
@@ -174,7 +195,7 @@ static GVEC_Result prepare_marker(
     }
     if (percent) {
       double origin = has_box ? (axis ? box.y : box.x) : 0;
-      double extent = has_box ? (axis ? box.height : box.width) : (axis ? h : w);
+      double extent = has_box ? (axis ? box.height : box.width) : (axis ? vh : vw);
       v = origin + extent * v / 100.0;
     }
     ref[axis] = v;

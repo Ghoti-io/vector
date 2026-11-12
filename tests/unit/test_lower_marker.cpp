@@ -354,10 +354,11 @@ TEST(LowerMarker, ContextPaintInAUseIsTheUsesPaint) {
   EXPECT_EQ(first[1].paint.rgba[1], 1.0);
 }
 
-TEST(LowerMarker, ContextPaintOutsideAMarkerIsStillRefused) {
+TEST(LowerMarker, ContextPaintOutsideAMarkerIsNone) {
   Lowered l;
   LowerSvg(Svg("width=\"60\" height=\"60\"", "<path d=\"M10 10L30 10\" fill=\"context-fill\"/>"), l);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(l.Items(), (size_t) 0);
 }
 
 // A `use` that is itself outside any context has a context paint that names nothing; following it from the referent
@@ -583,12 +584,14 @@ TEST(LowerMarker, AGradientContextPaintInAUseIsPlacedInTheBoxOfWhatTheUseDraws) 
   EXPECT_EQ(g.map.m[1][1], 35.0) << "from y 0 to 35";
 }
 
-TEST(LowerMarker, AGradientContextPaintThatIsNotTheShapesOwnOrIsAPatternIsStillRefused) {
-  Lowered pattern;
-  LowerSvg(OnlyMarkers("<pattern id=\"p\" width=\"2\" height=\"2\"/>" + Marker("orient=\"0\"", "<path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/>"),
+TEST(LowerMarker, APatternContextPaintIsThePatternOfTheContextElementInItsBox) {
+  Lowered l;
+  LowerSvg(OnlyMarkers("<pattern id=\"p\" width=\"0.5\" height=\"0.5\"><rect width=\"5\" height=\"5\"/></pattern>" +
+                           Marker("orient=\"0\"", "<path d=\"M0 0H4V4H0Z\" fill=\"context-fill\"/>"),
                "<path d=\"M10 10L30 10L30 30\" fill=\"url(#p)\" marker-start=\"url(#m)\"/>"),
-      pattern);
-  EXPECT_NE(pattern.Refusal(GVEC_LOWER_PATTERN), nullptr);
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_GE(l.Count(GSHSCENE_ITEM_INSTANCE), (size_t) 1);
 }
 
 int main(int argc, char ** argv) {
