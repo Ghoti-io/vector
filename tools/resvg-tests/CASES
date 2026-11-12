@@ -23,7 +23,6 @@ text/direction/*	OUT_OF_SCOPE	this text property is read in a later story of mil
 text/font-size-adjust/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/glyph-orientation-horizontal/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/glyph-orientation-vertical/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/text-decoration/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/textPath/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/tref/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/unicode-bidi/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3

@@ -36,6 +36,7 @@
 #include <string.h>
 
 #include <ghoti.io/font/metrics.h>
+#include <ghoti.io/shape-geometry/map.h>
 #include <ghoti.io/font/shape.h>
 
 #include "../svg_grammar.h"
@@ -287,7 +288,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     const char * initial[4]; ///< The keywords that mean the initial value; a length or a number of zero does too.
     const char * what;
   } checks[] = {
-      {GVEC_SVG_PROP_TEXT_DECORATION, {"none", NULL, NULL, NULL}, "text-decoration"},
       {GVEC_SVG_PROP_WRITING_MODE, {"horizontal-tb", "lr-tb", "lr", NULL}, "writing-mode"},
       {GVEC_SVG_PROP_DIRECTION, {"ltr", NULL, NULL, NULL}, "direction"},
       {GVEC_SVG_PROP_UNICODE_BIDI, {"normal", NULL, NULL, NULL}, "unicode-bidi"},
@@ -332,12 +332,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a kerning other than auto and 0 on text is not lowered yet");
     }
   }
-  for (size_t i = 0; i < e->attribute_count; i++) {
-    const GVEC_Svg_Attribute * a = &e->attributes[i];
-    if (!a->ns && strcmp(a->name, "rotate") == 0) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "rotation of text is not lowered yet");
-    }
-  }
   *clear = true;
   return GVEC_OK;
 }
@@ -377,16 +371,18 @@ static bool same_font(const tstyle * a, const tstyle * b) {
 typedef struct tchar {
   uint32_t cp;
   uint32_t style;
-  bool has_x, has_y;
+  bool has_x, has_y, has_dy, has_rotate;
   double x, y, dx, dy;
+  double rotate; ///< Degrees, about the glyph's origin.
 } tchar;
 
 /** A list of a span, applied to the characters of its content once the content is known (the tree's order, outer first, so that an inner list wins). */
 typedef struct tlist {
   size_t start, end;   ///< The characters of the element's content (end is set when the content is known).
   const GVEC_Svg_Length * items;
+  const double * numbers; ///< Kind 4: the angles.
   size_t count;
-  int kind; ///< 0 x, 1 y, 2 dx, 3 dy.
+  int kind; ///< 0 x, 1 y, 2 dx, 3 dy, 4 rotate.
   const GVEC_Svg_Instance * inst;
 } tlist;
 
@@ -399,6 +395,14 @@ typedef struct tlength {
   GSHGEOM_Map map; ///< The stretch, once laid out (spacingAndGlyphs).
 } tlength;
 
+/** A `text-decoration` of an element (or of an ancestor of the text): the lines are drawn across its content, with its own paint and font. */
+typedef struct tdecor {
+  const GVEC_Svg_Instance * inst;
+  uint32_t style;
+  size_t start, end;
+  unsigned flags; ///< 1 underline, 2 overline, 4 line-through.
+} tdecor;
+
 typedef struct tctx {
   gvec_lw_ctx * lw;
   tstyle * styles;
@@ -409,6 +413,8 @@ typedef struct tctx {
   size_t list_count, list_capacity;
   tlength * lengths;
   size_t length_count, length_capacity;
+  tdecor * decors;
+  size_t decor_count, decor_capacity;
   bool last_space;
   bool refused;
 } tctx;
@@ -633,8 +639,8 @@ static void add_characters(tctx * t, const char * text, size_t n, bool preserve,
     }
     t->chars[t->count].cp = cp;
     t->chars[t->count].style = style;
-    t->chars[t->count].has_x = t->chars[t->count].has_y = false;
-    t->chars[t->count].x = t->chars[t->count].y = t->chars[t->count].dx = t->chars[t->count].dy = 0;
+    t->chars[t->count].has_x = t->chars[t->count].has_y = t->chars[t->count].has_dy = t->chars[t->count].has_rotate = false;
+    t->chars[t->count].x = t->chars[t->count].y = t->chars[t->count].dx = t->chars[t->count].dy = t->chars[t->count].rotate = 0;
     t->count++;
   }
 }
@@ -654,8 +660,31 @@ static GVEC_Result record_list(tctx * t, const GVEC_Svg_Instance * inst, const c
   l->start = start;
   l->end = SIZE_MAX;
   l->items = items;
+  l->numbers = NULL;
   l->count = count;
   l->kind = kind;
+  l->inst = inst;
+  return GVEC_OK;
+}
+
+static GVEC_Result record_rotate(tctx * t, const GVEC_Svg_Instance * inst, size_t start) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(e, "rotate");
+  const double * numbers;
+  size_t count;
+  if (!a || gvec_svg_attribute_class(a) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_numbers(a, &numbers, &count) || count == 0) {
+    return GVEC_OK;
+  }
+  if (t->list_count == t->list_capacity) {
+    return gvec_lw_refuse(t->lw, e, GVEC_LOWER_LIMIT, "the text has more lists of positions than the lowering keeps");
+  }
+  tlist * l = &t->lists[t->list_count++];
+  l->start = start;
+  l->end = SIZE_MAX;
+  l->items = NULL;
+  l->numbers = numbers;
+  l->count = count;
+  l->kind = 4;
   l->inst = inst;
   return GVEC_OK;
 }
@@ -668,6 +697,39 @@ static bool length_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Length * le
     return true;
   }
   return gvec_lw_absolute_length(length, out);
+}
+
+/* The kinds of line a `text-decoration` of an element asks for: its computed value is a list of `underline`, `overline` and `line-through`,
+ * or `none`. */
+static GVEC_Result decoration_flags(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, unsigned * flags) {
+  GVEC_Svg_Style_Value v;
+  bool ok;
+  *flags = 0;
+  GVEC_Result r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_DECORATION, &v, &ok);
+  if (r != GVEC_OK || !ok || v.kind != GVEC_SVG_STYLE_KEYWORD || !v.keyword) {
+    return r;
+  }
+  const char * k = v.keyword;
+  while (*k) {
+    while (*k == ' ') {
+      k++;
+    }
+    const char * word = k;
+    while (*k && *k != ' ') {
+      k++;
+    }
+    size_t n = (size_t) (k - word);
+    if (n == 9 && strncmp(word, "underline", 9) == 0) {
+      *flags |= 1;
+    }
+    else if (n == 8 && strncmp(word, "overline", 8) == 0) {
+      *flags |= 2;
+    }
+    else if (n == 12 && strncmp(word, "line-through", 12) == 0) {
+      *flags |= 4;
+    }
+  }
+  return GVEC_OK;
 }
 
 static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited_preserve, size_t depth, const tstyle * parent) {
@@ -694,6 +756,9 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
   static const char * const names[4] = {"x", "y", "dx", "dy"};
   for (int k = 0; r == GVEC_OK && k < 4; k++) {
     r = record_list(t, inst, names[k], k, start);
+  }
+  if (r == GVEC_OK) {
+    r = record_rotate(t, inst, start);
   }
   if (r != GVEC_OK) {
     t->refused = true;
@@ -750,6 +815,22 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       t->lists[i].end = t->count; /* The element's content is done: its lists apply to these characters and no others. */
     }
   }
+  {
+    unsigned flags;
+    r = decoration_flags(ctx, inst, &flags);
+    if (r != GVEC_OK) {
+      t->refused = true;
+      return r;
+    }
+    if (flags && t->count > start && t->decor_count < t->decor_capacity) {
+      tdecor * d = &t->decors[t->decor_count++];
+      d->inst = inst;
+      d->style = style;
+      d->start = start;
+      d->end = t->count;
+      d->flags = flags;
+    }
+  }
   const GVEC_Svg_Attribute * tl = gvec_svg_element_find_attribute(e, "textLength");
   GVEC_Svg_Length length;
   if (tl && t->count > start && gvec_svg_attribute_class(tl) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_length(tl, &length)) {
@@ -776,6 +857,15 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
 static GVEC_Result apply_lists(tctx * t) {
   for (size_t i = 0; i < t->list_count; i++) {
     const tlist * l = &t->lists[i];
+    if (l->kind == 4) {
+      /* Every character of the element's content has an angle: the list's values in order, then its last one. */
+      for (size_t j = l->start; j < l->end && j < t->count; j++) {
+        tchar * c = &t->chars[j];
+        c->has_rotate = true;
+        c->rotate = l->numbers[j - l->start < l->count ? j - l->start : l->count - 1];
+      }
+      continue;
+    }
     for (size_t j = 0; j < l->count && l->start + j < l->end && l->start + j < t->count; j++) {
       double v;
       if (!length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v)) {
@@ -786,7 +876,7 @@ static GVEC_Result apply_lists(tctx * t) {
       case 0: c->has_x = true, c->x = v; break;
       case 1: c->has_y = true, c->y = v; break;
       case 2: c->dx = v; break;
-      default: c->dy = v; break;
+      default: c->has_dy = true, c->dy = v; break;
       }
     }
   }
@@ -802,6 +892,13 @@ static bool cursive(uint32_t cp) {
   return (cp >= 0x0600 && cp <= 0x077F) || (cp >= 0x08A0 && cp <= 0x08FF) || (cp >= 0xFB50 && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF);
 }
 
+/* Whether a character is a combining mark, which belongs to the grapheme cluster of the character before it. */
+static bool combining(uint32_t cp) {
+  return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x0483 && cp <= 0x0489) || (cp >= 0x0591 && cp <= 0x05BD) || (cp >= 0x064B && cp <= 0x065F) ||
+      cp == 0x0670 || (cp >= 0x06D6 && cp <= 0x06DC) || (cp >= 0x0900 && cp <= 0x0903) || (cp >= 0x093A && cp <= 0x094F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+      (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) || (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xFE20 && cp <= 0xFE2F);
+}
+
 typedef struct tglyph {
   const GFNT_Face * face;
   uint32_t id;
@@ -809,6 +906,9 @@ typedef struct tglyph {
   double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
   uint32_t style;
   size_t ch;        ///< The character the glyph is of (its cluster's first).
+  double base;      ///< The baseline the glyph sits on.
+  double rotate;    ///< Degrees about the origin of the glyph at the start of the glyph's cluster.
+  size_t pivot;     ///< That glyph's index in the text's glyphs.
   uint32_t group;   ///< One more than the textLength entry that stretches the glyphs, or 0.
   double size;      ///< The em size the glyph is drawn at (a small capital is smaller).
 } tglyph;
@@ -898,6 +998,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     return sr == GFNT_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the text could not be shaped with the fonts given");
   }
   GVEC_Result result = GVEC_OK;
+  size_t last_base_ch = SIZE_MAX, last_base_index = 0;
   for (size_t i = 0; result == GVEC_OK && i < runs.count; i++) {
     const GFNT_FaceRun * fr = &runs.runs[i];
     uint16_t upem = 0;
@@ -956,6 +1057,21 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       out->cell_y0 = *pen_y + down - (double) line.ascent * s;
       out->cell_y1 = *pen_y + down - (double) line.descent * s;
       out->ch = ch;
+      out->base = *pen_y + down;
+      size_t head = ch;
+      while (head > from && combining(t->chars[head].cp)) {
+        head--; /* A mark turns with the character it is on: the angle is that of the start of the cluster. */
+      }
+      out->rotate = t->chars[head].has_rotate ? t->chars[head].rotate : 0;
+      size_t own_index = (size_t) (out - glyphs);
+      if (head == ch) {
+        last_base_ch = ch;
+        last_base_index = own_index;
+        out->pivot = own_index;
+      }
+      else {
+        out->pivot = last_base_ch == head ? last_base_index : own_index;
+      }
       out->group = 0;
       out->size = size;
       *pen_x += (double) sg->x_advance * s;
@@ -1011,8 +1127,8 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   tctx t;
   memset(&t, 0, sizeof t);
   t.lw = ctx;
-  t.style_capacity = elements + 1;
-  t.list_capacity = 4 * (elements + 1);
+  t.style_capacity = elements + 1 + TEXT_DEPTH_MAX;
+  t.list_capacity = 5 * (elements + 1);
   t.capacity = bytes + 1;
   t.styles = gvec_arena_array(&ctx->arena, t.style_capacity, sizeof *t.styles, sizeof(void *));
   t.lists = gvec_arena_array(&ctx->arena, t.list_capacity, sizeof *t.lists, sizeof(void *));
@@ -1022,9 +1138,42 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   if (!t.styles || !t.lists || !t.chars || !t.lengths) {
     return GVEC_ERR_OOM;
   }
+  t.decor_capacity = elements + TEXT_DEPTH_MAX + 2;
+  t.decors = gvec_arena_array(&ctx->arena, t.decor_capacity, sizeof *t.decors, sizeof(void *));
+  if (!t.decors) {
+    return GVEC_ERR_OOM;
+  }
   GVEC_Result r = walk(&t, inst, false, 0, NULL);
   if (r != GVEC_OK || t.refused) {
     return r;
+  }
+  /* The decorations of the elements the text is inside (a `g` that says `underline`) cover all of it, outermost first. */
+  {
+    const GVEC_Svg_Instance * chain[TEXT_DEPTH_MAX];
+    size_t depth = 0;
+    for (const GVEC_Svg_Instance * up = gvec_svg_instance_parent(inst); up && depth < TEXT_DEPTH_MAX; up = gvec_svg_instance_parent(up)) {
+      chain[depth++] = up;
+    }
+    size_t outer = t.decor_count;
+    for (size_t k = depth; r == GVEC_OK && k-- > 0;) {
+      unsigned flags;
+      r = decoration_flags(ctx, chain[k], &flags);
+      if (r != GVEC_OK || !flags || t.decor_count >= t.decor_capacity || false) {
+        continue;
+      }
+      /* A decoration of an element outside the text is drawn with the text's own paint and font (the references do so). */
+      tdecor * d = &t.decors[t.decor_count++];
+      d->inst = inst;
+      d->style = 0;
+      d->start = 0;
+      d->end = t.count;
+      d->flags = flags;
+    }
+    if (r != GVEC_OK) {
+      return r;
+    }
+    /* The ancestors come before the text's own, whose lines are on top of theirs. */
+    (void) outer;
   }
   if (t.count > 0 && t.chars[t.count - 1].cp == ' ' && !preserves(e, false)) {
     t.count--; /* The trailing white space of the text is dropped. */
@@ -1042,6 +1191,13 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   if (!glyphs) {
     return GVEC_ERR_OOM;
   }
+  typedef struct drect {
+    double x0, x1, center, thickness;
+    const GVEC_Svg_Instance * inst;
+    bool over_text; ///< A line-through: drawn after the text, where an underline and an overline are before it.
+  } drect;
+  drect * rects = NULL;
+  size_t rect_count = 0, rect_capacity = 0;
   size_t glyph_count = 0;
   double pen_x = 0, pen_y = 0;
   size_t chunk_first_glyph = 0;
@@ -1136,6 +1292,99 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
       glyphs[g].cell_x0 += shift;
       glyphs[g].cell_x1 += shift;
     }
+    /* The lines of the decorations that cover characters of this chunk, across the glyphs of those characters. */
+    for (size_t d = 0; d < t.decor_count; d++) {
+      const tdecor * dec = &t.decors[d];
+      size_t ca = dec->start > i ? dec->start : i, cb = dec->end < j ? dec->end : j;
+      if (ca >= cb) {
+        continue;
+      }
+      size_t ga = SIZE_MAX, gb = 0;
+      for (size_t g = chunk_first_glyph; g < glyph_count; g++) {
+        if (glyphs[g].ch >= ca && glyphs[g].ch < cb) {
+          if (ga == SIZE_MAX) {
+            ga = g;
+          }
+          gb = g + 1;
+        }
+      }
+      if (ga == SIZE_MAX) {
+        continue;
+      }
+      for (size_t g = ga; g < gb; g++) {
+        if (glyphs[g].rotate != 0) {
+          return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration over rotated glyphs is not lowered yet");
+        }
+      }
+      for (size_t c = ca + 1; c < cb; c++) {
+        if (t.chars[c].has_dy || t.chars[c].has_y) {
+          return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration over glyphs that change baseline is not lowered yet");
+        }
+      }
+      /* The face and the size of the element that declares the decoration give the lines' place and thickness. */
+      const tstyle * ds = &t.styles[dec->style];
+      const GFNT_Face * face = NULL;
+      bool found = false;
+      r = gvec_fonts_face(fonts, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, &face, &found);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      uint16_t upem = 0;
+      if (!found || gfnt_face_units_per_em(face, &upem, NULL) != GFNT_OK || upem == 0 || !(ds->size > 0)) {
+        continue;
+      }
+      double sc = ds->size / (double) upem;
+      GFNT_LineMetrics line;
+      const GFNT_Post * post = NULL;
+      const GFNT_Os2 * os2 = NULL;
+      if (gfnt_face_line_metrics(face, GFNT_LINE_METRICS_FONT, NULL, &line, NULL) != GFNT_OK) {
+        line.ascent = upem;
+        line.descent = 0;
+      }
+      if (gfnt_face_post(face, &post, NULL) != GFNT_OK) {
+        post = NULL;
+      }
+      if (gfnt_face_os2(face, &os2, NULL) != GFNT_OK) {
+        os2 = NULL;
+      }
+      double under_position = post && post->underline_thickness ? (double) post->underline_position * sc : -0.1 * ds->size;
+      double under_thickness = post && post->underline_thickness ? (double) post->underline_thickness * sc : 0.05 * ds->size;
+      double strike_position = os2 && os2->strikeout_size ? (double) os2->strikeout_position * sc : 0.3 * ds->size;
+      double strike_thickness = os2 && os2->strikeout_size ? (double) os2->strikeout_size * sc : under_thickness;
+      /* The references draw a line for each span: it is cut where the span of the characters changes. */
+      for (size_t sa = ga; sa < gb;) {
+      size_t sb = sa + 1;
+      while (sb < gb && glyphs[sb].style == glyphs[sa].style) {
+        sb++;
+      }
+      for (unsigned kind = 1; kind <= 4; kind <<= 1) {
+        if (!(dec->flags & kind)) {
+          continue;
+        }
+        if (rect_count == rect_capacity) {
+          size_t capacity = rect_capacity ? rect_capacity * 2 : 8;
+          drect * grown = gvec_arena_array(&ctx->arena, capacity, sizeof *grown, sizeof(double));
+          if (!grown) {
+            return GVEC_ERR_OOM;
+          }
+          if (rect_count) {
+            memcpy(grown, rects, rect_count * sizeof *grown);
+          }
+          rects = grown;
+          rect_capacity = capacity;
+        }
+        drect * dr = &rects[rect_count++];
+        dr->x0 = glyphs[sa].cell_x0;
+        dr->x1 = glyphs[sb - 1].cell_x1;
+        double base = glyphs[sa].base;
+        dr->center = kind == 1 ? base - under_position : kind == 2 ? base - (double) line.ascent * sc : base - strike_position;
+        dr->thickness = kind == 4 ? strike_thickness : under_thickness;
+        dr->inst = dec->inst;
+        dr->over_text = kind == 4;
+      }
+      sa = sb;
+      }
+    }
     i = j;
   }
   /* The box the text's paint is placed in: the union of its glyphs' cells (the text's height is the font's, not the outlines'). */
@@ -1152,65 +1401,105 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     if (glyphs[g].cell_y0 < out->box.min.y) out->box.min.y = glyphs[g].cell_y0;
     if (glyphs[g].cell_y1 > out->box.max.y) out->box.max.y = glyphs[g].cell_y1;
   }
-  /* One run for each stretch of glyphs of one span and one face. */
-  out->pieces = gvec_arena_array(&ctx->arena, glyph_count ? glyph_count : 1, sizeof *out->pieces, sizeof(void *));
+  /* One run for each stretch of glyphs of one span and one face (a rotated glyph is a run of its own), between the lines that go under the
+   * text and the lines that go over it. */
+  out->pieces = gvec_arena_array(&ctx->arena, glyph_count + rect_count + 1, sizeof *out->pieces, sizeof(void *));
   if (!out->pieces) {
     return GVEC_ERR_OOM;
   }
-  for (size_t g = 0; r == GVEC_OK && g < glyph_count;) {
-    size_t h = g + 1;
-    while (h < glyph_count && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group && glyphs[h].size == glyphs[g].size) {
-      h++;
-    }
-    const tstyle * st = &t.styles[glyphs[g].style];
-    if (!st->visible) {
-      g = h;
+  for (int pass = 0; r == GVEC_OK && pass < 3; pass++) {
+    if (pass != 1) {
+      for (size_t k = 0; r == GVEC_OK && k < rect_count; k++) {
+        if (rects[k].over_text != (pass == 2) || !(rects[k].thickness > 0)) {
+          continue;
+        }
+        gvec_lw_geometry geometry;
+        const GSHSCENE_Resource * rect = NULL;
+        r = gvec_lw_rect_path(ctx, rects[k].x0, rects[k].center - rects[k].thickness / 2, rects[k].x1 - rects[k].x0, rects[k].thickness, &geometry, &rect);
+        if (r != GVEC_OK) {
+          break;
+        }
+        if (geometry != GVEC_LW_GEOMETRY_PATH) {
+          continue;
+        }
+        out->pieces[out->count].run = rect;
+        out->pieces[out->count].inst = rects[k].inst;
+        out->pieces[out->count].decoration = true;
+        gshgeom_map_identity(2, &out->pieces[out->count].map);
+        out->count++;
+      }
       continue;
     }
-    GSHSCENE_Glyph * list = gvec_arena_array(&ctx->arena, h - g, sizeof *list, sizeof(double));
-    if (!list) {
-      return GVEC_ERR_OOM;
+    for (size_t g = 0; r == GVEC_OK && g < glyph_count;) {
+      size_t h = g + 1;
+      while (h < glyph_count && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group &&
+          glyphs[h].size == glyphs[g].size && glyphs[h].rotate == glyphs[g].rotate && (glyphs[g].rotate == 0 || glyphs[h].pivot == glyphs[g].pivot)) {
+        h++;
+      }
+      const tstyle * st = &t.styles[glyphs[g].style];
+      if (!st->visible) {
+        g = h;
+        continue;
+      }
+      GSHSCENE_Glyph * list = gvec_arena_array(&ctx->arena, h - g, sizeof *list, sizeof(double));
+      if (!list) {
+        return GVEC_ERR_OOM;
+      }
+      for (size_t k = g; k < h; k++) {
+        list[k - g].id = glyphs[k].id;
+        list[k - g].x = glyphs[k].x;
+        list[k - g].y = glyphs[k].y;
+        list[k - g].outline = NULL;
+      }
+      const GSHSCENE_Resource * face_resource = NULL;
+      r = gvec_fonts_scene_face(fonts, glyphs[g].face, ctx->store, &face_resource);
+      if (r != GVEC_OK) {
+        break;
+      }
+      GSHSCENE_Glyph_Run run;
+      memset(&run, 0, sizeof run);
+      run.source = GSHSCENE_GLYPHS_FROM_FONT;
+      run.face = face_resource;
+      run.size = glyphs[g].size;
+      run.hint_mode = GSHSCENE_HINT_NONE;
+      run.glyph_count = h - g;
+      run.glyphs = list;
+      const GSHSCENE_Resource * resource = NULL;
+      GSHSCENE_Result gr = gshscene_store_intern_glyph_run(ctx->store, &run, &resource);
+      gshscene_resource_release(face_resource);
+      if (gr != GSHSCENE_OK) {
+        r = gr == GSHSCENE_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text is past what the waist can carry");
+        break;
+      }
+      r = gvec_lw_hold(ctx, resource);
+      if (r != GVEC_OK) {
+        break;
+      }
+      gvec_lw_text_piece * piece = &out->pieces[out->count];
+      piece->run = resource;
+      piece->inst = st->inst;
+      piece->decoration = false;
+      if (glyphs[g].group) {
+        piece->map = t.lengths[glyphs[g].group - 1].map;
+      }
+      else {
+        gshgeom_map_identity(2, &piece->map);
+      }
+      if (glyphs[g].rotate != 0) {
+        /* A rotated glyph is turned about its own origin. */
+        GSHGEOM_Map move, back, turn, partial, whole;
+        if (glyphs[g].group || gshgeom_map_translate(2, glyphs[glyphs[g].pivot].x, glyphs[glyphs[g].pivot].y, 0, &move) != GSHGEOM_OK ||
+            gshgeom_map_translate(2, -glyphs[glyphs[g].pivot].x, -glyphs[glyphs[g].pivot].y, 0, &back) != GSHGEOM_OK ||
+            gshgeom_map_rotate(GSHGEOM_ANGLE_DEGREES, glyphs[g].rotate, &turn) != GSHGEOM_OK || !gvec_lw_compose(&move, &turn, &partial) ||
+            !gvec_lw_compose(&partial, &back, &whole)) {
+          r = gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a rotation of a glyph that the length of its text also stretches is not lowered");
+          break;
+        }
+        piece->map = whole;
+      }
+      out->count++;
+      g = h;
     }
-    for (size_t k = g; k < h; k++) {
-      list[k - g].id = glyphs[k].id;
-      list[k - g].x = glyphs[k].x;
-      list[k - g].y = glyphs[k].y;
-      list[k - g].outline = NULL;
-    }
-    const GSHSCENE_Resource * face_resource = NULL;
-    r = gvec_fonts_scene_face(fonts, glyphs[g].face, ctx->store, &face_resource);
-    if (r != GVEC_OK) {
-      break;
-    }
-    GSHSCENE_Glyph_Run run;
-    memset(&run, 0, sizeof run);
-    run.source = GSHSCENE_GLYPHS_FROM_FONT;
-    run.face = face_resource;
-    run.size = glyphs[g].size;
-    run.hint_mode = GSHSCENE_HINT_NONE;
-    run.glyph_count = h - g;
-    run.glyphs = list;
-    const GSHSCENE_Resource * resource = NULL;
-    GSHSCENE_Result gr = gshscene_store_intern_glyph_run(ctx->store, &run, &resource);
-    gshscene_resource_release(face_resource);
-    if (gr != GSHSCENE_OK) {
-      r = gr == GSHSCENE_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text is past what the waist can carry");
-      break;
-    }
-    r = gvec_lw_hold(ctx, resource);
-    if (r != GVEC_OK) {
-      break;
-    }
-    out->pieces[out->count].run = resource;
-    out->pieces[out->count].inst = st->inst;
-    if (glyphs[g].group) {
-      out->pieces[out->count].map = t.lengths[glyphs[g].group - 1].map;
-    }
-    else {
-      gshgeom_map_identity(2, &out->pieces[out->count].map);
-    }
-    out->count++;
-    g = h;
   }
   if (r != GVEC_OK) {
     return r;

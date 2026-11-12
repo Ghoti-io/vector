@@ -358,6 +358,7 @@ GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
 typedef struct gvec_lw_text_piece {
   const GSHSCENE_Resource * run;      ///< A glyph run (held by the context): the glyphs of one span in one face.
   const GVEC_Svg_Instance * inst;     ///< The span it is of: its fill is the run's paint.
+  bool decoration;                    ///< A line of a text decoration (a rectangle's path, not a glyph run): `inst` is the element that declared it.
   GSHGEOM_Map map;                    ///< The map of the run in the element's space: the identity, or the stretch of a textLength that scales the glyphs.
 } gvec_lw_text_piece;
 

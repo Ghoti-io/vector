@@ -6,6 +6,7 @@
  * layout is arithmetic: a font size of 100 makes the advance 60 (70 bold), a space 30.
  */
 
+#include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/glyph.h>
 #include <ghoti.io/shape-scene/glyph_provider.h>
 
@@ -281,13 +282,73 @@ TEST(LowerText, AHiddenSpanKeepsItsRoomAndDrawsNothing) {
   EXPECT_EQ(run.glyphs[0].x, 180.0);
 }
 
-TEST(LowerText, ARotateAListOfLengthsInEmAndTextPathAreRefusedUntilTheyAreLowered) {
+TEST(LowerText, TextPathIsRefusedUntilItIsLowered) {
   Fonts f;
-  Lowered rotate, path;
-  LowerText(f, "rotate=\"10\"", "A", rotate);
-  EXPECT_NE(rotate.Refusal(GVEC_LOWER_TEXT), nullptr);
+  Lowered path;
   LowerText(f, "", "A<textPath href=\"#p\">B</textPath>", path);
   EXPECT_NE(path.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
+TEST(LowerText, EachGlyphHasItsRotateAndTheLastValueRepeats) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\" rotate=\"0 90\"", "AAA", l));
+  ASSERT_EQ(l.Items(), (size_t) 3);  // the first glyph, then one run for each rotated glyph
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 1);
+  EXPECT_EQ(run.glyphs[0].x, 60.0);
+  // The map turns the glyph a quarter about its own origin (60, 50): the point (60, 50) stays, (61, 50) goes to (60, 51).
+  const GSHGEOM_Map & m = l.Item(1).map;
+  EXPECT_DOUBLE_EQ(m.m[0][0], 0.0);
+  EXPECT_DOUBLE_EQ(m.m[1][0], 1.0);
+  EXPECT_DOUBLE_EQ(m.m[0][0] * 60 + m.m[0][1] * 50 + m.t[0], 60.0);
+  EXPECT_DOUBLE_EQ(m.m[1][0] * 60 + m.m[1][1] * 50 + m.t[1], 50.0);
+  EXPECT_DOUBLE_EQ(l.Item(2).map.m[1][0], 1.0);
+}
+
+TEST(LowerText, UnderlineAndLineThroughAreRectanglesAcrossTheGlyphsInTheFacesMetrics) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"100\" text-decoration=\"underline line-through\"", "AA", l));
+  // The underline under the text, the glyph run, the line-through over it.
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  GSHGEOM_Bounds under, strike;
+  ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(l.Item(0).resource), &under), GSHGEOM_OK);
+  EXPECT_DOUBLE_EQ(under.min.x, 10.0);
+  EXPECT_DOUBLE_EQ(under.max.x, 130.0);
+  EXPECT_LT(under.min.y, under.max.y);
+  EXPECT_GT(under.min.y, 100.0);          // below the baseline
+  ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(l.Item(2).resource), &strike), GSHGEOM_OK);
+  EXPECT_LT(strike.max.y, 100.0);         // above it
+}
+
+TEST(LowerText, ADecorationHasThePaintOfTheElementThatDeclaredItAndAnAncestorsTheTextsOwn) {
+  Fonts f;
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  Lowered own, outside;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"",
+               "<text x=\"0\" y=\"100\" fill=\"black\">A<tspan fill=\"green\" text-decoration=\"underline\">A</tspan></text>"),
+      own, 0, 0, &options);
+  ASSERT_EQ(own.Items(), (size_t) 3);   // the span's underline (under the text), then the two glyph runs
+  EXPECT_GT(own.Item(0).paint.rgba[1], 0.4);  // the underline is the span's green
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"",
+               "<g fill=\"green\" text-decoration=\"underline\"><text x=\"0\" y=\"100\" fill=\"red\">A</text></g>"),
+      outside, 0, 0, &options);
+  ASSERT_EQ(outside.Items(), (size_t) 2);
+  EXPECT_EQ(outside.Item(0).paint.rgba[0], 1.0);   // the underline is the text's red, not the g's green
+  EXPECT_EQ(outside.Item(1).paint.rgba[0], 1.0);
+}
+
+TEST(LowerText, ADecorationOverGlyphsThatRotateOrChangeBaselineIsRefused) {
+  Fonts f;
+  Lowered rotated, shifted;
+  LowerText(f, "rotate=\"10\" text-decoration=\"underline\"", "AA", rotated);
+  EXPECT_NE(rotated.Refusal(GVEC_LOWER_TEXT), nullptr);
+  LowerText(f, "dy=\"0 10\" text-decoration=\"underline\"", "AA", shifted);
+  EXPECT_NE(shifted.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
 TEST(LowerText, LetterSpacingFollowsEveryCharacterAndWordSpacingEverySpace) {

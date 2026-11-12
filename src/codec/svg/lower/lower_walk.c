@@ -1019,7 +1019,7 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     }
     /* The opacity of a span other than the text itself is a group of its own around what the span paints. */
     double span_opacity = 1;
-    if (se != e) {
+    if (se != e && !text.pieces[i].decoration) {
       r = gvec_lw_read_property(ctx, span, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);
       if (r != GVEC_OK || !usable) {
         return r;
