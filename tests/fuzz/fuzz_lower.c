@@ -52,7 +52,24 @@
 #include <ghoti.io/shape-scene/scene.h>
 #include <ghoti.io/shape-scene/sink.h>
 #include <ghoti.io/shape-scene/version.h>
+#include <ghoti.io/font/discover.h>
 #include <ghoti.io/vector/vector.h>
+
+/* The fonts the text of a document is set in: the test fonts, scanned once (the run's directory is the library's). Without them the text is
+ * refused, and the lowering of text is not exercised. */
+static GVEC_Fonts * fuzz_fonts(void) {
+  static GFNT_FontSet * set = NULL;
+  static GVEC_Fonts * fonts = NULL;
+  static int tried = 0;
+  if (!tried) {
+    tried = 1;
+    const char * dirs[] = {"tests/data/fonts"};
+    if (gfnt_fontset_scan(dirs, 1, NULL, 0, NULL, &set, NULL) == GFNT_OK && gvec_fonts_new(set, NULL, &fonts) != GVEC_OK) {
+      fonts = NULL;
+    }
+  }
+  return fonts;
+}
 
 static unsigned gvec_fuzz_seen;
 
@@ -239,6 +256,7 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     gshscene_color_init(&options.foreground);
     options.foreground.rgba[0] = 0.25;
   }
+  options.fonts = fuzz_fonts();
   options.trace = list_trace;
   check(gvec_doc_lower_list(doc, &options, list, &by_list) == GVEC_OK, "lowering into a list is OK");
   check(gshscene_list_close(list) == GSHSCENE_OK, "the list closes");
