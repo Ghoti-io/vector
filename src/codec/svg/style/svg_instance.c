@@ -39,7 +39,7 @@
 //-----------------------------------------------------------------------------
 
 static const GVEC_Svg_Element * element_of(GTEXT_CSS_Element_Handle handle) {
-  return ((const GVEC_Svg_Instance *) handle)->element;
+  return ((const gvec_svg_handle *) handle)->element;
 }
 
 static bool cb_local_name(void * user, GTEXT_CSS_Element_Handle handle, GTEXT_CSS_String * out) {
@@ -86,13 +86,201 @@ static bool cb_attribute(void * user, GTEXT_CSS_Element_Handle handle, const GTE
   return false;
 }
 
+/* The tree callbacks below walk the document's tree, not the instance's: a selector sees an element where the document has it, and a clone
+ * made by `use` is matched as the element it clones. */
+static GTEXT_CSS_Element_Handle element_handle(const GVEC_Svg_Element * e) {
+  return e ? (GTEXT_CSS_Element_Handle) &e->handle : NULL;
+}
+
+static GTEXT_CSS_Element_Handle cb_parent(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  return element_handle(element_of(handle)->node.parent);
+}
+
+static bool cb_id(void * user, GTEXT_CSS_Element_Handle handle, GTEXT_CSS_String * out) {
+  (void) user;
+  const GVEC_Svg_Element * e = element_of(handle);
+  if (!e->id) {
+    return false;
+  }
+  out->data = e->id;
+  out->length = strlen(e->id);
+  return true;
+}
+
+static bool is_space(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
+}
+
+/* The `class` attribute's value: the raw text, whose white-space-separated words are the classes. */
+static bool class_value(const GVEC_Svg_Element * e, const char ** text, size_t * length) {
+  for (size_t i = 0; i < e->attribute_count; i++) {
+    const GVEC_Svg_Attribute * a = &e->attributes[i];
+    if (!a->ns && strcmp(a->name, "class") == 0) {
+      *text = a->raw;
+      *length = a->raw_length;
+      return true;
+    }
+  }
+  return false;
+}
+
+/* The `index`th class, and the number there are when `index` is past them. */
+static size_t class_scan(const GVEC_Svg_Element * e, size_t index, GTEXT_CSS_String * out) {
+  const char * t;
+  size_t n;
+  if (!class_value(e, &t, &n)) {
+    return 0;
+  }
+  size_t count = 0;
+  size_t i = 0;
+  while (i < n) {
+    while (i < n && is_space(t[i])) {
+      i++;
+    }
+    size_t start = i;
+    while (i < n && !is_space(t[i])) {
+      i++;
+    }
+    if (i > start) {
+      if (out && count == index) {
+        out->data = t + start;
+        out->length = i - start;
+      }
+      count++;
+    }
+  }
+  return count;
+}
+
+static size_t cb_class_count(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  return class_scan(element_of(handle), (size_t) -1, NULL);
+}
+
+static bool cb_class_at(void * user, GTEXT_CSS_Element_Handle handle, size_t index, GTEXT_CSS_String * out) {
+  (void) user;
+  GTEXT_CSS_String s = {NULL, 0};
+  size_t count = class_scan(element_of(handle), index, &s);
+  if (index >= count) {
+    return false;
+  }
+  *out = s;
+  return true;
+}
+
+static const GVEC_Svg_Element * next_element_node(const GVEC_Svg_Node * n) {
+  for (; n; n = n->next) {
+    if (n->is_element) {
+      return n->element;
+    }
+  }
+  return NULL;
+}
+
+static GTEXT_CSS_Element_Handle cb_next_sibling(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  return element_handle(next_element_node(element_of(handle)->node.next));
+}
+
+static GTEXT_CSS_Element_Handle cb_first_child(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  return element_handle(next_element_node(element_of(handle)->first_node));
+}
+
+static GTEXT_CSS_Element_Handle cb_last_child(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  const GVEC_Svg_Element * last = NULL;
+  for (const GVEC_Svg_Element * c = next_element_node(element_of(handle)->first_node); c; c = next_element_node(c->node.next)) {
+    last = c;
+  }
+  return element_handle(last);
+}
+
+static GTEXT_CSS_Element_Handle cb_previous_sibling(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  const GVEC_Svg_Element * e = element_of(handle);
+  if (!e->node.parent) {
+    return NULL;
+  }
+  const GVEC_Svg_Element * previous = NULL;
+  for (const GVEC_Svg_Element * c = next_element_node(e->node.parent->first_node); c && c != e; c = next_element_node(c->node.next)) {
+    previous = c;
+  }
+  return element_handle(previous);
+}
+
+static size_t cb_sibling_index(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  const GVEC_Svg_Element * e = element_of(handle);
+  if (!e->node.parent) {
+    return 1;
+  }
+  size_t index = 1;
+  for (const GVEC_Svg_Element * c = next_element_node(e->node.parent->first_node); c && c != e; c = next_element_node(c->node.next)) {
+    index++;
+  }
+  return index;
+}
+
+static size_t cb_sibling_count(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  const GVEC_Svg_Element * e = element_of(handle);
+  if (!e->node.parent) {
+    return 1;
+  }
+  size_t count = 0;
+  for (const GVEC_Svg_Element * c = next_element_node(e->node.parent->first_node); c; c = next_element_node(c->node.next)) {
+    count++;
+  }
+  return count;
+}
+
+static int cb_compare_order(void * user, GTEXT_CSS_Element_Handle a, GTEXT_CSS_Element_Handle b) {
+  (void) user;
+  uint32_t x = element_of(a)->order, y = element_of(b)->order;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+static uint32_t cb_child_content(void * user, GTEXT_CSS_Element_Handle handle) {
+  (void) user;
+  uint32_t content = 0;
+  for (const GVEC_Svg_Node * n = element_of(handle)->first_node; n; n = n->next) {
+    if (n->is_element) {
+      content |= GTEXT_CSS_CHILD_ELEMENT;
+    }
+    else if (n->text_length) {
+      content |= GTEXT_CSS_CHILD_TEXT;
+      for (size_t i = 0; i < n->text_length; i++) {
+        if (!is_space(n->text[i])) {
+          content |= GTEXT_CSS_CHILD_TEXT_NONSPACE;
+          break;
+        }
+      }
+    }
+  }
+  return content;
+}
+
 void gvec_svg_element_interface(GTEXT_CSS_Element_Interface * table, void * user) {
   memset(table, 0, sizeof *table);
   table->size = sizeof *table;
   table->user = user;
+  table->parent = cb_parent;
   table->local_name = cb_local_name;
   table->namespace_uri = cb_namespace_uri;
+  table->id = cb_id;
+  table->class_count = cb_class_count;
+  table->class_at = cb_class_at;
   table->attribute = cb_attribute;
+  table->previous_sibling = cb_previous_sibling;
+  table->next_sibling = cb_next_sibling;
+  table->sibling_index = cb_sibling_index;
+  table->sibling_count = cb_sibling_count;
+  table->compare_order = cb_compare_order;
+  table->first_child = cb_first_child;
+  table->last_child = cb_last_child;
+  table->child_content = cb_child_content;
 }
 
 //-----------------------------------------------------------------------------
@@ -197,6 +385,8 @@ void gvec_svg_style_context_free(GVEC_Svg_Style_Context * context) {
       gtext_css_computed_free(context->styles[i]);
     }
   }
+  gtext_css_selector_match_context_free(context->match);
+  gtext_css_rule_index_free(context->rules);
   gvec_free(context->allocator, context->styles);
   gvec_svg_engine_release(context->engine);
   gvec_arena_destroy(&context->arena);
@@ -250,6 +440,7 @@ static GVEC_Result make_instance(GVEC_Svg_Style_Context * context, const GVEC_Sv
   if (!instance) {
     return GVEC_ERR_OOM;
   }
+  instance->handle.element = element;
   instance->element = element;
   instance->parent = parent;
   instance->use = use;
@@ -533,6 +724,10 @@ bool gvec_svg_once_first(GVEC_Svg_Style_Context * context, gvec_svg_once kind, c
  * from its presentation attributes. */
 static GVEC_Result compute_one(GVEC_Svg_Style_Context * context, GVEC_Svg_Instance * instance, const GTEXT_CSS_Computed_Style * parent) {
   const GVEC_Svg_Element * e = instance->element;
+  GVEC_Result sheets = gvec_svg_style_sheets(context);
+  if (sheets != GVEC_OK) {
+    return sheets;
+  }
   GTEXT_CSS_Style_Options options = context->style_options;
   GTEXT_CSS_Computed_Style * style = NULL;
   GTEXT_CSS_Compute_Result result;
@@ -551,7 +746,7 @@ static GVEC_Result compute_one(GVEC_Svg_Style_Context * context, GVEC_Svg_Instan
   /* What is wrong with an element's style is the same whichever instance of it is drawn: said once. */
   bool first = gvec_svg_once_first(context, GVEC_ONCE_STYLE, e);
   GTEXT_CSS_Status status = gtext_css_style_compute(
-      context->engine->compute, instance, parent, count ? entries : NULL, count, &options, &style, &result);
+      context->engine->compute, &instance->handle, parent, count ? entries : NULL, count, &options, &style, &result);
   if (status == GTEXT_CSS_E_LIMIT_INPUT || status == GTEXT_CSS_E_LIMIT_DECLARATIONS || status == GTEXT_CSS_E_LIMIT_CANDIDATES) {
     bool bytes = status == GTEXT_CSS_E_LIMIT_INPUT;
     if (first) {
@@ -564,7 +759,7 @@ static GVEC_Result compute_one(GVEC_Svg_Style_Context * context, GVEC_Svg_Instan
     options.sources = GTEXT_CSS_STYLE_PRESENTATION_ATTRIBUTES;
     memset(&result, 0, sizeof result);
     status = gtext_css_style_compute(
-        context->engine->compute, instance, parent, count ? entries : NULL, count, &options, &style, &result);
+        context->engine->compute, &instance->handle, parent, count ? entries : NULL, count, &options, &style, &result);
   }
   if (status == GTEXT_CSS_OK) {
     if (first) {

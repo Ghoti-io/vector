@@ -467,6 +467,7 @@ static GVEC_Svg_Element * build_element(build_ctx * ctx, const GTEXT_Markup_Node
     return NULL;
   }
   e->order = ctx->next_order++;
+  e->handle.element = e;
   ctx->doc->elements[e->order] = e;
   if (parent) {
     append_node(parent, &e->node);

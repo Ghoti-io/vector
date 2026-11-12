@@ -105,6 +105,7 @@ GVEC_INTERNAL_API void gvec_svg_engine_release(gvec_svg_engine * engine);
 
 /** An instance (see style.h). */
 struct GVEC_Svg_Instance {
+  gvec_svg_handle handle;                 ///< What the element interface is handed for this instance (its `element` is `element`).
   const GVEC_Svg_Element * element;
   const GVEC_Svg_Instance * parent;       ///< The inheritance parent; NULL for the root of inheritance.
   const GVEC_Svg_Instance * use;          ///< The nearest enclosing `use` instance: the clone context; NULL in the document's own.
@@ -134,6 +135,12 @@ struct GVEC_Svg_Style_Context {
   const GVEC_Svg_Instance ** document_instances; ///< Made by gvec_svg_document_instances().
   uint32_t * component;             ///< After gvec_svg_style_resolve_references(): for each element, the number of the reference cycle it is on (from 1), else 0.
   bool references_resolved;
+  GTEXT_CSS_Rule_Index * rules;     ///< The rules of the document's `style` elements, frozen; NULL when it has none or before gvec_svg_style_sheets().
+  GTEXT_CSS_Selector_Match_Context * match; ///< The match context of `rules` over the document's tree.
+  bool sheets_ready;                ///< gvec_svg_style_sheets() ran.
+  GVEC_Result sheets_result;        ///< What it returned.
+  const GVEC_Svg_Element * sheet_refused; ///< The first `style` element whose sheet could not be applied (an `@import`, a conditional rule), else NULL.
+  const char * sheet_refused_why;   ///< Static: why.
   GTEXT_CSS_Computed_Style ** styles; ///< Every style made, to free.
   size_t style_count, style_capacity;
 };
@@ -156,6 +163,18 @@ GVEC_INTERNAL_API bool gvec_svg_once_first(GVEC_Svg_Style_Context * context, gve
 /** A diagnostic of the style layer, located at the attribute when there is one, else at the element. */
 GVEC_INTERNAL_API GVEC_Result gvec_svg_style_diag(GVEC_Svg_Style_Context * context, GVEC_Diag_Severity severity, GVEC_Diag_Code code,
     uint32_t detail, const GVEC_Svg_Element * element, const GVEC_Svg_Attribute * attribute, const char * message);
+
+/**
+ * Read the document's `style` elements (those of type `text/css` or of none, in document order, a sheet being the character data of one)
+ * into one rule index and make the match context over the document's tree, the first time; every computation of a style uses them.
+ * A rule or declaration a sheet drops is reported as a warning at its `style` element. A sheet that cannot be applied at all (an
+ * `@import`, which is never fetched, and `@media` and the other conditional rules, which need an evaluator this layer has none of) is
+ * not applied and is named by gvec_svg_style_sheet_refused(): drawing without it would be drawing the wrong picture.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_style_sheets(GVEC_Svg_Style_Context * context);
+
+/** After gvec_svg_style_sheets(): the first `style` element whose sheet was not applied, or NULL; `why` receives a static reason. */
+GVEC_INTERNAL_API const GVEC_Svg_Element * gvec_svg_style_sheet_refused(const GVEC_Svg_Style_Context * context, const char ** why);
 
 /** The most declarations of the user agent style sheet that match one element. */
 #define GVEC_SVG_UA_MAX 6

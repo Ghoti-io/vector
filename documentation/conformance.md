@@ -176,19 +176,19 @@ row is that case. The pair is a first setting and is expected to be refined as t
 ## The score today
 
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
-(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **732 of 1,679
-(43.60%)** determined correct, of which **391 (23.29%)** match the reference, **22 (1.31%)** are accepted, **287 (17.09%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 326 `FAIL`s are the 287 `EDGE`, the 32 `ORACLE_AGREES`, 7 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, a marker that draws itself, which each engine cuts differently, and two patterns that refer to each other, which each engine cuts at a different place) and no `DEFECT`.
+(`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **750 of 1,679
+(44.67%)** determined correct, of which **406 (24.18%)** match the reference, **23 (1.37%)** are accepted, **289 (17.21%)** are `EDGE` and **32 (1.91%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 328 `FAIL`s are the 289 `EDGE`, the 32 `ORACLE_AGREES`, 7 `ORACLE_SPLIT` (the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, a marker that draws itself, which each engine cuts differently, and two patterns that refer to each other, which each engine cuts at a different place) and no `DEFECT`.
 
 | directory | cases | PASS | ACCEPTED | FAIL | REFUSED | NOT_LOADED | EXCLUDED | ERROR |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `filters` | 397 | 0 | 0 | 0 | 0 | 0 | 397 | 0 |
 | `masking` | 93 | 15 | 1 | 32 | 6 | 0 | 39 | 0 |
 | `paint-servers` | 149 | 97 | 8 | 43 | 1 | 0 | 0 | 0 |
-| `painting` | 304 | 130 | 7 | 111 | 31 | 0 | 25 | 0 |
+| `painting` | 304 | 130 | 7 | 113 | 29 | 0 | 25 | 0 |
 | `shapes` | 133 | 39 | 1 | 93 | 0 | 0 | 0 | 0 |
-| `structure` | 247 | 110 | 5 | 47 | 19 | 1 | 65 | 0 |
+| `structure` | 247 | 125 | 6 | 47 | 19 | 1 | 49 | 0 |
 | `text` | 356 | 0 | 0 | 0 | 0 | 0 | 356 | 0 |
-| **all** | **1679** | **391** | **22** | **326** | **57** | **1** | **882** | **0** |
+| **all** | **1679** | **406** | **23** | **328** | **55** | **1** | **866** | **0** |
 
 The six that passed at zero tolerance were `painting/display/none-on-svg`, `structure/svg/no-children`,
 `structure/svg/preserveAspectRatio=xMaxYMax-slice`, `structure/svg/xmlns-validation`, `structure/svg/zero-size` and
@@ -227,7 +227,7 @@ from 79 to 68; the cases that moved but did not pass differ only along edges. Wh
 text in a `clipPath`, and a `clip-path` on one shape of several.
 A gradient on a shape whose bounding box has no area takes its fallback paint when it has one, and a document with no size and no `viewBox` is as large as its drawing (as `resvg` sizes it); `no-size` still fails by a fraction of a pixel along the edges of its square.
 
-Patterns (`pattern` with `patternUnits`, `patternContentUnits`, `patternTransform`, `viewBox` and an `href` chain, on a fill or a stroke, and as a context paint) are lowered as the scene's pattern resource: the score moved from 696 to 732, and the 31 `paint-servers` cases that were excluded for want of patterns are now scored. The remaining refusals are `mask`, `text` that is not excluded, `image`, and gradients
+Patterns (`pattern` with `patternUnits`, `patternContentUnits`, `patternTransform`, `viewBox` and an `href` chain, on a fill or a stroke, and as a context paint) are lowered as the scene's pattern resource: the score moved from 696 to 732, and the 31 `paint-servers` cases that were excluded for want of patterns are now scored. Style sheets are applied: the rules of the document's `style` elements (type `text/css` or none, in document order, CDATA included) go to the cascade through `text`'s selector engine, which reads the document's own tree (a clone made by `use` is matched as the element it clones), so a rule beats a presentation attribute, the `style` attribute beats a rule, `!important` and specificity decide between rules, and a sheet placed after what it styles still applies. The 16 `structure/style` cases are scored: 14 match the reference, one is accepted (a rule that sets `height`, which SVG 2 allows and the reference, written for SVG 1.1, does not; Chromium draws what this library draws), and `external-CSS` is refused, since an `@import` is never fetched. A sheet with a conditional rule (`@media`, `@supports`) is refused too, for want of an evaluator for the environment. The remaining refusals are `mask`, `text` that is not excluded, `image`, and gradients
 named by `context-fill` and `context-stroke`. Gradients interpolated in `linearRGB` are drawn; no case of the corpus covers
 them, since the reference renderer ignores the property on a gradient.
 No case has been seen to **error**; the two that timed out in the previous run (`painting/color/recursive-nested-context*`)

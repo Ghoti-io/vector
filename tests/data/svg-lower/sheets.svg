@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!-- Style sheets: type, class, id, attribute and combinator selectors, the cascade's order, a sheet after what it styles, and a clone made by use (G8). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <style>
+    rect { fill: #2980b9 }
+    .warm { fill: #c0392b }
+    #pick { fill: #27ae60 !important }
+    g > circle { fill: #8e44ad; stroke: #2c3e50; stroke-width: 2 }
+    [data-x] { opacity: 0.5 }
+    defs > path { fill: #f39c12 }
+  </style>
+  <defs><path id="shape" d="M0 0H12L6 12Z"/></defs>
+  <rect width="30" height="20"/>
+  <rect class="warm" x="40" width="30" height="20"/>
+  <rect id="pick" y="30" width="30" height="20" style="fill: #000000"/>
+  <g><circle cx="55" cy="40" r="8" data-x="1"/></g>
+  <use href="#shape" x="5" y="60"/>
+  <style>.late { fill: #16a085 }</style>
+  <rect class="late" x="40" y="60" width="30" height="16"/>
+</svg>

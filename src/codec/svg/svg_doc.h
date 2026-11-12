@@ -109,8 +109,18 @@ struct GVEC_Svg_Node {
 #define GVEC_SVG_ELEMENT_EXPANSION_LIMITED 4u
 #define GVEC_SVG_ELEMENT_KEY_COLLISION 8u
 
+/**
+ * What the style layer's element interface is handed for an element: the element, and nothing the instance adds. A selector is matched
+ * against the document's tree (a clone made by `use` matches as the element it clones, as CSS says of the referenced tree), so the
+ * interface needs a handle for every element of the document, whichever instances of it are drawn. An instance carries one of its own.
+ */
+typedef struct gvec_svg_handle {
+  const GVEC_Svg_Element * element;
+} gvec_svg_handle;
+
 struct GVEC_Svg_Element {
   GVEC_Svg_Node node;
+  gvec_svg_handle handle;         ///< The element's own handle for selector matching (its `element` is this element).
   GVEC_Svg_Kind kind;
   const char * ns;
   const char * name;
