@@ -6,4 +6,5 @@
   <text x="116" y="46" text-anchor="end" font-size="8" fill="#2980b9" opacity="0.7">End anchor</text>
   <text x="4" y="62" fill="#27ae60">  collapsed
      white   space  </text>
+  <text x="4" y="76" font-size="9">One <tspan fill="#8e44ad" font-weight="bold">two</tspan> <tspan x="70" dy="-4" fill="#16a085">three</tspan></text>
 </svg>

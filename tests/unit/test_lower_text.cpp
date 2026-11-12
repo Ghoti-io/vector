@@ -56,14 +56,14 @@ TEST(LowerText, ACharacterIsAGlyphOfTheFaceThatMapsItAtTheFontSize) {
   EXPECT_EQ(run.size, 100.0);
   EXPECT_EQ(run.hint_mode, (uint32_t) GSHSCENE_HINT_NONE);
   ASSERT_EQ(run.glyph_count, (size_t) 4);
-  EXPECT_EQ(run.glyphs[0].x, 0.0);
-  EXPECT_EQ(run.glyphs[1].x, 60.0);
-  EXPECT_EQ(run.glyphs[2].x, 120.0);   // the space is 30 wide
-  EXPECT_EQ(run.glyphs[3].x, 150.0);
+  EXPECT_EQ(run.glyphs[0].x, 10.0);    // the glyphs carry their positions in the element's space
+  EXPECT_EQ(run.glyphs[1].x, 70.0);
+  EXPECT_EQ(run.glyphs[2].x, 130.0);   // the space is 30 wide
+  EXPECT_EQ(run.glyphs[3].x, 160.0);
+  EXPECT_EQ(run.glyphs[0].y, 50.0);
   EXPECT_EQ(run.glyphs[0].id, run.glyphs[3].id);
   EXPECT_NE(run.glyphs[0].id, run.glyphs[1].id);
-  EXPECT_EQ(l.Item(0).map.t[0], 10.0);
-  EXPECT_EQ(l.Item(0).map.t[1], 50.0);
+  EXPECT_EQ(l.Item(0).map.t[0], 0.0);
   EXPECT_EQ(l.Item(0).paint.rgba[3], 1.0);
 }
 
@@ -143,11 +143,9 @@ TEST(LowerText, WithoutFontsTheElementIsRefusedWhole) {
   EXPECT_NE(l.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
-TEST(LowerText, SpansAStrokeAndAGradientAreRefusedUntilTheyAreLowered) {
+TEST(LowerText, AStrokeAndAGradientAreRefusedUntilTheyAreLowered) {
   Fonts f;
-  Lowered span, stroke, gradient;
-  LowerText(f, "", "A<tspan>B</tspan>", span);
-  EXPECT_NE(span.Refusal(GVEC_LOWER_TEXT), nullptr);
+  Lowered stroke, gradient;
   LowerText(f, "stroke=\"red\"", "A", stroke);
   EXPECT_NE(stroke.Refusal(GVEC_LOWER_TEXT), nullptr);
   GVEC_Lower_Options options;
@@ -157,6 +155,104 @@ TEST(LowerText, SpansAStrokeAndAGradientAreRefusedUntilTheyAreLowered) {
                "<linearGradient id=\"g\"><stop/></linearGradient><text fill=\"url(#g)\">A</text>"),
       gradient, 0, 0, &options);
   EXPECT_NE(gradient.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
+TEST(LowerText, ASpanWithAnotherStyleIsItsOwnRunAndTheLineContinuesAcrossIt) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\"", "A<tspan fill=\"green\" font-weight=\"bold\">BB</tspan>A", l));
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 1);
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 2);
+  EXPECT_EQ(run.glyphs[0].x, 60.0);    // after the first A
+  EXPECT_EQ(run.glyphs[1].x, 130.0);   // the bold advance is 70
+  EXPECT_GT(l.Item(1).paint.rgba[1], 0.4);
+  EXPECT_EQ(l.Item(0).paint.rgba[1], 0.0);
+  ASSERT_TRUE(ReadRun(l, 2, run));
+  EXPECT_EQ(run.glyphs[0].x, 200.0);
+}
+
+TEST(LowerText, AnAbsoluteXOnASpanStartsAChunkAndTheAnchorIsOfEachChunk) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"100\" y=\"20\" text-anchor=\"middle\"", "AA<tspan x=\"300\" y=\"60\">AAAA</tspan>", l));
+  ASSERT_EQ(l.Items(), (size_t) 2);
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_EQ(run.glyphs[0].x, 100.0 - 60.0);
+  EXPECT_EQ(run.glyphs[0].y, 20.0);
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_EQ(run.glyphs[0].x, 300.0 - 120.0);
+  EXPECT_EQ(run.glyphs[0].y, 60.0);
+}
+
+TEST(LowerText, ListsOfPositionsApplyToTheCharactersInOrderAndAnInnerListWins) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"10 100 200\" y=\"30\"", "AAAA", l));
+  // A chunk begins at each x: three runs' worth of glyphs, the last chunk holding the fourth character after the third.
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  ASSERT_EQ(run.glyph_count, (size_t) 4);
+  EXPECT_EQ(run.glyphs[0].x, 10.0);
+  EXPECT_EQ(run.glyphs[1].x, 100.0);
+  EXPECT_EQ(run.glyphs[2].x, 200.0);
+  EXPECT_EQ(run.glyphs[3].x, 260.0);
+  Lowered inner;
+  ASSERT_TRUE(LowerText(f, "x=\"0 50\"", "A<tspan x=\"400\">AA</tspan>", inner));
+  ASSERT_TRUE(ReadRun(inner, 0, run));
+  EXPECT_EQ(run.glyphs[0].x, 0.0);
+  ASSERT_TRUE(ReadRun(inner, 1, run));
+  EXPECT_EQ(run.glyphs[0].x, 400.0);  // the span's list gives the second character x 400, not the text's 50
+}
+
+TEST(LowerText, DxAndDyMoveThePenForTheCharactersAfterThem) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"40\" dx=\"0 10\" dy=\"0 5\"", "AAA", l));
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  EXPECT_EQ(run.glyphs[0].x, 0.0);
+  EXPECT_EQ(run.glyphs[1].x, 70.0);    // 60 and the 10 of dx
+  EXPECT_EQ(run.glyphs[1].y, 45.0);
+  EXPECT_EQ(run.glyphs[2].x, 130.0);
+  EXPECT_EQ(run.glyphs[2].y, 45.0);    // dy stays
+}
+
+TEST(LowerText, WhiteSpaceRunsAcrossSpansAndASpanThatIsNotDisplayedTakesNoRoom) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "", "A <tspan> B</tspan><tspan display=\"none\">XXXX</tspan> A", l));
+  uint64_t glyphs = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    if (ReadRun(l, i, run)) {
+      glyphs += run.glyph_count;
+    }
+  }
+  EXPECT_EQ(glyphs, (uint64_t) 5);  // "A B A": the white space collapses across the spans, and the span that is not displayed adds nothing
+}
+
+TEST(LowerText, AHiddenSpanKeepsItsRoomAndDrawsNothing) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "x=\"0\"", "A<tspan visibility=\"hidden\">BB</tspan>A", l));
+  ASSERT_EQ(l.Items(), (size_t) 2);
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_EQ(run.glyphs[0].x, 180.0);
+}
+
+TEST(LowerText, ARotateAListOfLengthsInEmAndTextPathAreRefusedUntilTheyAreLowered) {
+  Fonts f;
+  Lowered rotate, path;
+  LowerText(f, "rotate=\"10\"", "A", rotate);
+  EXPECT_NE(rotate.Refusal(GVEC_LOWER_TEXT), nullptr);
+  LowerText(f, "", "A<textPath href=\"#p\">B</textPath>", path);
+  EXPECT_NE(path.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
 int main(int argc, char ** argv) {

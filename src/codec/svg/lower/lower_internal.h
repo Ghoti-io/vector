@@ -352,9 +352,14 @@ GVEC_INTERNAL_API GVEC_Result gvec_fonts_face(const GVEC_Fonts * fonts, const ch
 GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
     const GVEC_Fonts * fonts, const GFNT_Face * face, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);
 
-/** The glyph runs of a `text` element, each in the text's own space (the origin is the start of the text chunk, y down). */
+/** The glyph runs of a `text` element, each in the element's own user space (the glyphs carry their absolute positions, y down). */
+typedef struct gvec_lw_text_piece {
+  const GSHSCENE_Resource * run;      ///< A glyph run (held by the context): the glyphs of one span in one face.
+  const GVEC_Svg_Instance * inst;     ///< The span it is of: its fill is the run's paint.
+} gvec_lw_text_piece;
+
 typedef struct gvec_lw_text {
-  const GSHSCENE_Resource ** pieces; ///< The runs (held by the context), one for each face the text used; empty when nothing is drawn.
+  gvec_lw_text_piece * pieces; ///< The runs, in the order they are drawn; empty when nothing is drawn.
   size_t count;
 } gvec_lw_text;
 

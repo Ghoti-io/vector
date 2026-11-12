@@ -567,18 +567,23 @@ mask, blend or isolation) makes no group, so its children blend with what was pa
 the operator source-over. The waist drops a group node that is all defaults (it is a container, and a list would push a layer for it where an edit
 would not), so the isolated group names the space it blends in, sRGB-encoded as CSS blends, which keeps it a group in both.
 
-**H21 Text: fonts and glyph runs.** The caller gives the fonts (`GVEC_Fonts` over a `GFNT_FontSet`; the library scans nothing and reads no
-environment, so a drawing of text is a function of the document and the fonts). A `text` element with only character data is shaped with
-`gfnt_faces_shape_bidi` over the faces its characters need: for each character, the first name of the `font-family` list that has a face
-mapping it (the generic families are the set's aliases), else the set's `serif`, else any face that maps it, in the weight, style and width the
-cascade gives; the faces are listed in the order they are first needed and the shaper gives a character to the first of them that maps its whole
-cluster. A glyph run of the waist has one face, so text that falls back to another face is several runs, each filled with the element's paint, and
-the pen's advance runs on across them. The runs are unhinted (the references draw outlines), the size is `font-size` in user units, the text
-chunk's start is the element's `x` and `y`, `text-anchor` moves the whole line by the whole advance, and white space is `xml:space`'s (stripped
-and collapsed by default, kept as spaces when preserved). The face is interned in the scene through `font`'s glyph provider, so the `GVEC_Fonts`
-must outlive the scene. Whatever a later story of milestone 3 lowers (spans, position lists, `dx` and `dy`, `rotate`, `textLength`, spacing,
-`font-variant` and `font-kerning`, a decoration, a baseline, a writing mode, a direction, a stroke, a gradient or a pattern) refuses the element
-whole.
+**H21 Text: fonts, chunks and glyph runs.** The caller gives the fonts (`GVEC_Fonts` over a `GFNT_FontSet`; the library scans nothing and reads no
+environment, so a drawing of text is a function of the document and the fonts). The content of a `text` element is read in tree order into
+characters: a text node's, with the white space of `xml:space` (stripped at the ends, newlines removed, runs collapsed, the collapse running on
+across spans and after a preserved space), and each `tspan` and `a` (a span that is not displayed, or whose conditions fail, adds nothing). Each
+character knows the span it is in, and the `x`, `y`, `dx` and `dy` lists of the elements apply to the characters of their own content in order,
+an inner list after an outer one so that it wins. A character with an absolute `x` or `y` begins a **text chunk** (as does the start of the text),
+at that position, the other coordinate continuing from the pen. A chunk is shaped in stretches of consecutive characters that ask for one font,
+whatever their fill, so that kerning and joining run across a span boundary that changes only the paint; the shaper is `gfnt_faces_shape_bidi`
+over the faces the stretch's characters need: for each character, the first name of the `font-family` list that has a face mapping it (the generic
+families are the set's aliases), else the set's `serif`, else any face that maps it, in the weight, style and width the cascade gives. A glyph moves
+the pen by its advance; `dx` and `dy` of its character move the pen before it, and stay. The whole chunk is then moved by its `text-anchor` (the
+first character's) times its whole advance. A glyph run of the waist has one face and one size, so the glyphs are cut into runs where the span
+(its paint) or the face changes, each filled with the paint of its span; spans that are not visible keep their room and draw nothing. The runs are
+unhinted (the references draw outlines), the size is `font-size` in user units, and the glyphs carry their absolute positions in the element's
+user space. The face is interned in the scene through `font`'s glyph provider, so the `GVEC_Fonts` must outlive the scene. Whatever a later story
+of milestone 3 lowers (`rotate`, `textLength`, spacing, `font-variant` and `font-kerning`, a decoration, a baseline, a writing mode, a direction,
+text on a path, `tref`, opacity on a span, a stroke, a gradient or a pattern) refuses the element whole.
 
 ## Threads
 

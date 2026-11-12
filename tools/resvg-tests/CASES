@@ -36,7 +36,6 @@ text/text-rendering/*	OUT_OF_SCOPE	this text property is read in a later story o
 text/textLength/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/textPath/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/tref/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
-text/tspan/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/unicode-bidi/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/word-spacing/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
 text/writing-mode/*	OUT_OF_SCOPE	this text property is read in a later story of milestone 3
