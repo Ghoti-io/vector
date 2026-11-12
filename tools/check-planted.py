@@ -137,7 +137,7 @@ PLANTS = [
      "a nested svg with visible overflow is clipped"),
     ("P4", W, "    clip->map = c.local;\n", "",
      "the viewport clip is not placed in the parent's space"),
-    ("P5", W, "  if (!(opacity < 1)) {\n    return GVEC_OK;\n  }\n  bool entered;", "  if (!(opacity <= 1)) {\n    return GVEC_OK;\n  }\n  bool entered;",
+    ("P5", W, "  if (!(opacity < 1) && c->composite == 0 && !c->isolate) {\n    return GVEC_OK;", "  if (!(opacity <= 1) && c->composite == 0 && !c->isolate) {\n    return GVEC_OK;",
      "a group is made for every element"),
     ("P5", W, "  c->draw = c->opacity > 0; /* Opacity zero draws nothing, whatever is inside. */", "  c->draw = true;",
      "an element with opacity zero is drawn"),
