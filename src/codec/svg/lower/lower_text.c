@@ -928,11 +928,11 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
         t->last_space = false;
         continue; /* What is not a shape is no path to follow. */
       }
-      if (target_kind != GVEC_SVG_KIND_PATH || (!own_segments && gvec_svg_element_find_attribute(target, "transform")) ||
+      if ((!own_segments && gvec_svg_element_find_attribute(target, "transform")) ||
           (method && method->raw && strcmp(method->raw, "stretch") == 0) || (side && side->raw && strcmp(side->raw, "right") == 0)) {
         t->refused = true;
         return gvec_lw_refuse(ctx, child, GVEC_LOWER_TEXT,
-            "a textPath on a shape, on a path with a transform, with method stretch or with side right is not lowered yet");
+            "a textPath on a path with a transform, with method stretch or with side right is not lowered yet");
       }
       if (t->tpath_count == TPATH_MAX) {
         t->refused = true;
@@ -1100,6 +1100,7 @@ typedef struct tglyph {
   double x, y;
   double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
   uint32_t style;
+  double frame[5];  ///< On a path: the point (x, y) and the tangent (x, y) the glyph is put at, and the distance of its middle along the line.
   bool hidden;      ///< On a path: the glyph's middle is off the path's end, and it is not drawn.
   double advance;   ///< The advance of the glyph alone, without the spacing after it.
   bool sideways;    ///< Vertical text: a glyph of a script that lies on its side.
@@ -1496,15 +1497,9 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   if (t.vertical && t.tpath_count) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "text on a path in vertical text is not lowered yet");
   }
-  if (t.tpath_count && t.decor_count) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration on text on a path is not lowered yet");
-  }
   if (t.vertical) {
     /* The text is laid out as if it were horizontal in a frame turned a quarter (down is the line's direction, left is the next one's), and
      * the glyphs are put back afterwards: the lists of positions trade axes with it. */
-    if (t.decor_count) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration on vertical text is not lowered yet");
-    }
     for (size_t k = 0; k < t.length_count; k++) {
       if (t.lengths[k].glyphs) {
         return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a stretched textLength on vertical text is not lowered yet");
@@ -1530,8 +1525,25 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   for (size_t k = 0; k < t.tpath_count; k++) {
     gvec_lw_geometry geometry;
     const GSHSCENE_Resource * resource = NULL;
-    r = t.tpaths[k].segments ? gvec_lw_segments_path(ctx, t.tpaths[k].segments, t.tpaths[k].segment_count, &geometry, &resource)
-                             : gvec_lw_path_of(ctx, t.tpaths[k].path, true, &geometry, &resource);
+    GVEC_Svg_Kind pk = gvec_svg_element_kind(t.tpaths[k].path);
+    if (t.tpaths[k].segments) {
+      r = gvec_lw_segments_path(ctx, t.tpaths[k].segments, t.tpaths[k].segment_count, &geometry, &resource);
+    }
+    else if (pk == GVEC_SVG_KIND_RECT || pk == GVEC_SVG_KIND_CIRCLE || pk == GVEC_SVG_KIND_ELLIPSE) {
+      /* A shape of SVG 2 is the path of its outline, from the point its fill starts at. */
+      const GVEC_Svg_Instance * shape_inst = NULL;
+      bool shape_usable = true;
+      r = gvec_lw_instance_of(ctx, t.tpaths[k].path, &shape_inst);
+      if (r == GVEC_OK) {
+        r = gvec_lw_primitive_of(ctx, shape_inst, &geometry, &resource, &shape_usable);
+      }
+      if (r == GVEC_OK && !shape_usable) {
+        return GVEC_OK; /* The shape was refused (and reported). */
+      }
+    }
+    else {
+      r = gvec_lw_path_of(ctx, t.tpaths[k].path, true, &geometry, &resource);
+    }
     if (r != GVEC_OK) {
       return r;
     }
@@ -1555,6 +1567,8 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   typedef struct drect {
     double x0, x1, center, thickness;
     const GVEC_Svg_Instance * inst;
+    bool mapped;    ///< `map` takes the line from the frame it was laid out in to the element's space (a vertical frame, a glyph on a path).
+    GSHGEOM_Map map;
     bool over_text; ///< A line-through: drawn after the text, where an underline and an overline are before it.
   } drect;
   drect * rects = NULL;
@@ -1690,6 +1704,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         gl->y = fr.point.y + ox * ty + oy * tx;
         gl->rotate += gmath_atan2(ty, tx) * (180.0 / 3.14159265358979323846);
         gl->pivot = g;
+        gl->frame[0] = fr.point.x, gl->frame[1] = fr.point.y, gl->frame[2] = tx, gl->frame[3] = ty, gl->frame[4] = mid;
       }
       /* The text after the path goes on from where the text on it ended (the end of the line is clamped to the path). */
       pen_x = before_x;
@@ -1721,7 +1736,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         continue;
       }
       for (size_t g = ga; g < gb; g++) {
-        if (glyphs[g].rotate != 0) {
+        if (glyphs[g].rotate - (glyphs[g].sideways ? 90.0 : 0.0) != 0 && !tp_index) {
           return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a text decoration over rotated glyphs is not lowered yet");
         }
       }
@@ -1770,26 +1785,45 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         if (!(dec->flags & kind)) {
           continue;
         }
-        if (rect_count == rect_capacity) {
-          size_t capacity = rect_capacity ? rect_capacity * 2 : 8;
-          drect * grown = gvec_arena_array(&ctx->arena, capacity, sizeof *grown, sizeof(double));
-          if (!grown) {
-            return GVEC_ERR_OOM;
+        /* On a path the line is cut at each glyph, as each is put on the path; elsewhere it is one line across the span. */
+        for (size_t ga0 = sa; ga0 < sb; ga0 = tp_index ? ga0 + 1 : sb) {
+          size_t gb0 = tp_index ? ga0 + 1 : sb;
+          if (tp_index && glyphs[ga0].hidden) {
+            continue;
           }
-          if (rect_count) {
-            memcpy(grown, rects, rect_count * sizeof *grown);
+          if (rect_count == rect_capacity) {
+            size_t capacity = rect_capacity ? rect_capacity * 2 : 8;
+            drect * grown = gvec_arena_array(&ctx->arena, capacity, sizeof *grown, sizeof(double));
+            if (!grown) {
+              return GVEC_ERR_OOM;
+            }
+            if (rect_count) {
+              memcpy(grown, rects, rect_count * sizeof *grown);
+            }
+            rects = grown;
+            rect_capacity = capacity;
           }
-          rects = grown;
-          rect_capacity = capacity;
+          drect * dr = &rects[rect_count++];
+          dr->x0 = glyphs[ga0].cell_x0;
+          dr->x1 = glyphs[gb0 - 1].cell_x1;
+          double base = glyphs[ga0].base;
+          dr->center = kind == 1 ? base - under_position : kind == 2 ? base - (double) line.ascent * sc : base - strike_position;
+          dr->thickness = kind == 4 ? strike_thickness : under_thickness;
+          dr->inst = dec->inst;
+          dr->over_text = kind == 4;
+          dr->mapped = false;
+          if (tp_index) {
+            const double * fm = glyphs[ga0].frame;
+            const double matrix[4] = {fm[2], -fm[3], fm[3], fm[2]};
+            const double shift[2] = {fm[0] - fm[4] * fm[2], fm[1] - fm[4] * fm[3]};
+            dr->mapped = gshgeom_map_from_matrix(2, matrix, shift, &dr->map) == GSHGEOM_OK;
+          }
+          else if (t.vertical) {
+            const double matrix[4] = {0, -1, 1, 0};
+            const double shift[2] = {0, 0};
+            dr->mapped = gshgeom_map_from_matrix(2, matrix, shift, &dr->map) == GSHGEOM_OK;
+          }
         }
-        drect * dr = &rects[rect_count++];
-        dr->x0 = glyphs[sa].cell_x0;
-        dr->x1 = glyphs[sb - 1].cell_x1;
-        double base = glyphs[sa].base;
-        dr->center = kind == 1 ? base - under_position : kind == 2 ? base - (double) line.ascent * sc : base - strike_position;
-        dr->thickness = kind == 4 ? strike_thickness : under_thickness;
-        dr->inst = dec->inst;
-        dr->over_text = kind == 4;
       }
       sa = sb;
       }
@@ -1850,7 +1884,12 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         out->pieces[out->count].run = rect;
         out->pieces[out->count].inst = rects[k].inst;
         out->pieces[out->count].decoration = true;
-        gshgeom_map_identity(2, &out->pieces[out->count].map);
+        if (rects[k].mapped) {
+          out->pieces[out->count].map = rects[k].map;
+        }
+        else {
+          gshgeom_map_identity(2, &out->pieces[out->count].map);
+        }
         out->count++;
       }
       continue;

@@ -400,11 +400,12 @@ TEST(LowerText, KerningCanBeSwitchedOffSmallCapsAskForTheFacesOwnAndAnInvalidLen
   EXPECT_EQ(run.glyphs[1].x, 60.0);
 }
 
-TEST(LowerText, DecorationOnVerticalTextAndFontSizeAdjustAreRefusedUntilTheyAreLowered) {
+TEST(LowerText, FontSizeAdjustIsRefusedAndADecorationOnVerticalTextIsASetOfRectsTurnedWithTheLine) {
   Fonts f;
   Lowered tb, adjust;
   LowerText(f, "writing-mode=\"tb\" text-decoration=\"underline\"", "A", tb);
-  EXPECT_NE(tb.Refusal(GVEC_LOWER_TEXT), nullptr);
+  EXPECT_EQ(tb.Refusal(GVEC_LOWER_TEXT), nullptr);
+  EXPECT_GE(tb.Items(), (size_t) 2);  // the underline, and the turned glyph
   LowerText(f, "font-size-adjust=\"0.5\"", "A", adjust);
   EXPECT_NE(adjust.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
@@ -619,6 +620,21 @@ TEST(LowerText, TheDataOfATextPathsPathAttributeIsThePathAndIsPreferredToItsHref
   ASSERT_TRUE(ReadRun(l, 1, run));
   EXPECT_NEAR(run.glyphs[0].y, 50.0, 1e-9);  // the path attribute's line, not the href's
   EXPECT_NEAR(run.glyphs[0].x, 10.0, 1e-9);
+}
+
+TEST(LowerText, TextOnARectIsSetAlongItsOutlineAndADecorationOnAPathIsCutAtEachGlyph) {
+  Fonts f;
+  Lowered rect, line, plain;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerBody(f, "<rect id=\"r\" x=\"10\" y=\"50\" width=\"100\" height=\"80\"/><text><textPath href=\"#r\">A</textPath></text>", rect));
+  EXPECT_EQ(rect.Refusals(), (size_t) 0);
+  ASSERT_GE(rect.Items(), (size_t) 2);
+  ASSERT_TRUE(ReadRun(rect, 1, run));
+  EXPECT_NEAR(run.glyphs[0].y, 50.0, 1e-9);  // the outline starts at the top left corner and runs right
+  ASSERT_TRUE(LowerBody(f, "<path id=\"p\" d=\"M 10 50 L 310 50\"/><text text-decoration=\"underline\"><textPath href=\"#p\">AB</textPath></text>", line));
+  EXPECT_EQ(line.Refusals(), (size_t) 0);
+  ASSERT_TRUE(LowerBody(f, "<path id=\"p\" d=\"M 10 50 L 310 50\"/><text><textPath href=\"#p\">AB</textPath></text>", plain));
+  EXPECT_GT(line.Items(), plain.Items());  // a line for each glyph on the path
 }
 
 int main(int argc, char ** argv) {

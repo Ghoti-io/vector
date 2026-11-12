@@ -623,8 +623,8 @@ element, and `rl` and `lr` are the legacy spellings of a direction and an order 
 horizontal in a frame turned a quarter: the line runs down, the next one to the left. The lists of positions trade axes with the frame, and
 the glyphs are put back when the layout is done. The ideographs, kana, Hangul and full-width forms stand upright, shaped on the vertical axis
 (`vert`, the face's vertical advances and origins, which put each glyph on the middle of the line); every other character lies on its side,
-shaped as horizontal text and turned a quarter about its own origin, on the central baseline. A decoration on vertical text, and a stretched
-`textLength`, are refused.
+shaped as horizontal text and turned a quarter about its own origin, on the central baseline. A decoration on vertical text is a rectangle laid out
+in the turned frame and turned back with the line (so an underline is on the left of the column). A stretched `textLength` is refused.
 
 **H28 Text on a path.** A `textPath` that is a child of the `text` and names a `path` starts a chunk of its own, and so does the text after it.
 The chunk is laid out as a straight line (its glyphs, kerning, spacing, anchor and `textLength` as any chunk's) that starts at the
@@ -634,7 +634,8 @@ and the subpaths run one after the other). Each glyph is then put with the middl
 line, turned to the direction of the path there, with its baseline on the path (a `dy`, a baseline shift and the dominant baseline move it
 off); a glyph whose middle is beyond either end is not drawn. The text after the `textPath` goes on from where the text on the path ended
 (clamped to the path's end). The `path` attribute (SVG 2), when it parses, is the path and is preferred to the `href`; when it does not, the `href` names it. A `textPath` with no path to follow has no characters (a space after it is kept). Refused: a path with a
-`transform`, an element that is not a `path`, `method="stretch"`, `side="right"`, a decoration, and text on a path in vertical text.
+`transform`, `method="stretch"`, `side="right"`, and text on a path in vertical text. A `rect`, `circle` or `ellipse` is the path of its outline (from where
+its fill starts), as SVG 2 says. A decoration on text on a path is cut at each glyph, each piece turned and placed as its glyph is.
 
 **H29 `tref`, and text in a clip.** A `tref` is a span whose characters are the character data of the element its `href` names, in the
 `tref`'s own style and with its own `x`, `y`, `dx`, `dy` and `rotate` (read from the attribute as written, since the document does not type the
