@@ -600,6 +600,24 @@ it is anchored: `spacing` spreads the extra length over the gaps between the gly
 and stretches the run's map about the start of the element's glyphs, so the outlines are stretched with them. A length of zero or less is ignored,
 and one over several chunks is refused.
 
+**H24 Baselines.** A span is set on the baseline its `dominant-baseline` names, or the one its `alignment-baseline` aligns it by, and lifted by
+its `baseline-shift`s and its ancestors'. The positions of the baselines come from the face: `central` is half the sum of the ascent and the
+descent, `middle` half the x-height, `hanging` four fifths of the ascent, `mathematical` half of it, `ideographic` and `after-edge` the
+descent, `before-edge` the ascent. `sub` and `super` lift by the face's OS/2 offsets, and by a fifth and a third of the font size when it has
+none. The shift of the `text` element itself is ignored; the values of SVG 1.1 that the cascade drops are read from the attribute.
+
+**H25 Rotation and decoration.** A `rotate` list turns each character about the origin of its glyph; a mark turns about the base of its
+cluster, so that it keeps its place on it. `text-decoration` is drawn for each span from the face of the element that declared it: an
+underline at the face's underline position, a line-through at its strikeout position, an overline at the ascent, each as wide as the span's
+glyphs and as thick as the face says. An element outside the text that declares one draws it with the paint of the text. A decoration over
+glyphs that are rotated, or whose baseline moves with `dy` or `y`, is refused.
+
+**H26 Direction.** `direction` is the base direction of the paragraph the bidirectional algorithm is run over, so right-to-left text is
+shaped, joined and reordered as the font library does it; the glyphs of a chunk are laid from its position in visual order. `start` and
+`end` of `text-anchor` are those of the line, so a right-to-left chunk that starts at `x` ends there. `unicode-bidi: bidi-override` gives
+every character the direction of `direction` and no reordering: the text is cut into its scripts, each is shaped in that direction, and the
+stretches are laid in that direction's order. `unicode-bidi: embed` and `isolate` change nothing a single line shows.
+
 
 The registry is read-only after load time and may be read from any thread. Every other object (a
 stream, a document, a diagnostics list) is used by one thread at a time; different objects may be

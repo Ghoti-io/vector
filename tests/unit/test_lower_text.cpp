@@ -465,6 +465,33 @@ TEST(LowerText, ShiftsOfNestedSpansAddUpAndTheShiftOfTheTextItselfIsIgnored) {
   EXPECT_DOUBLE_EQ(run.glyphs[0].y, 50.0);
 }
 
+TEST(LowerText, RightToLeftTextStartsAtTheRightEdgeOfItsAnchor) {
+  Fonts f;
+  Lowered ltr, rtl;
+  GSHSCENE_Glyph_Run a, b;
+  ASSERT_TRUE(LowerText(f, "x=\"100\" y=\"50\"", "AB", ltr));
+  ASSERT_TRUE(LowerText(f, "x=\"100\" y=\"50\" direction=\"rtl\"", "AB", rtl));
+  ASSERT_TRUE(ReadRun(ltr, 0, a));
+  ASSERT_TRUE(ReadRun(rtl, 0, b));
+  ASSERT_GT(a.glyph_count, (size_t) 0);
+  EXPECT_DOUBLE_EQ(a.glyphs[0].x, 100.0);       // start is the left edge of left-to-right text
+  EXPECT_LT(b.glyphs[b.glyph_count - 1].x, 100.0); // and the right edge of right-to-left text: the text lies to the left of x
+}
+
+TEST(LowerText, ABidiOverrideSetsTheCharactersInTheDirectionsOrder) {
+  Fonts f;
+  Lowered plain, over;
+  GSHSCENE_Glyph_Run a, b;
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"50\"", "AB", plain));
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"50\" direction=\"rtl\" unicode-bidi=\"bidi-override\" text-anchor=\"end\"", "AB", over));
+  ASSERT_TRUE(ReadRun(plain, 0, a));
+  ASSERT_TRUE(ReadRun(over, 0, b));
+  ASSERT_EQ(a.glyph_count, (size_t) 2);
+  ASSERT_EQ(b.glyph_count, (size_t) 2);
+  EXPECT_EQ(a.glyphs[0].id, b.glyphs[1].id);  // the glyphs come in the opposite order
+  EXPECT_EQ(a.glyphs[1].id, b.glyphs[0].id);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

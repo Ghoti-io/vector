@@ -289,8 +289,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     const char * what;
   } checks[] = {
       {GVEC_SVG_PROP_WRITING_MODE, {"horizontal-tb", "lr-tb", "lr", NULL}, "writing-mode"},
-      {GVEC_SVG_PROP_DIRECTION, {"ltr", NULL, NULL, NULL}, "direction"},
-      {GVEC_SVG_PROP_UNICODE_BIDI, {"normal", NULL, NULL, NULL}, "unicode-bidi"},
       {GVEC_SVG_PROP_FONT_SIZE_ADJUST, {"none", NULL, NULL, NULL}, "font-size-adjust"},
   };
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -352,11 +350,12 @@ typedef struct tstyle {
   int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
   int italic;
   bool visible, small_caps, kerning_off;
+  bool rtl, bidi_override; ///< `direction: rtl`; `unicode-bidi: bidi-override` (or isolate-override): the order is the direction's, not the algorithm's.
 } tstyle;
 
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || a->small_caps != b->small_caps || a->kerning_off != b->kerning_off || a->dominant != b->dominant || a->alignment != b->alignment ||
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || a->small_caps != b->small_caps || a->kerning_off != b->kerning_off || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
       a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
     return false;
   }
@@ -512,6 +511,11 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_TEXT, "a letter-spacing or word-spacing in a unit this does not read");
   }
   char value[32];
+  {
+    char dv[32];
+    st->rtl = chain_value(inst, "direction", true, true, dv, sizeof dv) && strcmp(dv, "rtl") == 0;
+    st->bidi_override = chain_value(inst, "unicode-bidi", true, true, dv, sizeof dv) && strstr(dv, "override") != NULL;
+  }
   st->small_caps = chain_value(inst, "font-variant", true, true, value, sizeof value) && strcmp(value, "small-caps") == 0;
   /* `font-kerning` counts only in a style (a presentation attribute of it is ignored, as the references do), and `kerning` of 0 is the same. */
   st->kerning_off = (chain_value(inst, "font-kerning", false, true, value, sizeof value) && strcmp(value, "none") == 0) ||
@@ -913,6 +917,23 @@ typedef struct tglyph {
   double size;      ///< The em size the glyph is drawn at (a small capital is smaller).
 } tglyph;
 
+/* The script a character belongs to for the stretches of an override: 1 Arabic, 2 Hebrew, 3 Devanagari, 0 for any other (it joins its neighbor). */
+static int script_class(uint32_t cp) {
+  if ((cp >= 0x600 && cp <= 0x6FF) || (cp >= 0x750 && cp <= 0x77F) || (cp >= 0x8A0 && cp <= 0x8FF) || (cp >= 0xFB50 && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF)) {
+    return 1;
+  }
+  if ((cp >= 0x590 && cp <= 0x5FF) || (cp >= 0xFB1D && cp <= 0xFB4F)) {
+    return 2;
+  }
+  if (cp >= 0x900 && cp <= 0x97F) {
+    return 3;
+  }
+  if ((cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A) || (cp >= 0xC0 && cp <= 0x24F)) {
+    return 4;
+  }
+  return 0;
+}
+
 /* Shape the characters [from, to) of one span: the faces its characters need (the first name of the list that maps each), shaped with fallback;
  * the glyphs are appended to `glyphs` in visual order, positioned from `pen` and with the dx and dy of their characters, which move the pen. */
 static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, size_t to, double * pen_x, double * pen_y, tglyph * glyphs, size_t * glyph_count) {
@@ -991,14 +1012,58 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   }
   shape.features = feature_count ? features : NULL;
   shape.feature_count = feature_count;
-  GFNT_FaceRuns runs;
-  memset(&runs, 0, sizeof runs);
-  GFNT_Result sr = gfnt_faces_shape_bidi(faces, face_count, cps, count, GFNT_BIDI_LTR, &shape, NULL, &runs, NULL);
-  if (sr != GFNT_OK) {
-    return sr == GFNT_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the text could not be shaped with the fonts given");
+  /* The stretches shaped on their own, in the order they are drawn: the whole text (the bidirectional algorithm orders it), or, under an
+   * override, its script runs, which are shaped each in the direction the override gives, and in that direction's order. */
+  size_t * seg = gvec_arena_array(&ctx->arena, 2 * (count + 1), sizeof *seg, sizeof *seg);
+  if (!seg) {
+    return GVEC_ERR_OOM;
+  }
+  size_t seg_count = 0;
+  if (!st->bidi_override) {
+    seg[0] = 0;
+    seg[1] = count;
+    seg_count = 1;
+  }
+  else {
+    int cls_previous = 0;
+    size_t start = 0;
+    for (size_t i = 0; i <= count; i++) {
+      int cls = i < count ? script_class(cps[i]) : -1;
+      if (i == count || (cls != 0 && cls_previous != 0 && cls != cls_previous)) {
+        seg[2 * seg_count] = start;
+        seg[2 * seg_count + 1] = i - start;
+        seg_count++;
+        start = i;
+      }
+      if (cls > 0) {
+        cls_previous = cls;
+      }
+    }
+    for (size_t k = 0; st->rtl && k < seg_count / 2; k++) {
+      size_t a0 = seg[2 * k], a1 = seg[2 * k + 1];
+      seg[2 * k] = seg[2 * (seg_count - 1 - k)];
+      seg[2 * k + 1] = seg[2 * (seg_count - 1 - k) + 1];
+      seg[2 * (seg_count - 1 - k)] = a0;
+      seg[2 * (seg_count - 1 - k) + 1] = a1;
+    }
   }
   GVEC_Result result = GVEC_OK;
   size_t last_base_ch = SIZE_MAX, last_base_index = 0;
+  for (size_t si = 0; result == GVEC_OK && si < seg_count; si++) {
+  const size_t seg_from = seg[2 * si];
+  GFNT_FaceRuns runs;
+  memset(&runs, 0, sizeof runs);
+  GFNT_Result sr;
+  if (st->bidi_override) {
+    shape.direction = st->rtl ? GFNT_DIRECTION_RTL : GFNT_DIRECTION_LTR;
+    sr = gfnt_faces_shape(faces, face_count, cps + seg_from, seg[2 * si + 1], &shape, NULL, &runs, NULL);
+  }
+  else {
+    sr = gfnt_faces_shape_bidi(faces, face_count, cps, count, st->rtl ? GFNT_BIDI_RTL : GFNT_BIDI_LTR, &shape, NULL, &runs, NULL);
+  }
+  if (sr != GFNT_OK) {
+    return sr == GFNT_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the text could not be shaped with the fonts given");
+  }
   for (size_t i = 0; result == GVEC_OK && i < runs.count; i++) {
     const GFNT_FaceRun * fr = &runs.runs[i];
     uint16_t upem = 0;
@@ -1039,7 +1104,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     down -= lift;
     for (size_t g = 0; g < fr->run.count; g++) {
       const GFNT_ShapedGlyph * sg = &fr->run.glyphs[g];
-      size_t ch = from + sg->cluster;
+      size_t ch = from + seg_from + sg->cluster;
       if (ch >= to) {
         ch = to - 1;
       }
@@ -1090,6 +1155,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     }
   }
   gfnt_face_runs_free(&runs);
+  }
   return result;
 }
 
@@ -1286,7 +1352,12 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
       pen_x += grow;
     }
     /* The anchor of the chunk's first character moves the whole chunk by its whole advance. */
-    double shift = -t.styles[t.chars[i].style].anchor * (pen_x - start_x);
+    /* `start` and `end` are the line's: at the right of a right-to-left span. */
+    double anchor = t.styles[t.chars[i].style].anchor;
+    if (t.styles[t.chars[i].style].rtl && anchor != 0.5) {
+      anchor = 1.0 - anchor;
+    }
+    double shift = -anchor * (pen_x - start_x);
     for (size_t g = chunk_first_glyph; shift != 0 && g < glyph_count; g++) {
       glyphs[g].x += shift;
       glyphs[g].cell_x0 += shift;
