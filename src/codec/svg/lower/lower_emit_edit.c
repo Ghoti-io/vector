@@ -157,6 +157,7 @@ static GVEC_Result edit_children(gvec_lw_ctx * ctx, GSHSCENE_Edit * edit, uint64
       gshscene_node_init(GSHSCENE_NODE_GROUP, &props);
       if (n->kind == GVEC_LW_GROUP) {
         props.opacity = n->opacity;
+        props.soft_mask = n->mask;
       }
       else {
         props.clip = n->resource;

@@ -634,6 +634,31 @@ GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   return GVEC_OK;
 }
 
+GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  *known = true;
+  box->empty = 1;
+  if (!is_shape(gvec_svg_element_kind(e))) {
+    GSHGEOM_Map identity;
+    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+      return GVEC_ERR_INTERNAL;
+    }
+    return group_box(ctx, e, e, inst, &identity, box, known, 0);
+  }
+  gvec_lw_geometry geometry;
+  const GSHSCENE_Resource * path = NULL;
+  bool usable;
+  GVEC_Result r = gvec_lw_centerline_of(ctx, inst, &geometry, &path, &usable);
+  if (r != GVEC_OK || !usable || geometry == GVEC_LW_GEOMETRY_LIMIT) {
+    *known = false;
+    return r;
+  }
+  if (geometry != GVEC_LW_GEOMETRY_PATH || gshgeom_path_bounds(gshscene_resource_path(path), box) != GSHGEOM_OK) {
+    box->empty = 1;
+  }
+  return GVEC_OK;
+}
+
 GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, GSHGEOM_Bounds * box, bool * known) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(root);
   GSHGEOM_Map identity;

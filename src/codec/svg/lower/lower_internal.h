@@ -75,7 +75,10 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_INSTANCE,
   GVEC_LW_ROLE_DRAWING,   ///< The group all the drawing is under.
   GVEC_LW_ROLE_STROKE,    ///< The stroke of a shape (its fill is the SHAPE role).
-  GVEC_LW_ROLE_CLIP_PATH  ///< The clip a `clip-path` makes around an element's content.
+  GVEC_LW_ROLE_CLIP_PATH, ///< The clip a `clip-path` makes around an element's content.
+  GVEC_LW_ROLE_MASK,      ///< The group a `mask` makes around an element's content.
+  GVEC_LW_ROLE_MASK_REGION, ///< The clip to a mask's region, in the mask's picture.
+  GVEC_LW_ROLE_MASK_CONTAINER ///< The hidden group that holds a mask's picture.
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;
@@ -97,6 +100,7 @@ struct gvec_lw_node {
   GSHSCENE_Paint paint;
   bool crisp;                        ///< FILL, STROKE: the item asks for no antialiasing (`shape-rendering` crispEdges or optimizeSpeed).
   double opacity;                    ///< GROUP.
+  const GSHSCENE_Resource * mask;    ///< GROUP: the soft mask (held by the context), or NULL.
   bool content;                      ///< Something is drawn by this node or below it.
   size_t items;                      ///< The items this node and its subtree are in the list the node is in.
   size_t inner_items;                ///< USE: the items of the picture's list.
@@ -121,6 +125,9 @@ typedef struct gvec_lw_table {
 } gvec_lw_table;
 
 #define GVEC_LW_NO_SITE UINT32_MAX
+
+/** Masks whose pictures may be inside one another (a mask's children masked, a mask that is masked). */
+#define GVEC_LW_MASK_NESTING 8
 
 /** Patterns whose tiles may be inside one another. */
 #define GVEC_LW_PATTERN_NESTING 8
@@ -180,6 +187,8 @@ typedef struct gvec_lw_ctx {
   gvec_lw_table * tables;
   size_t table_count, table_capacity;
   struct gradient_cache * gradients; ///< What of each paint server does not depend on the element that uses it (lower_gradient.c).
+  const GVEC_Svg_Element * mask_stack[GVEC_LW_MASK_NESTING];   ///< The masks whose picture the walk is inside (lower_mask.c).
+  size_t mask_depth;
   const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
   size_t pattern_depth;
   gvec_lw_node root;                 ///< The root of the tree: only its children are drawn.
@@ -294,6 +303,8 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const
  */
 /** The box of the drawing under the outermost `svg`, strokes included, in its user space; *known false when it holds what is not boxed. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, GSHGEOM_Bounds * box, bool * known);
+/** The bounding box of the element of `inst` in its own user space (inside its `transform`), as a clip or a mask in the units of the box takes it. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
 GVEC_INTERNAL_API GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
 
 /** The inverse of a 2D map; false when it has none (or the result is not finite). */
@@ -319,6 +330,23 @@ typedef enum gvec_lw_clip_state {
   GVEC_LW_CLIP_ALL,      ///< The clip holds nothing, so nothing of the element is seen.
   GVEC_LW_CLIP_REFUSED   ///< The element is refused (already reported).
 } gvec_lw_clip_state;
+
+/** What `mask` makes of an element. */
+typedef enum gvec_lw_mask_state {
+  GVEC_LW_MASK_NONE = 0, ///< The element is not masked: draw it as it is.
+  GVEC_LW_MASK_NODE,     ///< `out` is a group with the soft mask: draw the element under it.
+  GVEC_LW_MASK_ALL,      ///< The mask cannot be placed (a box of no area, a region of no size): the element is not rendered.
+  GVEC_LW_MASK_REFUSED   ///< The element is refused (already reported).
+} gvec_lw_mask_state;
+
+/**
+ * The soft mask of an element's `mask` (lower_mask.c): a group of the waist that names the mask, to draw the element under. The mask's
+ * picture is the content of the `mask` element in the element's own space (`frame`, the element's transform included) clipped to the
+ * mask's region, read as luminance or as alpha through `mask-type` and `color-interpolation`; a `mask` on the mask element, or on its
+ * children, is a mask of its own.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame,
+    gvec_lw_mask_state * state, gvec_lw_node ** out);
 
 /** The most clip nodes one element's `clip-path` makes: a clip that is clipped is a nested clip, to this depth. */
 #define GVEC_LW_CLIP_MAX 8

@@ -541,6 +541,25 @@ the paint reads as its fallback or none; the lowering also refuses to nest a pat
 which no reference engine draws; no case of the suite has content outside its cell, so none tells the two apart. A `context-fill` that names a pattern is
 refused (GVEC_LOWER_PATTERN). The pattern's items are not traced: a refusal inside a tile is reported for the element that has it.
 
+**H18 Style sheets.** The `style` elements of the document (of type `text/css` or of none, in document order, the text and CDATA of each) are parsed and
+compiled by `text` and held, once for the document, in one frozen rule index; the rules are matched against the document's own tree through the element
+interface (the parent, siblings, `id`, the words of `class`, attributes, order), so a clone made by `use` is matched as the element it clones, and
+`defs > path` matches the path whichever way it is drawn. The cascade is `text`'s: a rule beats a presentation attribute, the `style` attribute beats a
+rule, and importance, specificity and order of appearance decide between rules. A rule or declaration that is not valid is dropped and reported as a
+warning at its `style` element. A sheet that cannot be applied whole is not applied, and the lowering refuses its `style` element (GVEC_LOWER_STYLESHEET)
+so that the document is not drawn half styled: an `@import` (the library never fetches) and a conditional rule (`@media`, `@supports`, `@container`,
+`@when`), for which this layer has no evaluator of the environment. Geometry given in style (`height: 160px` on a `rect`) is read as SVG 2 reads it.
+
+**H19 Masks.** A `mask` naming a `mask` element is a group of the waist with a soft mask. The mask's picture is the `mask` element's content drawn in the
+masked element's own user space (its frame and its `transform`), under a clip to the region `x`, `y`, `width` and `height` (default `-10%`, `-10%`,
+`120%`, `120%`, of the box with `maskUnits` of `objectBoundingBox`, the default, or of the viewport in user units), or in the box's units when
+`maskContentUnits` is `objectBoundingBox`. The mode is luminance, or alpha when `mask-type` says so, and `color-interpolation: linearRGB` is the space
+the luminance is taken in while the picture is blended as it is, which is what the reference engines do. A box with no area, a region of no size and a
+mask with nothing in it hide the element. A `mask` on the `mask` element is a mask of its picture; if the `mask` properties followed from a mask come back
+to it, that mask has no mask of its own (as in the browsers and `resvg`), and a child of a mask that names a mask being made is drawn unmasked. A `mask`
+naming nothing, or what is no `mask`, is as if it were not specified. A mask in the units of the box of an element that holds more than shapes and groups
+of them, and a mask of another document, are refused (GVEC_LOWER_MASK). Equal masks of equal boxes are one resource.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a

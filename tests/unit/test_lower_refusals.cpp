@@ -35,7 +35,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"clip-path", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path shape", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\" style=\"clip-path: inset(1px)\"/><rect width=\"2\" height=\"2\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path group", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<g clip-path=\"url(#c)\"><path d=\"M0 0H4V4H0Z\"/></g>", "g", 2, 0},
-      {"mask", GVEC_LOWER_MASK, "<defs><mask id=\"k\"/></defs>\n<path d=\"M0 0H4V4H0Z\" mask=\"url(#k)\"/>", "path", 2, 0},
+      {"mask", GVEC_LOWER_MASK, "\n<path d=\"M0 0H4V4H0Z\" mask=\"url(other.svg#k)\"/>", "path", 2, 0},
       {"image", GVEC_LOWER_IMAGE, "\n<image width=\"4\" height=\"4\"/>", "image", 2, 0},
       {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"/></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
       {"filter to nothing", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#nothing)\"/>", "path", 2, 0},
@@ -108,13 +108,14 @@ TEST(LowerRefusals, ARectThatPaintsNothingIsNotARefusal) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerRefusals, ADanglingClipPathIsIgnoredAndADanglingMaskOrFilterIsNot) {
+TEST(LowerRefusals, ADanglingClipPathOrMaskIsIgnoredAndADanglingFilterIsNot) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" mask=\"url(#nothing)\"/>"),
+               "<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" mask=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" filter=\"url(#nothing)\"/>"),
       l);
-  EXPECT_EQ(l.Items(), (size_t) 1);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_MASK), nullptr);
+  EXPECT_EQ(l.Items(), (size_t) 2);
+  EXPECT_NE(l.Refusal(GVEC_LOWER_FILTER), nullptr);
+  EXPECT_EQ(l.Refusal(GVEC_LOWER_MASK), nullptr);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
 }
 

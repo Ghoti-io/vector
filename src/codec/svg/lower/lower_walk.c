@@ -430,14 +430,7 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     return GVEC_OK;
   }
   /* The features of the later stories refuse the element whole, so that nothing is half drawn. */
-  bool refuse = false; /* `clip-path` is lowered by the wrapper around the element (lower_clip.c). */
-  r = references_refuse(ctx, inst, GVEC_SVG_PROP_MASK, true, &refuse, &usable);
-  if (r != GVEC_OK || !usable) {
-    return r;
-  }
-  if (refuse) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "mask is not lowered yet");
-  }
+  bool refuse = false; /* `clip-path` and `mask` are lowered by the wrappers around the element (lower_clip.c, lower_mask.c). */
   r = references_refuse(ctx, inst, GVEC_SVG_PROP_FILTER, true, &refuse, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
@@ -1353,14 +1346,25 @@ static GVEC_Result lw_content(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
  * opacity group, which composes the same way, a clip and an opacity commuting). */
 static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   gvec_lw_clip_state state;
-  gvec_lw_node * clips[GVEC_LW_CLIP_MAX];
+  gvec_lw_node * clips[GVEC_LW_CLIP_MAX + 1];
   size_t count = 0;
   GVEC_Result r = gvec_lw_clip_begin(ctx, inst, frame, &state, clips, &count);
   if (r != GVEC_OK || state == GVEC_LW_CLIP_REFUSED || state == GVEC_LW_CLIP_ALL) {
     gvec_svg_instance_release(ctx->style, inst);
     return r;
   }
-  if (state == GVEC_LW_CLIP_NONE) {
+  /* The mask is a group inside the clips: the clipped element is what is masked. */
+  gvec_lw_mask_state masked;
+  gvec_lw_node * mask_group = NULL;
+  r = gvec_lw_mask_begin(ctx, inst, frame, &masked, &mask_group);
+  if (r != GVEC_OK || masked == GVEC_LW_MASK_REFUSED || masked == GVEC_LW_MASK_ALL) {
+    gvec_svg_instance_release(ctx->style, inst);
+    return r;
+  }
+  if (masked == GVEC_LW_MASK_NODE) {
+    clips[count++] = mask_group;
+  }
+  if (count == 0) {
     return lw_content(ctx, inst, frame, parent);
   }
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
