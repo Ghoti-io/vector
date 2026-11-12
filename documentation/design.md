@@ -560,6 +560,14 @@ to it, that mask has no mask of its own (as in the browsers and `resvg`), and a 
 naming nothing, or what is no `mask`, is as if it were not specified. A mask in the units of the box of an element that holds more than shapes and groups
 of them, and a mask of another document, are refused (GVEC_LOWER_MASK). Equal masks of equal boxes are one resource.
 
+**H20 Blend modes and isolation.** `mix-blend-mode` (read in a style, never as a presentation attribute) is the composite operator of the group the
+element is drawn in: one group carries the element's opacity and its blend, so the element is blended as a whole (fill, stroke and markers together),
+and where the element is masked the mask's group carries the blend, because a mask is an isolated group and the element would blend with nothing
+inside it. `normal` and a value that is not one of the fifteen modes make no group. A group that is not a stacking context (a `g` with no opacity,
+mask, blend or isolation) makes no group, so its children blend with what was painted before it; `isolation: isolate` makes one, with opacity 1 and
+the operator source-over. The waist drops a group node that is all defaults (it is a container, and a list would push a layer for it where an edit
+would not), so the isolated group names the space it blends in, sRGB-encoded as CSS blends, which keeps it a group in both.
+
 ## Threads
 
 The registry is read-only after load time and may be read from any thread. Every other object (a

@@ -22,5 +22,3 @@ filters/*	OUT_OF_SCOPE	filters are milestone 1 non-goal, read in a later milesto
 text/*	OUT_OF_SCOPE	text is a milestone 1 non-goal, read in a later milestone
 structure/image/*	OUT_OF_SCOPE	the image element is a milestone 1 non-goal, read in a later milestone
 painting/image-rendering/*	OUT_OF_SCOPE	image rendering applies to the image element, a milestone 1 non-goal, read in a later milestone
-painting/mix-blend-mode/*	OUT_OF_SCOPE	blend modes are a milestone 1 non-goal, read in a later milestone
-painting/isolation/*	OUT_OF_SCOPE	isolation exists for blend modes, a milestone 1 non-goal, read in a later milestone

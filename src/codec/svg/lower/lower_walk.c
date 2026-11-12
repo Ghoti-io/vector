@@ -378,6 +378,8 @@ typedef struct common {
   bool visible;
   GSHGEOM_Map local;   ///< The frame composed with the element's `transform`.
   double opacity;
+  uint32_t composite;  ///< `mix-blend-mode` as a GSHSCENE_Composite; 0 (source-over) for `normal`.
+  bool isolate;        ///< `isolation: isolate`.
 } common;
 
 /* A property of references: whether it names anything this version does not lower. */
@@ -400,6 +402,27 @@ static GVEC_Result references_refuse(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
   return GVEC_OK;
 }
 
+/* `mix-blend-mode` as the waist's operator: the sixteen values of Compositing and Blending 1 (`normal` is source-over), 0 for anything else. */
+static uint32_t blend_composite(const GVEC_Svg_Style_Value * v) {
+  static const struct {
+    const char * word;
+    uint32_t op;
+  } modes[] = {
+      {"multiply", GSHSCENE_COMPOSITE_MULTIPLY}, {"screen", GSHSCENE_COMPOSITE_SCREEN}, {"overlay", GSHSCENE_COMPOSITE_OVERLAY},
+      {"darken", GSHSCENE_COMPOSITE_DARKEN}, {"lighten", GSHSCENE_COMPOSITE_LIGHTEN}, {"color-dodge", GSHSCENE_COMPOSITE_COLOR_DODGE},
+      {"color-burn", GSHSCENE_COMPOSITE_COLOR_BURN}, {"hard-light", GSHSCENE_COMPOSITE_HARD_LIGHT},
+      {"soft-light", GSHSCENE_COMPOSITE_SOFT_LIGHT}, {"difference", GSHSCENE_COMPOSITE_DIFFERENCE},
+      {"exclusion", GSHSCENE_COMPOSITE_EXCLUSION}, {"hue", GSHSCENE_COMPOSITE_HUE}, {"saturation", GSHSCENE_COMPOSITE_SATURATION},
+      {"color", GSHSCENE_COMPOSITE_COLOR}, {"luminosity", GSHSCENE_COMPOSITE_LUMINOSITY},
+  };
+  for (size_t i = 0; i < sizeof modes / sizeof modes[0]; i++) {
+    if (gvec_lw_keyword_is(v, modes[i].word)) {
+      return modes[i].op;
+    }
+  }
+  return 0;
+}
+
 /*
  * The part of an element's preparation every kind shares. Sets `draw` false, with a refusal where one is due, when the element
  * is not drawn.
@@ -414,6 +437,8 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   c->draw = false;
   c->visible = true;
   c->opacity = 1;
+  c->composite = 0;
+  c->isolate = false;
   if (gvec_svg_element_conditional_false(e)) {
     return GVEC_OK;
   }
@@ -442,9 +467,15 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   if (r != GVEC_OK || !usable) {
     return r;
   }
-  if (!gvec_lw_keyword_is(&v, "normal")) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_BLEND, "mix-blend-mode is not lowered yet");
+  c->composite = ctx->blend_moved == inst ? 0 : blend_composite(&v);
+  if (ctx->blend_moved == inst) {
+    ctx->blend_moved = NULL;
   }
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_ISOLATION, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  c->isolate = gvec_lw_keyword_is(&v, "isolate");
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TRANSFORM, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
@@ -491,11 +522,12 @@ void gvec_lw_wrap_leave(gvec_lw_ctx * ctx) {
  * A group node for an element's opacity, entered, or NULL when it has none to carry. `skip` is set when the element was refused
  * for the limits (then nothing is entered). A caller that gets a group leaves it with wrap_leave().
  */
-static GVEC_Result opacity_group(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, double opacity, gvec_lw_node ** out, bool * skip) {
+static GVEC_Result opacity_group(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const common * c, gvec_lw_node ** out, bool * skip) {
+  double opacity = c->opacity;
   *out = NULL;
   *skip = false;
-  if (!(opacity < 1)) {
-    return GVEC_OK;
+  if (!(opacity < 1) && c->composite == 0 && !c->isolate) {
+    return GVEC_OK; /* Nothing makes this element a stacking context. */
   }
   bool entered;
   GVEC_Result r = gvec_lw_wrap_enter(ctx, e, &entered);
@@ -508,6 +540,8 @@ static GVEC_Result opacity_group(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, 
     return GVEC_ERR_OOM;
   }
   g->opacity = opacity;
+  g->composite = c->composite;
+  g->isolate = c->isolate;
   g->key = gvec_lw_key(e->key, ctx->chain, GVEC_LW_ROLE_OPACITY);
   g->site = gvec_lw_new_site(ctx, e, g->key);
   if (g->site == GVEC_LW_NO_SITE) {
@@ -559,7 +593,7 @@ static GVEC_Result lw_group(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   gvec_lw_node * group;
   bool skip;
-  r = opacity_group(ctx, gvec_svg_instance_element(inst), c.opacity, &group, &skip);
+  r = opacity_group(ctx, gvec_svg_instance_element(inst), &c, &group, &skip);
   if (r != GVEC_OK || skip) {
     return r;
   }
@@ -587,7 +621,7 @@ static GVEC_Result lw_switch(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
   }
   gvec_lw_node * group;
   bool skip;
-  r = opacity_group(ctx, e, c.opacity, &group, &skip);
+  r = opacity_group(ctx, e, &c, &group, &skip);
   if (r != GVEC_OK || skip) {
     return r;
   }
@@ -858,7 +892,7 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   gvec_lw_node * group;
   bool skip;
-  r = opacity_group(ctx, e, c.opacity, &group, &skip);
+  r = opacity_group(ctx, e, &c, &group, &skip);
   if (r != GVEC_OK || skip) {
     return r;
   }
@@ -1035,7 +1069,7 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   gvec_lw_node * group;
   bool skip;
-  r = opacity_group(ctx, e, c.opacity, &group, &skip);
+  r = opacity_group(ctx, e, &c, &group, &skip);
   if (r != GVEC_OK || skip) {
     return r;
   }
@@ -1152,7 +1186,7 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
     return GVEC_ERR_OOM;
   }
   bool skip;
-  r = opacity_group(ctx, e, c.opacity, &group, &skip);
+  r = opacity_group(ctx, e, &c, &group, &skip);
   if (r != GVEC_OK || skip) {
     return r;
   }
@@ -1362,6 +1396,17 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     return r;
   }
   if (masked == GVEC_LW_MASK_NODE) {
+    /* A mask is an isolated group, so what the element blends with is the group's result: the blend belongs to the mask group. */
+    GVEC_Svg_Style_Value blend;
+    bool usable;
+    r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_MIX_BLEND_MODE, GVEC_LOWER_STYLE, &blend, &usable);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (usable && blend_composite(&blend) != 0) {
+      mask_group->composite = blend_composite(&blend);
+      ctx->blend_moved = inst;
+    }
     clips[count++] = mask_group;
   }
   if (count == 0) {

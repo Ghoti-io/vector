@@ -111,6 +111,11 @@ static GVEC_Result emit_nodes(gvec_lw_ctx * ctx, GSHSCENE_List * list, size_t ta
       memset(&group, 0, sizeof group);
       group.opacity = n->opacity;
       group.soft_mask = n->mask;
+      group.composite = n->composite;
+      if (n->isolate) {
+        group.blend_space.primaries = GCOL_PRIMARIES_SRGB;
+        group.blend_space.transfer = GCOL_TRANSFER_SRGB;
+      }
       r = scene_failure(ctx, n, gshscene_list_group_push(list, &group, 0, 0.0), &skipped);
       if (r == GVEC_OK && !skipped) {
         r = gvec_lw_table_add(ctx, table, n->site, 0);

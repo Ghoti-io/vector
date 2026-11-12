@@ -158,6 +158,11 @@ static GVEC_Result edit_children(gvec_lw_ctx * ctx, GSHSCENE_Edit * edit, uint64
       if (n->kind == GVEC_LW_GROUP) {
         props.opacity = n->opacity;
         props.soft_mask = n->mask;
+        props.composite = n->composite;
+        if (n->isolate) {
+          props.blend_space.primaries = GCOL_PRIMARIES_SRGB;
+          props.blend_space.transfer = GCOL_TRANSFER_SRGB;
+        }
       }
       else {
         props.clip = n->resource;

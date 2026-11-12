@@ -96,7 +96,6 @@ typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_IMAGE,                    ///< `image` (G6).
   GVEC_LOWER_FILTER,                   ///< `filter` (G10).
   GVEC_LOWER_TEXT,                     ///< `text` (G11 and the text phase).
-  GVEC_LOWER_BLEND,                    ///< `mix-blend-mode` other than `normal` (G8).
   GVEC_LOWER_CONTEXT_PAINT,            ///< `context-fill` or `context-stroke`.
   GVEC_LOWER_UNSUPPORTED_COLOR_SPACE,  ///< A colour the waist cannot carry (G9).
   GVEC_LOWER_FOREIGN_OBJECT,           ///< `foreignObject`.

@@ -38,7 +38,6 @@ static const struct {
   {"image"}, /* IMAGE */
   {"filter"}, /* FILTER */
   {"text"}, /* TEXT */
-  {"blend"}, /* BLEND */
   {"context-paint"}, /* CONTEXT_PAINT */
   {"unsupported-color-space"}, /* UNSUPPORTED_COLOR_SPACE */
   {"foreign-object"}, /* FOREIGN_OBJECT */

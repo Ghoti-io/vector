@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- Blend modes and isolation: a mode on shapes, with opacity, in an isolated group and in a plain one, and on a masked element (G10). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <defs><mask id="m"><rect width="80" height="80" fill="white"/></mask></defs>
+  <rect x="4" y="4" width="40" height="40" fill="#27ae60"/>
+  <rect x="24" y="24" width="40" height="40" fill="#c0392b" style="mix-blend-mode: multiply"/>
+  <rect x="50" y="4" width="24" height="24" fill="#2980b9" opacity="0.6" style="mix-blend-mode: difference"/>
+  <g style="isolation: isolate"><rect x="4" y="50" width="24" height="24" fill="#f39c12" style="mix-blend-mode: screen"/></g>
+  <g><rect x="34" y="50" width="20" height="20" fill="#8e44ad" style="mix-blend-mode: hard-light"/></g>
+  <rect x="56" y="50" width="20" height="20" fill="#16a085" mask="url(#m)" style="mix-blend-mode: luminosity"/>
+</svg>

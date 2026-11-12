@@ -101,6 +101,8 @@ struct gvec_lw_node {
   bool crisp;                        ///< FILL, STROKE: the item asks for no antialiasing (`shape-rendering` crispEdges or optimizeSpeed).
   double opacity;                    ///< GROUP.
   const GSHSCENE_Resource * mask;    ///< GROUP: the soft mask (held by the context), or NULL.
+  uint32_t composite;                ///< GROUP: a GSHSCENE_Composite (`mix-blend-mode`); 0 is source-over.
+  bool isolate;                      ///< GROUP: `isolation: isolate`; the group names the space it blends in, since the waist drops a group that is all defaults.
   bool content;                      ///< Something is drawn by this node or below it.
   size_t items;                      ///< The items this node and its subtree are in the list the node is in.
   size_t inner_items;                ///< USE: the items of the picture's list.
@@ -189,6 +191,7 @@ typedef struct gvec_lw_ctx {
   struct gradient_cache * gradients; ///< What of each paint server does not depend on the element that uses it (lower_gradient.c).
   const GVEC_Svg_Element * mask_stack[GVEC_LW_MASK_NESTING];   ///< The masks whose picture the walk is inside (lower_mask.c).
   size_t mask_depth;
+  const GVEC_Svg_Instance * blend_moved; ///< The instance whose `mix-blend-mode` its mask group carries (the blend is the outermost of the stack: lower_walk.c).
   const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
   size_t pattern_depth;
   gvec_lw_node root;                 ///< The root of the tree: only its children are drawn.
