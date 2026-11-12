@@ -391,14 +391,37 @@ TEST(LowerText, KerningCanBeSwitchedOffSmallCapsAskForTheFacesOwnAndAnInvalidLen
   EXPECT_EQ(run.glyphs[1].x, 60.0);
 }
 
-TEST(LowerText, FontSizeAdjustIsRefusedAndADecorationOnVerticalTextIsASetOfRectsTurnedWithTheLine) {
+TEST(LowerText, ADecorationOnVerticalTextIsASetOfRectsTurnedWithTheLine) {
   Fonts f;
-  Lowered tb, adjust;
+  Lowered tb;
   LowerText(f, "writing-mode=\"tb\" text-decoration=\"underline\"", "A", tb);
   EXPECT_EQ(tb.Refusal(GVEC_LOWER_TEXT), nullptr);
   EXPECT_GE(tb.Items(), (size_t) 2);  // the underline, and the turned glyph
-  LowerText(f, "font-size-adjust=\"0.5\"", "A", adjust);
-  EXPECT_NE(adjust.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
+TEST(LowerText, FontSizeAdjustKeepsTheXHeightToTheRatioAskedForAndAKerningInAPercentageIsIgnored) {
+  // The test font's x-height is half its em, so an adjust of 0.25 draws it at half the size.
+  Fonts f;
+  Lowered plain, adjust, exheight, none, kerning;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "", "A", plain));
+  ASSERT_TRUE(ReadRun(plain, 0, run));
+  EXPECT_DOUBLE_EQ(run.size, 100.0);
+  ASSERT_TRUE(LowerText(f, "font-size-adjust=\"0.25\"", "AA", adjust));
+  EXPECT_EQ(adjust.Refusals(), (size_t) 0);
+  ASSERT_TRUE(ReadRun(adjust, 0, run));
+  EXPECT_DOUBLE_EQ(run.size, 50.0);
+  EXPECT_DOUBLE_EQ(run.glyphs[1].x, 30.0);  // and the advance is that of the smaller size
+  ASSERT_TRUE(LowerText(f, "style=\"font-size-adjust: ex-height 0.25\"", "A", exheight));
+  ASSERT_TRUE(ReadRun(exheight, 0, run));
+  EXPECT_DOUBLE_EQ(run.size, 50.0);
+  ASSERT_TRUE(LowerText(f, "font-size-adjust=\"none\"", "A", none));
+  ASSERT_TRUE(ReadRun(none, 0, run));
+  EXPECT_DOUBLE_EQ(run.size, 100.0);
+  ASSERT_TRUE(LowerText(f, "kerning=\"10%\"", "AA", kerning));
+  EXPECT_EQ(kerning.Refusals(), (size_t) 0);
+  ASSERT_TRUE(ReadRun(kerning, 0, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[1].x, 60.0);
 }
 
 TEST(LowerText, TheDominantBaselineIsPutAtTheTextPosition) {
@@ -558,6 +581,91 @@ bool LowerBody(Fonts & f, const std::string & body, Lowered & l) {
   return true;
 }
 }  // namespace
+
+TEST(LowerText, ATextLengthOverSeveralChunksIsSharedOutOverAllOfThem) {
+  // Two chunks of two glyphs (60 wide each, 240 in all) asked to be 300: 20 more after every glyph but the last.
+  Fonts f;
+  Lowered spaced, stretched;
+  GSHSCENE_Glyph_Run first, second;
+  LowerBody(f, "<text textLength=\"300\"><tspan x=\"0\" y=\"50\">AA</tspan><tspan x=\"0\" y=\"150\">AA</tspan></text>", spaced);
+  EXPECT_EQ(spaced.Refusals(), (size_t) 0);
+  ASSERT_TRUE(ReadRun(spaced, 0, first));
+  ASSERT_TRUE(ReadRun(spaced, 1, second));
+  EXPECT_DOUBLE_EQ(first.glyphs[0].x, 0.0);
+  EXPECT_DOUBLE_EQ(first.glyphs[1].x, 80.0);
+  EXPECT_DOUBLE_EQ(second.glyphs[0].x, 0.0);  // an absolute x starts the chunk where it says, whatever came before
+  EXPECT_DOUBLE_EQ(second.glyphs[1].x, 80.0);
+  LowerBody(f, "<text textLength=\"480\" lengthAdjust=\"spacingAndGlyphs\"><tspan x=\"0\" y=\"50\">AA</tspan><tspan x=\"0\" y=\"150\">AA</tspan></text>", stretched);
+  EXPECT_EQ(stretched.Refusals(), (size_t) 0);
+  EXPECT_DOUBLE_EQ(stretched.Item(0).map.m[0][0], 2.0);
+  EXPECT_DOUBLE_EQ(stretched.Item(1).map.m[0][0], 2.0);
+}
+
+TEST(LowerText, TextLengthOnVerticalTextSpacesAlongTheLineAndStretchesItsGlyphsAlongIt) {
+  Fonts f;
+  Lowered spaced, stretched, turned;
+  GSHSCENE_Glyph_Run a, b;
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\" textLength=\"300\"", "AA", spaced));
+  EXPECT_EQ(spaced.Refusals(), (size_t) 0);
+  ASSERT_TRUE(ReadRun(spaced, 0, a));
+  ASSERT_TRUE(ReadRun(spaced, 1, b));
+  EXPECT_DOUBLE_EQ(b.glyphs[0].y - a.glyphs[0].y, 60.0 + 180.0);  // 300 asked of 120: the gap between the two takes the 180
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\" textLength=\"300\" lengthAdjust=\"spacingAndGlyphs\"", "AA", stretched));
+  EXPECT_EQ(stretched.Refusals(), (size_t) 0);
+  EXPECT_EQ(stretched.Items(), (size_t) 2);
+  {
+    // 300 asked of 120: the stretch is 2.5 along the line, which is down: the second glyph's origin, 60 below the first, goes to 150 below it.
+    GSHSCENE_Glyph_Run second;
+    ASSERT_TRUE(ReadRun(stretched, 1, second));
+    GSHGEOM_Point origin = {second.glyphs[0].x, second.glyphs[0].y, 0}, moved;
+    ASSERT_EQ(gshgeom_map_apply_point(&stretched.Item(1).map, origin, &moved), GSHGEOM_OK);
+    EXPECT_NEAR(moved.x, origin.x, 1e-9);
+    EXPECT_NEAR(moved.y, 10.0 + (origin.y - 10.0) * 2.5, 1e-9);
+  }
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"50\" rotate=\"10\" textLength=\"300\" lengthAdjust=\"spacingAndGlyphs\"", "AA", turned));
+  EXPECT_EQ(turned.Refusals(), (size_t) 0);  // a glyph that is turned and stretched is both
+  EXPECT_EQ(turned.Items(), (size_t) 2);
+}
+
+TEST(LowerText, AUseOfAGroupThatHoldsTextHasABoxForItsContextGradient) {
+  Fonts f;
+  Lowered l;
+  LowerBody(f,
+      "<defs><linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"/><stop offset=\"1\" stop-color=\"blue\"/></linearGradient>"
+      "<g id=\"c\"><text x=\"10\" y=\"100\" fill=\"context-fill\">AA</text></g></defs><use href=\"#c\" fill=\"url(#g)\"/>",
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  // The use is an instance of a picture, and the text's fill is in the picture.
+  ASSERT_GE(l.Items(), (size_t) 1);
+  const GSHSCENE_List * picture = gshscene_resource_picture(l.Item(0).resource);
+  ASSERT_NE(picture, nullptr);
+  bool gradient = false;
+  for (size_t i = 0; i < gshscene_list_count(picture); i++) {
+    const GSHSCENE_Item * item = nullptr;
+    ASSERT_EQ(gshscene_list_item(picture, i, &item), GSHSCENE_OK);
+    gradient = gradient || (item->kind == GSHSCENE_ITEM_FILL && item->paint.kind == GSHSCENE_PAINT_GRADIENT);
+  }
+  EXPECT_TRUE(gradient);
+}
+
+TEST(LowerText, VerticalTextOnAPathIsPutAlongItWithItsLettersUprightOnAHorizontalOne) {
+  Fonts f;
+  Lowered l, stretched;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerOnPath(f, "", "", "A", l));
+  (void) l;
+  Lowered tb, tbstretched;
+  LowerBody(f, "<path id=\"p\" d=\"M 10 50 L 110 50\"/><text writing-mode=\"tb\"><textPath href=\"#p\">A</textPath></text>", tb);
+  EXPECT_EQ(tb.Refusals(), (size_t) 0);
+  ASSERT_GE(tb.Items(), (size_t) 2);
+  ASSERT_TRUE(ReadRun(tb, 1, run));
+  EXPECT_NEAR(run.glyphs[0].x, 10.0, 1e-9);  // the glyph's middle is at half its advance along the path
+  EXPECT_EQ(tb.Item(1).map.kind, tb.Item(0).map.kind);        // a letter on its side, on a path that runs along the line, is not turned at all
+  LowerBody(f, "<path id=\"p\" d=\"M 10 50 L 110 50\"/><text writing-mode=\"tb\" textLength=\"90\" lengthAdjust=\"spacingAndGlyphs\"><textPath href=\"#p\">AA</textPath></text>", tbstretched);
+  EXPECT_EQ(tbstretched.Refusals(), (size_t) 0);
+  (void) stretched;
+}
+
 
 TEST(LowerText, ATrefIsTheCharacterDataOfTheElementItNamesInTheTrefsOwnStyle) {
   Fonts f;

@@ -645,13 +645,34 @@ element that is not of the SVG language give no characters. Text in a `clipPath`
 `clip-rule` of the span it is of; its fill, stroke and paint do not matter, and a `clip-path` on the text is refused.
 
 **H30 What text does not read.** An `em` or an `ex` in a list of positions is the element's font size, or half of it. `glyph-orientation-horizontal`
-and `-vertical` are not read (SVG 2 dropped them, and the references ignore them); `font-size-adjust` refuses the text, as do the other
-refusals `refusals.md` lists for `GVEC_LOWER_TEXT`. A `textPath` whose `href` names something that is not a shape has no characters.
+and `-vertical` are not read (SVG 2 dropped them, and the references ignore them); a `font-variant` other than `normal` and `small-caps` refuses
+the text, as do the other refusals `refusals.md` lists for `GVEC_LOWER_TEXT`. A `textPath` whose `href` names something that is not a shape has no characters.
 
+**H31 `font-size-adjust`, `kerning`.** `font-size-adjust` (a number, or `ex-height` and a number; `none` and `from-font` change nothing) is read as
+the presentation attribute SVG 2 makes it: each run is drawn at the size that gives the ratio asked for between the x-height of the face it is
+shaped in and the size, so a fallback face is adjusted by its own x-height. The face's x-height is its `OS/2` value, or half the em when it has none.
+Letter and word spacing in `em` stay the computed font size's. `kerning` is the SVG 1.1 property that SVG 2 dropped: `0` switches kerning off,
+any other value is ignored, as resvg and Chromium treat a percentage.
 
-The registry is read-only after load time and may be read from any thread. Every other object (a
-stream, a document, a diagnostics list) is used by one thread at a time; different objects may be
-used on different threads at once.
+**H32 A `textLength` over several chunks.** The content of an element's `textLength` may cover more than one text chunk (a `tspan` with an
+absolute `x` or `y` starts one). The length is the whole content's: it is measured on a first layout in which such lengths are left out (the sum of
+the chunks' widths, innermost lengths already applied), and the text is laid out again with the same extra spacing after every glyph but the last of the
+whole content, or the same stretch of every chunk's glyphs about its own start. A chunk still begins where its own position says. The layout keeps the
+characters' offsets so it can run twice. The references leave such a length out; Chromium applies it, which is what SVG 2 says.
+
+**H33 A stretched glyph is turned, stretched and placed in that order.** `lengthAdjust="spacingAndGlyphs"` is a map along the line: in vertical text it
+is the horizontal stretch conjugated by the quarter turn the layout frame is; on a path it is a stretch about each glyph's own origin along the path's
+direction there, because the glyph is put on the path by its own place. A glyph that is also turned (a `rotate` list, a letter on its side) is turned
+first, so the stretch is always along the line. Glyphs on a path with a stretch are runs of their own.
+
+**H34 Vertical text on a path.** The text is laid out in the turned frame as it always is, and each glyph is put on the path as horizontal text is, by
+the distance of its middle along the line; its position is then in the element's space already, and its turn is its own plus the path's direction
+measured from the line pointing down (a letter on its side on a path that runs along the line stands upright; an upright ideograph is turned a quarter
+back so that its top is on the side the line comes from). The pen continues from the path's end in the turned frame's coordinates.
+
+**H35 The box of a text.** A group or `use` that holds text has a bounding box once the text is laid out: the union of its glyph cells, whether or not
+the glyphs are visible (an invisible text counts, as the test of that name says). That is what a context gradient on a `use` and an
+`objectBoundingBox` clip or mask on a group are placed in.
 
 ## Gates
 

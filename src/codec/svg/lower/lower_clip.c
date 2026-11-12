@@ -644,6 +644,33 @@ static GVEC_Result stroke_pad(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
 /* The bounding box of a group in its own space (SVG 2, 8.10): the union of the fill boxes of the shapes in it, each in the group's space.
  * What `display` removes is left out; `visibility` and `opacity` do not remove a shape from the box. *known is false when the group holds
  * what this does not box (a `use`, text, an image, a nested viewport, a transform that needs a box of its own). */
+/* The box of a `text` element's glyph cells in the space `map` leads to, merged into `box`. `*ok` is false when the text cannot be laid out. */
+static GVEC_Result text_leaf_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * ok) {
+  gvec_lw_text text;
+  bool usable = true;
+  *ok = false;
+  GVEC_Result r = gvec_lw_text_layout(ctx, inst, &text, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  *ok = true;
+  if (text.box.empty) {
+    return GVEC_OK;
+  }
+  GSHGEOM_Bounds mapped = {1, {0, 0, 0}, {0, 0, 0}};
+  for (int c = 0; c < 4; c++) {
+    GSHGEOM_Point in = {c & 1 ? text.box.max.x : text.box.min.x, c & 2 ? text.box.max.y : text.box.min.y, 0}, out;
+    if (gshgeom_map_apply_point(map, in, &out) != GSHGEOM_OK) {
+      *ok = false;
+      return GVEC_OK;
+    }
+    GSHGEOM_Bounds one = {0, out, out};
+    merge_bounds(&mapped, &one);
+  }
+  merge_bounds(box, &mapped);
+  return GVEC_OK;
+}
+
 static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused, const GVEC_Svg_Element * group, const GVEC_Svg_Instance * ginst,
     const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * known, int depth) {
   if (depth > 32) {
@@ -652,8 +679,8 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
   }
   for (const GVEC_Svg_Element * child = gvec_svg_element_first_child(group); child; child = gvec_svg_element_next_sibling(child)) {
     GVEC_Svg_Kind ck = gvec_svg_element_kind(child);
-    bool shape = is_shape(ck), container = ck == GVEC_SVG_KIND_G || ck == GVEC_SVG_KIND_A;
-    if (!shape && !container) {
+    bool shape = is_shape(ck), container = ck == GVEC_SVG_KIND_G || ck == GVEC_SVG_KIND_A, text_leaf = ck == GVEC_SVG_KIND_TEXT;
+    if (!shape && !container && !text_leaf) {
       switch (ck) {
       case GVEC_SVG_KIND_DEFS: case GVEC_SVG_KIND_DESC: case GVEC_SVG_KIND_TITLE: case GVEC_SVG_KIND_METADATA:
       case GVEC_SVG_KIND_LINEAR_GRADIENT: case GVEC_SVG_KIND_RADIAL_GRADIENT: case GVEC_SVG_KIND_CLIP_PATH: case GVEC_SVG_KIND_MASK:
@@ -692,6 +719,15 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
     if (container) {
       r = group_box(ctx, refused, child, ci, &inner, box, known, depth + 1);
       if (r != GVEC_OK || !*known) {
+        return r;
+      }
+      continue;
+    }
+    if (text_leaf) {
+      bool ok;
+      r = text_leaf_box(ctx, ci, &inner, box, &ok);
+      if (r != GVEC_OK || !ok) {
+        *known = false;
         return r;
       }
       continue;
@@ -740,6 +776,12 @@ GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   *known = true;
   if (kind == GVEC_SVG_KIND_G || kind == GVEC_SVG_KIND_A) {
     return group_box(ctx, e, e, inst, &own, box, known, 0);
+  }
+  if (kind == GVEC_SVG_KIND_TEXT) {
+    bool ok;
+    r = text_leaf_box(ctx, inst, &own, box, &ok);
+    *known = ok;
+    return r;
   }
   if (!is_shape(kind)) {
     *known = false;
