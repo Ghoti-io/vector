@@ -355,6 +355,55 @@ TEST(LowerText, WritingModeAndFontSizeAdjustAreRefusedUntilTheyAreLowered) {
   EXPECT_NE(adjust.Refusal(GVEC_LOWER_TEXT), nullptr);
 }
 
+TEST(LowerText, TheDominantBaselineIsPutAtTheTextPosition) {
+  // The test font: ascent 800, descent -200 and x-height 500 in 1000 units, at a size of 100.
+  static const struct {
+    const char * value;
+    double down;
+  } cases[] = {{"alphabetic", 0}, {"central", 30}, {"middle", 25}, {"hanging", 64}, {"mathematical", 40}, {"ideographic", -20},
+      {"text-before-edge", 80}, {"text-after-edge", -20}};
+  Fonts f;
+  for (const auto & c : cases) {
+    Lowered l;
+    GSHSCENE_Glyph_Run run;
+    ASSERT_TRUE(LowerText(f, std::string("y=\"50\" dominant-baseline=\"") + c.value + "\"", "A", l)) << c.value;
+    ASSERT_TRUE(ReadRun(l, 0, run)) << c.value;
+    EXPECT_DOUBLE_EQ(run.glyphs[0].y, 50.0 + c.down) << c.value;
+  }
+}
+
+TEST(LowerText, AnAlignmentBaselineOfASpanAndABaselineShiftLiftOrLowerIt) {
+  Fonts f;
+  Lowered l;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "y=\"50\"", "A<tspan alignment-baseline=\"hanging\">A</tspan><tspan baseline-shift=\"10\">A</tspan><tspan baseline-shift=\"super\">A</tspan>"
+                                          "<tspan baseline-shift=\"sub\">A</tspan><tspan baseline-shift=\"50%\">A</tspan>",
+      l));
+  ASSERT_EQ(l.Items(), (size_t) 6);
+  ASSERT_TRUE(ReadRun(l, 1, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 50.0 + 64.0);
+  ASSERT_TRUE(ReadRun(l, 2, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 40.0);
+  ASSERT_TRUE(ReadRun(l, 3, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 50.0 - 100.0 / 3.0);
+  ASSERT_TRUE(ReadRun(l, 4, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 50.0 + 20.0);
+  ASSERT_TRUE(ReadRun(l, 5, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 0.0);  // 50% of the font size
+}
+
+TEST(LowerText, ShiftsOfNestedSpansAddUpAndTheShiftOfTheTextItselfIsIgnored) {
+  Fonts f;
+  Lowered nested, own;
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(LowerText(f, "y=\"50\"", "<tspan baseline-shift=\"5\"><tspan baseline-shift=\"5\">A</tspan></tspan>", nested));
+  ASSERT_TRUE(ReadRun(nested, 0, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 40.0);
+  ASSERT_TRUE(LowerText(f, "y=\"50\" baseline-shift=\"super\"", "A", own));
+  ASSERT_TRUE(ReadRun(own, 0, run));
+  EXPECT_DOUBLE_EQ(run.glyphs[0].y, 50.0);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

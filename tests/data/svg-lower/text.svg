@@ -14,4 +14,6 @@
   <text x="70" y="56" font-size="6" textLength="40" fill="#8e44ad">length</text>
   <text x="70" y="64" font-size="6" textLength="50" lengthAdjust="spacingAndGlyphs" fill="#d35400">stretch</text>
   <text x="70" y="72" font-size="6" font-variant="small-caps" style="font-kerning: none">Small Caps</text>
+  <text x="4" y="78" font-size="8">Base<tspan baseline-shift="super" font-size="5">up</tspan><tspan baseline-shift="sub" font-size="5">down</tspan> <tspan alignment-baseline="hanging">hang</tspan></text>
+  <text x="100" y="12" font-size="8" dominant-baseline="central" text-anchor="middle">central</text>
 </svg>

@@ -582,7 +582,7 @@ first character's) times its whole advance. A glyph run of the waist has one fac
 (its paint) or the face changes, each filled with the paint of its span; spans that are not visible keep their room and draw nothing. The runs are
 unhinted (the references draw outlines), the size is `font-size` in user units, and the glyphs carry their absolute positions in the element's
 user space. The face is interned in the scene through `font`'s glyph provider, so the `GVEC_Fonts` must outlive the scene. Whatever a later story
-of milestone 3 lowers (`rotate`, a decoration, a baseline, a writing mode, a direction, `font-size-adjust`, text on a path, `tref`) refuses the
+of milestone 3 lowers (`rotate`, a decoration, a writing mode, a direction, `font-size-adjust`, text on a path, `tref`) refuses the
 element whole.
 
 **H22 Paint on text.** Each run is filled and stroked with the paint of the span it is of, in that span's `paint-order` (the scene strokes a glyph run's

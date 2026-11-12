@@ -148,9 +148,9 @@ static GVEC_Result read_style(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
 /* A property of the text group with no longhand in the style layer (`font-variant` and `font-kerning` are shorthands or not registered): the
  * value the nearest element that gives one has, in `out`, read from its attribute (when `attributes`) and from its `style`; an `inherit`
  * looks further up. False when no element gives one. */
-static bool chain_value(const GVEC_Svg_Instance * inst, const char * name, bool attributes, char * out, size_t capacity) {
+static bool chain_value(const GVEC_Svg_Instance * inst, const char * name, bool attributes, bool inherit, char * out, size_t capacity) {
   size_t name_length = strlen(name);
-  for (; inst; inst = gvec_svg_instance_parent(inst)) {
+  for (bool first = true; inst && (first || inherit); first = false, inst = gvec_svg_instance_parent(inst)) {
     const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
     const char * found = NULL;
     size_t found_length = 0;
@@ -224,7 +224,7 @@ static bool chain_value(const GVEC_Svg_Instance * inst, const char * name, bool 
 
 /* The length a `letter-spacing` or `word-spacing` of the cascade says, in user units: it comes as written (`5`, `1mm`, `5%`, `normal`). A
  * percentage is of the font size. False for what this does not read. */
-static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Value * v, double font_size, double * out) {
+static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Value * v, double font_size, bool percent_of_font, double * out) {
   *out = 0;
   if (v->kind == GVEC_SVG_STYLE_LENGTH || v->kind == GVEC_SVG_STYLE_NUMBER) {
     *out = v->number;
@@ -266,7 +266,7 @@ static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Valu
   else if (strcmp(unit, "%") == 0) {
     double vw, vh;
     gvec_svg_instance_viewport(inst, &vw, &vh);
-    *out = number * vw / 100.0;
+    *out = number * (percent_of_font ? font_size : vw) / 100.0;
     return true;
   }
   else if (strcmp(unit, "em") == 0) {
@@ -288,9 +288,6 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     const char * what;
   } checks[] = {
       {GVEC_SVG_PROP_TEXT_DECORATION, {"none", NULL, NULL, NULL}, "text-decoration"},
-      {GVEC_SVG_PROP_BASELINE_SHIFT, {"baseline", NULL, NULL, NULL}, "baseline-shift"},
-      {GVEC_SVG_PROP_DOMINANT_BASELINE, {"auto", NULL, NULL, NULL}, "dominant-baseline"},
-      {GVEC_SVG_PROP_ALIGNMENT_BASELINE, {"auto", "baseline", NULL, NULL}, "alignment-baseline"},
       {GVEC_SVG_PROP_WRITING_MODE, {"horizontal-tb", "lr-tb", "lr", NULL}, "writing-mode"},
       {GVEC_SVG_PROP_DIRECTION, {"ltr", NULL, NULL, NULL}, "direction"},
       {GVEC_SVG_PROP_UNICODE_BIDI, {"normal", NULL, NULL, NULL}, "unicode-bidi"},
@@ -323,15 +320,15 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   {
     char value[32];
-    if (chain_value(inst, "font-variant", true, value, sizeof value) && strcmp(value, "normal") != 0 && strcmp(value, "small-caps") != 0) {
+    if (chain_value(inst, "font-variant", true, true, value, sizeof value) && strcmp(value, "normal") != 0 && strcmp(value, "small-caps") != 0) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "this font-variant on text is not lowered yet");
     }
     /* `writing-mode` is read as written as well: the legacy values (`tb`) are not values of the property, and the cascade drops them. */
-    if (chain_value(inst, "writing-mode", true, value, sizeof value) && strcmp(value, "lr-tb") != 0 && strcmp(value, "lr") != 0 &&
+    if (chain_value(inst, "writing-mode", true, true, value, sizeof value) && strcmp(value, "lr-tb") != 0 && strcmp(value, "lr") != 0 &&
         strcmp(value, "horizontal-tb") != 0) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "writing-mode on text is not lowered yet");
     }
-    if (chain_value(inst, "kerning", true, value, sizeof value) && strcmp(value, "auto") != 0 && strcmp(value, "0") != 0) {
+    if (chain_value(inst, "kerning", true, true, value, sizeof value) && strcmp(value, "auto") != 0 && strcmp(value, "0") != 0) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a kerning other than auto and 0 on text is not lowered yet");
     }
   }
@@ -356,13 +353,17 @@ typedef struct tstyle {
   size_t family_count;
   double size, weight, width, anchor;
   double letter_spacing, word_spacing;
+  int dominant, alignment; ///< The baseline the text is set on, and the one a span is aligned by (-1: its parent's): see baseline_kind().
+  double shift_length;     ///< The baseline-shifts of the span and its ancestors that are lengths, up positive, in user units.
+  int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
   int italic;
   bool visible, small_caps, kerning_off;
 } tstyle;
 
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || a->small_caps != b->small_caps || a->kerning_off != b->kerning_off) {
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || a->small_caps != b->small_caps || a->kerning_off != b->kerning_off || a->dominant != b->dominant || a->alignment != b->alignment ||
+      a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
     return false;
   }
   for (size_t i = 0; i < a->family_count; i++) {
@@ -414,7 +415,23 @@ typedef struct tctx {
 
 #define TEXT_DEPTH_MAX 64
 
-static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, uint32_t * index) {
+/* The baseline a keyword names: 0 alphabetic, then central, middle, hanging, mathematical, ideographic, before-edge, after-edge; -1 for the keywords
+ * that name no baseline of their own (`auto`, `baseline`, `use-script`, `no-change`, `reset-size`) and for what is not one. */
+static int baseline_kind(const GVEC_Svg_Style_Value * v) {
+  static const struct {
+    const char * word;
+    int kind;
+  } words[] = {{"alphabetic", 0}, {"central", 1}, {"middle", 2}, {"hanging", 3}, {"mathematical", 4}, {"ideographic", 5}, {"text-before-edge", 6},
+      {"before-edge", 6}, {"text-after-edge", 7}, {"after-edge", 7}};
+  for (size_t i = 0; i < sizeof words / sizeof words[0]; i++) {
+    if (gvec_lw_keyword_is(v, words[i].word)) {
+      return words[i].kind;
+    }
+  }
+  return -1;
+}
+
+static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const tstyle * parent, uint32_t * index) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   if (t->style_count == t->style_capacity) {
@@ -475,24 +492,82 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, uint32_t
     t->refused = true;
     return r;
   }
-  bool good = spacing_of(inst, &v, st->size, &st->letter_spacing);
+  bool good = spacing_of(inst, &v, st->size, false, &st->letter_spacing);
   if (good) {
     r = read_style(ctx, inst, GVEC_SVG_PROP_WORD_SPACING, &v, &ok);
     if (r != GVEC_OK || !ok) {
       t->refused = true;
       return r;
     }
-    good = spacing_of(inst, &v, st->size, &st->word_spacing);
+    good = spacing_of(inst, &v, st->size, false, &st->word_spacing);
   }
   if (!good) {
     t->refused = true;
     return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_TEXT, "a letter-spacing or word-spacing in a unit this does not read");
   }
   char value[32];
-  st->small_caps = chain_value(inst, "font-variant", true, value, sizeof value) && strcmp(value, "small-caps") == 0;
+  st->small_caps = chain_value(inst, "font-variant", true, true, value, sizeof value) && strcmp(value, "small-caps") == 0;
   /* `font-kerning` counts only in a style (a presentation attribute of it is ignored, as the references do), and `kerning` of 0 is the same. */
-  st->kerning_off = (chain_value(inst, "font-kerning", false, value, sizeof value) && strcmp(value, "none") == 0) ||
-      (chain_value(inst, "kerning", true, value, sizeof value) && strcmp(value, "0") == 0);
+  st->kerning_off = (chain_value(inst, "font-kerning", false, true, value, sizeof value) && strcmp(value, "none") == 0) ||
+      (chain_value(inst, "kerning", true, true, value, sizeof value) && strcmp(value, "0") == 0);
+  r = read_style(ctx, inst, GVEC_SVG_PROP_DOMINANT_BASELINE, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->dominant = baseline_kind(&v) < 0 ? 0 : baseline_kind(&v);
+  {
+    /* The SVG 1.1 values (`text-before-edge`, `text-after-edge`) are not values of the property the cascade knows, which drops them: they are
+     * read as written, the nearest element that gives one deciding (`dominant-baseline` is inherited, `alignment-baseline` is not). */
+    char word[32];
+    GVEC_Svg_Style_Value raw;
+    memset(&raw, 0, sizeof raw);
+    raw.kind = GVEC_SVG_STYLE_KEYWORD;
+    raw.keyword = word;
+    if (chain_value(inst, "dominant-baseline", true, true, word, sizeof word) && baseline_kind(&raw) >= 0) {
+      st->dominant = baseline_kind(&raw);
+    }
+  }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_ALIGNMENT_BASELINE, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->alignment = baseline_kind(&v);
+  {
+    char word[32];
+    GVEC_Svg_Style_Value raw;
+    memset(&raw, 0, sizeof raw);
+    raw.kind = GVEC_SVG_STYLE_KEYWORD;
+    raw.keyword = word;
+    if (chain_value(inst, "alignment-baseline", true, false, word, sizeof word) && baseline_kind(&raw) >= 0) {
+      st->alignment = baseline_kind(&raw);
+    }
+  }
+  /* `baseline-shift`: not inherited, but a span's shift is on top of its parent's. */
+  st->shift_length = parent ? parent->shift_length : 0;
+  st->shift_sub = parent ? parent->shift_sub : 0;
+  st->shift_super = parent ? parent->shift_super : 0;
+  r = read_style(ctx, inst, GVEC_SVG_PROP_BASELINE_SHIFT, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  if (!parent) {
+    /* The shift of the text element itself does nothing: it is a shift of a span from its parent's baseline. */
+  }
+  else if (gvec_lw_keyword_is(&v, "sub")) {
+    st->shift_sub++;
+  }
+  else if (gvec_lw_keyword_is(&v, "super")) {
+    st->shift_super++;
+  }
+  else if (!gvec_lw_keyword_is(&v, "baseline")) {
+    double shift;
+    if (spacing_of(inst, &v, st->size, true, &shift)) {
+      st->shift_length += shift;
+    }
+  }
   *index = (uint32_t) t->style_count++;
   return GVEC_OK;
 }
@@ -595,7 +670,7 @@ static bool length_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Length * le
   return gvec_lw_absolute_length(length, out);
 }
 
-static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited_preserve, size_t depth) {
+static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited_preserve, size_t depth, const tstyle * parent) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   if (depth > TEXT_DEPTH_MAX) {
@@ -609,7 +684,7 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
     return r;
   }
   uint32_t style = 0;
-  r = span_style(t, inst, &style);
+  r = span_style(t, inst, parent, &style);
   if (r != GVEC_OK || t->refused) {
     return r;
   }
@@ -665,7 +740,7 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
     if (gvec_lw_keyword_is(&dv, "none")) {
       continue; /* A span that is not displayed has no characters and takes no room. */
     }
-    r = walk(t, ci, preserve, depth + 1);
+    r = walk(t, ci, preserve, depth + 1, &t->styles[style]);
     if (r != GVEC_OK || t->refused) {
       return r;
     }
@@ -836,6 +911,31 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       line.ascent = upem;
       line.descent = 0;
     }
+    /* The baseline the run sits on: the span's dominant baseline is put at the text position (or the baseline it is aligned by, when that is
+     * not its parent's), then the baseline-shifts lift it. The positions of the baselines come from the face (CSS Inline 3, the fallbacks of
+     * 5.1): the ascent and descent, half the ascent for the mathematical, four fifths of it for the hanging, half the x-height for the middle. */
+    const GFNT_Os2 * os2 = NULL;
+    if (gfnt_face_os2(faces[fr->face], &os2, NULL) != GFNT_OK) {
+      os2 = NULL;
+    }
+    double ascent = (double) line.ascent * s, descent = (double) line.descent * s;
+    double x_height = os2 && os2->x_height > 0 ? (double) os2->x_height * s : 0.5 * size;
+    int baseline = st->alignment >= 0 ? st->alignment : st->dominant;
+    double down = 0;
+    switch (baseline) {
+    case 1: down = (ascent + descent) / 2; break;
+    case 2: down = x_height / 2; break;
+    case 3: down = 0.8 * ascent; break;
+    case 4: down = ascent / 2; break;
+    case 5: down = descent; break;
+    case 6: down = ascent; break;
+    case 7: down = descent; break;
+    default: break;
+    }
+    double lift = st->shift_length;
+    lift += (double) st->shift_super * (os2 && os2->superscript_y_offset != 0 ? (double) os2->superscript_y_offset * s : size / 3.0);
+    lift -= (double) st->shift_sub * (os2 && os2->subscript_y_offset != 0 ? (double) os2->subscript_y_offset * s : size / 5.0);
+    down -= lift;
     for (size_t g = 0; g < fr->run.count; g++) {
       const GFNT_ShapedGlyph * sg = &fr->run.glyphs[g];
       size_t ch = from + sg->cluster;
@@ -849,12 +949,12 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       out->face = faces[fr->face];
       out->id = sg->glyph;
       out->x = *pen_x + (double) sg->x_offset * s;
-      out->y = *pen_y - (double) sg->y_offset * s;
+      out->y = *pen_y + down - (double) sg->y_offset * s;
       out->style = t->chars[ch].style; /* The paint of a glyph is that of the span its character is in. */
       out->cell_x0 = *pen_x;
       out->cell_x1 = *pen_x + (double) sg->x_advance * s;
-      out->cell_y0 = *pen_y - (double) line.ascent * s;
-      out->cell_y1 = *pen_y - (double) line.descent * s;
+      out->cell_y0 = *pen_y + down - (double) line.ascent * s;
+      out->cell_y1 = *pen_y + down - (double) line.descent * s;
       out->ch = ch;
       out->group = 0;
       out->size = size;
@@ -922,7 +1022,7 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   if (!t.styles || !t.lists || !t.chars || !t.lengths) {
     return GVEC_ERR_OOM;
   }
-  GVEC_Result r = walk(&t, inst, false, 0);
+  GVEC_Result r = walk(&t, inst, false, 0, NULL);
   if (r != GVEC_OK || t.refused) {
     return r;
   }
