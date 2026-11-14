@@ -80,7 +80,8 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_CLIP_PATH, ///< The clip a `clip-path` makes around an element's content.
   GVEC_LW_ROLE_MASK,      ///< The group a `mask` makes around an element's content.
   GVEC_LW_ROLE_MASK_REGION, ///< The clip to a mask's region, in the mask's picture.
-  GVEC_LW_ROLE_MASK_CONTAINER ///< The hidden group that holds a mask's picture.
+  GVEC_LW_ROLE_MASK_CONTAINER, ///< The hidden group that holds a mask's picture.
+  GVEC_LW_ROLE_FILTER ///< The group a `filter` makes around an element's content.
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;
@@ -103,6 +104,7 @@ struct gvec_lw_node {
   bool crisp;                        ///< FILL, STROKE: the item asks for no antialiasing (`shape-rendering` crispEdges or optimizeSpeed).
   double opacity;                    ///< GROUP.
   const GSHSCENE_Resource * mask;    ///< GROUP: the soft mask (held by the context), or NULL.
+  const GSHSCENE_Resource * filter;  ///< GROUP: the filter (held by the context), or NULL.
   uint32_t composite;                ///< GROUP: a GSHSCENE_Composite (`mix-blend-mode`); 0 is source-over.
   bool isolate;                      ///< GROUP: `isolation: isolate`; the group names the space it blends in, since the waist drops a group that is all defaults.
   bool content;                      ///< Something is drawn by this node or below it.
@@ -197,6 +199,7 @@ typedef struct gvec_lw_ctx {
   struct gradient_cache * gradients; ///< What of each paint server does not depend on the element that uses it (lower_gradient.c).
   const GVEC_Svg_Element * mask_stack[GVEC_LW_MASK_NESTING];   ///< The masks whose picture the walk is inside (lower_mask.c).
   size_t mask_depth;
+  const GVEC_Svg_Instance * opacity_moved; ///< The instance whose `opacity` its filter group carries (the opacity applies to the filtered result: lower_filter.c).
   const GVEC_Svg_Instance * blend_moved; ///< The instance whose `mix-blend-mode` its mask group carries (the blend is the outermost of the stack: lower_walk.c).
   const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
   size_t pattern_depth;
@@ -377,6 +380,18 @@ typedef struct gvec_lw_text {
 GVEC_INTERNAL_API GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable);
 
 /** What `mask` makes of an element. */
+/** What lowering the `filter` of an element found (lower_filter.c). */
+typedef enum gvec_lw_filter_state {
+  GVEC_LW_FILTER_NONE = 0, ///< The element has no filter: draw it as it is.
+  GVEC_LW_FILTER_NODE,     ///< `out` is a group with the filter: draw the element under it.
+  GVEC_LW_FILTER_ALL,      ///< The filter is in error or has no region: the element is not rendered.
+  GVEC_LW_FILTER_REFUSED   ///< The element is refused (already reported).
+} gvec_lw_filter_state;
+
+/** The group a `filter` makes around the content of the element of @p inst, whose parent frame is @p frame. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame,
+    gvec_lw_filter_state * state, gvec_lw_node ** out);
+
 typedef enum gvec_lw_mask_state {
   GVEC_LW_MASK_NONE = 0, ///< The element is not masked: draw it as it is.
   GVEC_LW_MASK_NODE,     ///< `out` is a group with the soft mask: draw the element under it.

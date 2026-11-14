@@ -36,8 +36,8 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"clip-path group", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<g clip-path=\"url(#c)\"><path d=\"M0 0H4V4H0Z\"/></g>", "g", 2, 0},
       {"mask", GVEC_LOWER_MASK, "\n<path d=\"M0 0H4V4H0Z\" mask=\"url(other.svg#k)\"/>", "path", 2, 0},
       {"image", GVEC_LOWER_IMAGE, "\n<image width=\"4\" height=\"4\"/>", "image", 2, 0},
-      {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"/></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
-      {"filter to nothing", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#nothing)\"/>", "path", 2, 0},
+      {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"><feTurbulence baseFrequency=\"0.1\"/></filter></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
+      {"filter function", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"blur(2px)\"/>", "path", 2, 0},
       {"text", GVEC_LOWER_TEXT, "\n<text>hello</text>", "text", 2, 0},
       {"context paint", GVEC_LOWER_CONTEXT_PAINT, "<defs><rect id=\"r\" width=\"4\" height=\"4\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs><use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>\n<use id=\"u1\" href=\"#u2\" stroke=\"green\" fill=\"blue\"/>", "rect", 1, 0},
       {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/>", "path", 2, 0},
@@ -85,7 +85,7 @@ TEST(LowerRefusals, TheExpansionLimitIsReportedAtTheUse) {
 TEST(LowerRefusals, ASinkSeenElementIsRefusedOnceHoweverOftenItIsDrawn) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><filter id=\"g\"/><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
+               "<defs><filter id=\"g\"><feTurbulence/></filter><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
       l);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
 }
@@ -106,15 +106,16 @@ TEST(LowerRefusals, ARectThatPaintsNothingIsNotARefusal) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerRefusals, ADanglingClipPathOrMaskIsIgnoredAndADanglingFilterIsNot) {
+TEST(LowerRefusals, ADanglingClipPathOrMaskIsIgnoredAndADanglingFilterDrawsNothing) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
                "<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" mask=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" filter=\"url(#nothing)\"/>"),
       l);
+  // a filter that is not there (or is no filter) makes the element not rendered, which is no refusal
   EXPECT_EQ(l.Items(), (size_t) 2);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_FILTER), nullptr);
+  EXPECT_EQ(l.Refusal(GVEC_LOWER_FILTER), nullptr);
   EXPECT_EQ(l.Refusal(GVEC_LOWER_MASK), nullptr);
-  EXPECT_EQ(l.Refusals(), (size_t) 1);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
 TEST(LowerRefusals, EachReasonHasANameAndTheNumbersAreStable) {

@@ -385,26 +385,6 @@ typedef struct common {
   bool isolate;        ///< `isolation: isolate`.
 } common;
 
-/* A property of references: whether it names anything this version does not lower. */
-static GVEC_Result references_refuse(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property,
-    bool dangling_counts, bool * refuse, bool * usable) {
-  GVEC_Svg_Style_Value v;
-  GVEC_Result r = gvec_lw_read_property(ctx, inst, property, GVEC_LOWER_STYLE, &v, usable);
-  if (r != GVEC_OK || !*usable) {
-    return r;
-  }
-  for (size_t i = 0; i < v.reference_count; i++) {
-    const GVEC_Svg_Style_Reference * ref = &v.references[i];
-    if (!ref->is_url || !ref->local) {
-      *refuse = true; /* A function, a basic shape, or a reference outside the document. */
-    }
-    else if (ref->target || (dangling_counts && !ref->cut)) {
-      *refuse = true;
-    }
-  }
-  return GVEC_OK;
-}
-
 /* `mix-blend-mode` as the waist's operator: the sixteen values of Compositing and Blending 1 (`normal` is source-over), 0 for anything else. */
 static uint32_t blend_composite(const GVEC_Svg_Style_Value * v) {
   static const struct {
@@ -458,14 +438,7 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     return GVEC_OK;
   }
   /* The features of the later stories refuse the element whole, so that nothing is half drawn. */
-  bool refuse = false; /* `clip-path` and `mask` are lowered by the wrappers around the element (lower_clip.c, lower_mask.c). */
-  r = references_refuse(ctx, inst, GVEC_SVG_PROP_FILTER, true, &refuse, &usable);
-  if (r != GVEC_OK || !usable) {
-    return r;
-  }
-  if (refuse) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "filter is not lowered yet");
-  }
+  /* `clip-path`, `mask` and `filter` are lowered by the wrappers around the element (lower_clip.c, lower_mask.c, lower_filter.c). */
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_MIX_BLEND_MODE, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     return r;
@@ -498,6 +471,10 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   }
   c->opacity = v.kind == GVEC_SVG_STYLE_NUMBER ? v.number : 1;
   c->draw = c->opacity > 0; /* Opacity zero draws nothing, whatever is inside. */
+  if (ctx->opacity_moved == inst) {
+    c->opacity = 1; /* the filter's group carries it */
+    ctx->opacity_moved = NULL;
+  }
   return GVEC_OK;
 }
 
@@ -1548,7 +1525,7 @@ static GVEC_Result lw_content(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
  * opacity group, which composes the same way, a clip and an opacity commuting). */
 static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   gvec_lw_clip_state state;
-  gvec_lw_node * clips[GVEC_LW_CLIP_MAX + 1];
+  gvec_lw_node * clips[GVEC_LW_CLIP_MAX + 3]; /* the clips, the mask's group and the filter's */
   size_t count = 0;
   GVEC_Result r = gvec_lw_clip_begin(ctx, inst, frame, &state, clips, &count);
   if (r != GVEC_OK || state == GVEC_LW_CLIP_REFUSED || state == GVEC_LW_CLIP_ALL) {
@@ -1576,6 +1553,28 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
       ctx->blend_moved = inst;
     }
     clips[count++] = mask_group;
+  }
+  /* The filter is a group inside the mask: the clipped, masked element's content is what is filtered (Filter Effects: filter, then clip, mask, opacity). */
+  gvec_lw_filter_state filtered;
+  gvec_lw_node * filter_group = NULL;
+  r = gvec_lw_filter_begin(ctx, inst, frame, &filtered, &filter_group);
+  if (r != GVEC_OK || filtered == GVEC_LW_FILTER_REFUSED || filtered == GVEC_LW_FILTER_ALL) {
+    gvec_svg_instance_release(ctx->style, inst);
+    return r;
+  }
+  if (filtered == GVEC_LW_FILTER_NODE) {
+    /* The opacity applies to the filtered result (FL20), so the filter's group carries it and the content does not. */
+    GVEC_Svg_Style_Value opacity;
+    bool usable;
+    r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &opacity, &usable);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (usable && opacity.kind == GVEC_SVG_STYLE_NUMBER) {
+      filter_group->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);
+    }
+    ctx->opacity_moved = inst;
+    clips[count++] = filter_group;
   }
   if (count == 0) {
     return lw_content(ctx, inst, frame, parent);

@@ -111,6 +111,7 @@ static GVEC_Result emit_nodes(gvec_lw_ctx * ctx, GSHSCENE_List * list, size_t ta
       memset(&group, 0, sizeof group);
       group.opacity = n->opacity;
       group.soft_mask = n->mask;
+      group.filter = n->filter;
       group.composite = n->composite;
       if (n->isolate) {
         group.blend_space.primaries = GCOL_PRIMARIES_SRGB;
