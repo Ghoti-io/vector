@@ -3,7 +3,7 @@
  *
  * `clip-path` (H9, H10): a `clipPath` of one shape is one clip push around what the element draws, with the map the element's own
  * space, the clipPath's transform, the box when the units say so and the shape's transform make; a clip that is clipped is a nested
- * push; several shapes are one union push; a `use` child is the shape it names; a clip on one of several shapes is refused.
+ * push; several shapes are one union push; a `use` child is the shape it names; a clip on one of several shapes is that member's inner clips.
  */
 
 #include "../lower_helpers.h"
@@ -214,15 +214,14 @@ TEST(LowerClip, ABoundingBoxOfNoAreaGivesNoClipToPlaceAndTheElementIsNotRendered
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerClip, WhatIsNotAShapeOrOneOfSeveralWithItsOwnClipIsRefusedWhole) {
+TEST(LowerClip, WhatThisDoesNotLowerIsRefusedWhole) {
   const struct {
     const char * clip;
     GVEC_Lower_Reason reason;
   } cases[] = {
-      {"<clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" clip-path=\"url(#o)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
       {"<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" style=\"clip-path: inset(1px)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
       {"<clipPath id=\"c\"><text>x</text></clipPath>", GVEC_LOWER_TEXT},
-      {"<clipPath id=\"o\"><rect width=\"1\" height=\"1\"/></clipPath><rect id=\"r\" width=\"5\" height=\"5\"/><clipPath id=\"c\"><use href=\"#r\" clip-path=\"url(#o)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
+      {"<rect id=\"r\" width=\"5\" height=\"5\"/><clipPath id=\"c\"><use href=\"#r\" style=\"clip-path: inset(1px)\"/></clipPath>", GVEC_LOWER_CLIP_PATH},
       {"<text id=\"t\">x</text><clipPath id=\"c\"><use href=\"#t\"/></clipPath>", GVEC_LOWER_TEXT},
   };
   for (const auto & c : cases) {
@@ -235,6 +234,105 @@ TEST(LowerClip, WhatIsNotAShapeOrOneOfSeveralWithItsOwnClipIsRefusedWhole) {
   Lower("<rect width=\"9\" height=\"9\" style=\"clip-path: inset(1px)\"/>", shape);
   EXPECT_EQ(shape.Items(), (size_t) 3);
   EXPECT_EQ(shape.Refusals(), (size_t) 0);
+}
+
+namespace {
+
+/** Every member of the union an element's clip pushed, read back. */
+std::vector<GSHSCENE_Clip_Member> Members(const Lowered & l) {
+  std::vector<GSHSCENE_Clip_Member> out;
+  const GSHSCENE_Item push = l.Item(0);
+  const size_t n = gshscene_resource_clip_union_count(push.resource);
+  for (size_t i = 0; i < n; i++) {
+    GSHSCENE_Clip_Member m;
+    EXPECT_EQ(gshscene_resource_clip_union_member(push.resource, i, &m), GSHSCENE_OK);
+    out.push_back(m);
+  }
+  return out;
+}
+
+size_t WithInner(const std::vector<GSHSCENE_Clip_Member> & ms, size_t inner) {
+  size_t n = 0;
+  for (const auto & m : ms) {
+    n += m.inner_count == inner;
+  }
+  return n;
+}
+
+}  // namespace
+
+TEST(LowerClip, AShapeOfSeveralThatIsClippedIsAMemberWithAnInnerClip) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"o\"><rect width=\"4\" height=\"6\" transform=\"translate(1 2)\"/></clipPath>"
+        "<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" transform=\"translate(10 0)\" clip-path=\"url(#o)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  const auto ms = Members(l);
+  ASSERT_EQ(ms.size(), (size_t) 2);
+  EXPECT_EQ(WithInner(ms, 0), (size_t) 1);
+  EXPECT_EQ(WithInner(ms, 1), (size_t) 1);
+  for (const auto & m : ms) {
+    if (m.inner_count == 1) {
+      EXPECT_EQ(m.map.t[0], 10.0) << "the member's own transform";
+      // the inner clip is in the clipped shape's own space, its transform included: the clipPath's rect is translated (1 2) in it
+      EXPECT_EQ(m.inner[0].map.t[0], 11.0);
+      EXPECT_EQ(m.inner[0].map.t[1], 2.0);
+    }
+  }
+}
+
+TEST(LowerClip, AClipThatIsAUnionOfShapesMakesAMemberForEachOfThem) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"o\"><rect width=\"4\" height=\"4\"/><rect x=\"6\" width=\"4\" height=\"4\"/></clipPath>"
+        "<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" clip-path=\"url(#o)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  const auto ms = Members(l);
+  EXPECT_EQ(ms.size(), (size_t) 3) << "the first shape, and the second cut by each of the two shapes of its clip";
+  EXPECT_EQ(WithInner(ms, 0), (size_t) 1);
+  EXPECT_EQ(WithInner(ms, 1), (size_t) 2);
+}
+
+TEST(LowerClip, AClipThatIsClippedAndAClipThatIsEmptyOnAShapeOfSeveral) {
+  Lowered l;  // the member's clip is clipped in turn: two inner clips
+  Lower("<defs><clipPath id=\"p\"><rect width=\"3\" height=\"3\"/></clipPath>"
+        "<clipPath id=\"o\" clip-path=\"url(#p)\"><rect width=\"4\" height=\"4\"/></clipPath>"
+        "<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" clip-path=\"url(#o)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      l);
+  auto ms = Members(l);
+  ASSERT_EQ(ms.size(), (size_t) 2);
+  EXPECT_EQ(WithInner(ms, 2), (size_t) 1);
+  Lowered empty;  // a clip of nothing lets nothing of that shape through: it is not a member
+  Lower("<defs><clipPath id=\"o\"></clipPath>"
+        "<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/><rect x=\"9\" width=\"5\" height=\"5\" clip-path=\"url(#o)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      empty);
+  ASSERT_EQ(Kinds(empty), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(gshscene_resource_kind(empty.Item(0).resource), GSHSCENE_RESOURCE_PATH) << "one member left: the union is that member's own clip push (CU10)";
+}
+
+TEST(LowerClip, AUseChildWithAClipOfItsOwnIsAMemberWithAnInnerClipInTheUsesSpace) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"o\"><rect width=\"4\" height=\"4\"/></clipPath><rect id=\"r\" width=\"5\" height=\"5\"/>"
+        "<clipPath id=\"c\"><rect x=\"30\" width=\"5\" height=\"5\"/><use href=\"#r\" x=\"20\" transform=\"translate(2 3)\" clip-path=\"url(#o)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      l);
+  ASSERT_EQ(Kinds(l), (std::vector<GSHSCENE_Item_Kind>{PUSH, FILL, POP}));
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  const auto ms = Members(l);
+  ASSERT_EQ(ms.size(), (size_t) 2);
+  EXPECT_EQ(WithInner(ms, 1), (size_t) 1) << "the use's own clip-path is the member's inner clip";
+  for (const auto & m : ms) {
+    if (m.inner_count == 1) {
+      EXPECT_EQ(m.map.t[0], 22.0) << "the use's transform and its x";
+      EXPECT_EQ(m.inner[0].map.t[0], 2.0) << "the use's clip is in the use's space: its transform, not its x";
+      EXPECT_EQ(m.inner[0].map.t[1], 3.0);
+    }
+  }
 }
 
 TEST(LowerClip, AUseChildThatNamesAShapeIsThatShapePlacedByTheUse) {
