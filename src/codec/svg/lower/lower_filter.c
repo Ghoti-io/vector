@@ -832,13 +832,66 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
   return GVEC_OK;
 }
 
+
 static bool is_filter_primitive(GVEC_Svg_Kind k) {
   return k >= GVEC_SVG_KIND_FE_BLEND && k <= GVEC_SVG_KIND_FE_TURBULENCE && k != GVEC_SVG_KIND_FE_DISTANT_LIGHT &&
       k != GVEC_SVG_KIND_FE_FUNC_A && k != GVEC_SVG_KIND_FE_FUNC_B && k != GVEC_SVG_KIND_FE_FUNC_G && k != GVEC_SVG_KIND_FE_FUNC_R &&
       k != GVEC_SVG_KIND_FE_MERGE_NODE && k != GVEC_SVG_KIND_FE_POINT_LIGHT && k != GVEC_SVG_KIND_FE_SPOT_LIGHT;
 }
 
-static bool units_box(const GVEC_Svg_Element * e, const char * name, bool fallback) {
+/** The filter an `href` (or `xlink:href`) of a `filter` element names in this document; NULL for none. */
+static const GVEC_Svg_Element * href_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e) {
+  const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(e, "href");
+  if (!a) {
+    a = gvec_svg_element_find_attribute(e, "xlink:href");
+  }
+  if (!a) {
+    return NULL;
+  }
+  size_t n;
+  const char * t = gvec_svg_attribute_raw(a, &n);
+  while (n > 0 && is_wsp(t[0])) {
+    t++;
+    n--;
+  }
+  if (n < 2 || t[0] != '#' || n > 255) {
+    return NULL;
+  }
+  char id[256];
+  memcpy(id, t + 1, n - 1);
+  id[n - 1] = 0;
+  return gvec_svg_find_by_id(ctx->document, id);
+}
+
+/** A `filter` element's attribute follows `href` to the filters it refers to: the element in the chain that has it, else the first. */
+static const GVEC_Svg_Element * attr_owner(gvec_lw_ctx * ctx, const GVEC_Svg_Element * f, const char * name) {
+  const GVEC_Svg_Element * e = f;
+  for (int hops = 0; e && hops < 16; hops++, e = href_of(ctx, e)) {
+    if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_FILTER && gvec_svg_element_find_attribute(e, name)) {
+      return e;
+    }
+  }
+  return f;
+}
+
+/** The element of the `href` chain whose children are the primitives: the first filter that has any. */
+static const GVEC_Svg_Element * primitive_owner(gvec_lw_ctx * ctx, const GVEC_Svg_Element * f) {
+  const GVEC_Svg_Element * e = f;
+  for (int hops = 0; e && hops < 16; hops++, e = href_of(ctx, e)) {
+    if (gvec_svg_element_kind(e) != GVEC_SVG_KIND_FILTER) {
+      break;
+    }
+    for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(e); c; c = gvec_svg_element_next_sibling(c)) {
+      if (is_filter_primitive(gvec_svg_element_kind(c))) {
+        return e;
+      }
+    }
+  }
+  return f;
+}
+
+static bool units_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * name, bool fallback) {
+  e = attr_owner(ctx, e, name);
   const char * s;
   size_t n;
   if (!raw(e, name, &s, &n)) {
@@ -872,8 +925,8 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   if (!fmap_make(local, &b.map)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter on an element whose map rotates or skews needs canonical space, which no sink draws yet");
   }
-  const bool region_box = units_box(filter, "filterUnits", true);
-  b.prim_box = units_box(filter, "primitiveUnits", false);
+  const bool region_box = units_box(ctx, filter, "filterUnits", true);
+  b.prim_box = units_box(ctx, filter, "primitiveUnits", false);
   GSHGEOM_Bounds box;
   box.empty = 1;
   GVEC_Result r = GVEC_OK;
@@ -907,7 +960,7 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     for (int k = 0; k < 4; k++) {
       bool present;
       double v;
-      if (!length_attr(filter, names[k], region_box, (k & 1) ? vh : vw, &present, &v)) {
+      if (!length_attr(attr_owner(ctx, filter, names[k]), names[k], region_box, (k & 1) ? vh : vw, &present, &v)) {
         *state = GVEC_LW_FILTER_ALL;
         return GVEC_OK;
       }
@@ -941,7 +994,7 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     gvec_free(ctx->allocator, b.values);
     return GVEC_ERR_OOM;
   }
-  for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(filter); c && r == GVEC_OK && !b.invalid && !b.refused;
+  for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(primitive_owner(ctx, filter)); c && r == GVEC_OK && !b.invalid && !b.refused;
       c = gvec_svg_element_next_sibling(c)) {
     if (is_filter_primitive(gvec_svg_element_kind(c))) {
       r = primitive(&b, c, filter);

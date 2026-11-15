@@ -199,6 +199,22 @@ TEST(LowerFilter, AnInvalidValueDisablesTheEffectAndTheElementIsDrawnThroughIt) 
   }
 }
 
+TEST(LowerFilter, AFilterTakesItsPrimitivesAndAttributesFromTheOneItsHrefNames) {
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"g\" x=\"0.1\" y=\"0.2\" width=\"0.8\" height=\"1\"><feGaussianBlur stdDeviation=\"4\"/></filter>"
+               "<filter id=\"f\" href=\"#g\" y=\"0\"/>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  ASSERT_EQ(f.primitive_count, 1u);
+  EXPECT_EQ(f.primitives[0].sx, 4.0);
+  EXPECT_DOUBLE_EQ(f.region[0], 3.0);   // 2 + 0.1 * 10
+  EXPECT_DOUBLE_EQ(f.region[1], 3.0);   // the referring filter's own y
+  EXPECT_DOUBLE_EQ(f.region[2], 8.0);
+  EXPECT_DOUBLE_EQ(f.region[3], 10.0);
+}
+
 TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   const char * refused[] = {
       "<filter id=\"f\"><feTurbulence baseFrequency=\"0.1\"/></filter>",
