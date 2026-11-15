@@ -232,7 +232,12 @@ TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   EXPECT_NE(fn.Refusal(GVEC_LOWER_FILTER), nullptr) << "a filter function";
   Lowered turned;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(30)\" filter=\"url(#f)\""), turned);
-  EXPECT_NE(turned.Refusal(GVEC_LOWER_FILTER), nullptr) << "a rotated element needs canonical space";
+  EXPECT_EQ(turned.Refusals(), (size_t) 0) << "a rotated element is filtered in a picture of its own";
+  bool instance = false;
+  for (size_t i = 0; i < turned.Items(); i++) {
+    instance = instance || turned.Item(i).kind == GSHSCENE_ITEM_INSTANCE;
+  }
+  EXPECT_TRUE(instance);
   Lowered quarter;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(90)\" filter=\"url(#f)\""), quarter);
   EXPECT_EQ(quarter.Refusals(), (size_t) 0) << "a quarter turn is axis aligned";

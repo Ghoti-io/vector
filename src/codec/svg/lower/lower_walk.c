@@ -459,7 +459,11 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   if (v.transform.depends_on_box) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box is not lowered yet");
   }
-  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_SYMBOL) {
+  if (ctx->transform_moved == inst) {
+    c->local = *frame; /* the element's transform is the filter instance's map */
+    ctx->transform_moved = NULL;
+  }
+  else if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_SYMBOL) {
     c->local = *frame; /* A symbol has no transform in SVG 1.1, and the reference corpus follows that. */
   }
   else if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {
@@ -1557,7 +1561,8 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   /* The filter is a group inside the mask: the clipped, masked element's content is what is filtered (Filter Effects: filter, then clip, mask, opacity). */
   gvec_lw_filter_state filtered;
   gvec_lw_node * filter_group = NULL;
-  r = gvec_lw_filter_begin(ctx, inst, frame, &filtered, &filter_group);
+  gvec_lw_node * filter_inner = NULL; /* a rotated element: the group inside the instance that carries its transform */
+  r = gvec_lw_filter_begin(ctx, inst, frame, &filtered, &filter_group, &filter_inner);
   if (r != GVEC_OK || filtered == GVEC_LW_FILTER_REFUSED || filtered == GVEC_LW_FILTER_ALL) {
     gvec_svg_instance_release(ctx->style, inst);
     return r;
@@ -1570,11 +1575,16 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     if (r != GVEC_OK) {
       return r;
     }
+    gvec_lw_node * carrier = filter_inner ? filter_inner : filter_group;
     if (usable && opacity.kind == GVEC_SVG_STYLE_NUMBER) {
-      filter_group->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);
+      carrier->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);
     }
     ctx->opacity_moved = inst;
     clips[count++] = filter_group;
+    if (filter_inner) {
+      clips[count++] = filter_inner;
+      ctx->transform_moved = inst;
+    }
   }
   if (count == 0) {
     return lw_content(ctx, inst, frame, parent);
@@ -1595,7 +1605,28 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     gvec_svg_instance_release(ctx->style, inst);
     return r;
   }
-  r = lw_content(ctx, inst, frame, clips[count - 1]);
+  GSHGEOM_Map identity;
+  const size_t saved_open = ctx->open;
+  if (filter_inner) {
+    /* The content is a picture drawn through the instance: its own list, one more picture deep, in the element's own space. */
+    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+      return GVEC_ERR_INTERNAL;
+    }
+    if (ctx->picture_depth + 1 > ctx->caps.picture_depth) {
+      while (entered--) {
+        gvec_lw_wrap_leave(ctx);
+      }
+      gvec_svg_instance_release(ctx->style, inst);
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the filtered element nests pictures deeper than the scene's limits allow");
+    }
+    ctx->picture_depth++;
+    ctx->open = 0;
+  }
+  r = lw_content(ctx, inst, filter_inner ? &identity : frame, clips[count - 1]);
+  if (filter_inner) {
+    ctx->picture_depth--;
+    ctx->open = saved_open;
+  }
   for (size_t i = 0; i < count; i++) {
     gvec_lw_wrap_leave(ctx);
   }

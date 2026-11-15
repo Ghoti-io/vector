@@ -1038,10 +1038,11 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
 }
 
 GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_filter_state * state,
-    gvec_lw_node ** out) {
+    gvec_lw_node ** out, gvec_lw_node ** inner) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   *state = GVEC_LW_FILTER_NONE;
   *out = NULL;
+  *inner = NULL;
   GVEC_Svg_Style_Value v;
   bool usable;
   GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_FILTER, GVEC_LOWER_STYLE, &v, &usable);
@@ -1083,9 +1084,32 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
   const GSHSCENE_Resource * resource = NULL;
-  r = make_filter(ctx, inst, &local, target, state, &resource);
+  fmap probe;
+  const bool plain = fmap_make(&local, &probe);
+  GSHGEOM_Map identity;
+  if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+    return GVEC_ERR_INTERNAL;
+  }
+  /* A rotated or skewed element is filtered in a picture of its own, whose space is the element's: the filter is then in that space and the
+   * sink filters in canonical space (D-FL8); an axis-aligned one is filtered in the list's through its map. */
+  r = make_filter(ctx, inst, plain ? &local : &identity, target, state, &resource);
   if (r != GVEC_OK || *state != GVEC_LW_FILTER_NODE) {
     return r;
+  }
+  if (!plain) {
+    gvec_lw_node * use = gvec_lw_new_node(ctx, GVEC_LW_USE);
+    if (!use) {
+      return GVEC_ERR_OOM;
+    }
+    use->map = local;
+    use->key = gvec_lw_key(e->key, hash2(ctx->chain, 1), GVEC_LW_ROLE_INSTANCE);
+    use->container_key = gvec_lw_key(e->key, hash2(ctx->chain, 1), GVEC_LW_ROLE_CONTAINER);
+    use->site = gvec_lw_new_site(ctx, e, use->key);
+    use->container_site = gvec_lw_new_site(ctx, e, use->container_key);
+    if (use->site == GVEC_LW_NO_SITE || use->container_site == GVEC_LW_NO_SITE) {
+      return GVEC_ERR_OOM;
+    }
+    *out = use;
   }
   gvec_lw_node * g = gvec_lw_new_node(ctx, GVEC_LW_GROUP);
   if (!g) {
@@ -1098,6 +1122,11 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   if (g->site == GVEC_LW_NO_SITE) {
     return GVEC_ERR_OOM;
   }
-  *out = g;
+  if (plain) {
+    *out = g;
+  }
+  else {
+    *inner = g;
+  }
   return GVEC_OK;
 }
