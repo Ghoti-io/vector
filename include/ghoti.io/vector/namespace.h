@@ -131,6 +131,7 @@
 #define gvec_lw_emit_list GHOTIIO_VECTOR(gvec_lw_emit_list)
 #define gvec_lw_emit_picture GHOTIIO_VECTOR(gvec_lw_emit_picture)
 #define gvec_lw_end GHOTIIO_VECTOR(gvec_lw_end)
+#define gvec_lw_filter_begin GHOTIIO_VECTOR(gvec_lw_filter_begin)
 #define gvec_lw_gradient_paint GHOTIIO_VECTOR(gvec_lw_gradient_paint)
 #define gvec_lw_gradient_paint_in GHOTIIO_VECTOR(gvec_lw_gradient_paint_in)
 #define gvec_lw_hold GHOTIIO_VECTOR(gvec_lw_hold)
