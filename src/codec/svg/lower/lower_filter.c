@@ -857,7 +857,7 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       for (size_t i = 0; i < count; i++) {
         sum += kernel[i];
       }
-      if (!number_attr(el, "divisor", sum == 0 ? 1 : sum, &divisor) || divisor == 0 || !number_attr(el, "bias", 0, &bias)) {
+      if (!number_attr(el, "divisor", (sum > -1e-9 && sum < 1e-9) ? 1 : sum, &divisor) || divisor == 0 || !number_attr(el, "bias", 0, &bias)) {
         b->invalid = true;
         return GVEC_OK;
       }
