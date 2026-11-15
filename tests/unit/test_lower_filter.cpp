@@ -215,11 +215,48 @@ TEST(LowerFilter, AFilterTakesItsPrimitivesAndAttributesFromTheOneItsHrefNames) 
   EXPECT_DOUBLE_EQ(f.region[3], 10.0);
 }
 
+TEST(LowerFilter, TurbulenceAndTheLightingsAreLowered) {
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"f\"><feTurbulence baseFrequency=\"0.05 0.1\" numOctaves=\"3\" seed=\"7\" type=\"fractalNoise\" stitchTiles=\"stitch\"/>"
+               "<feDiffuseLighting in=\"SourceAlpha\" surfaceScale=\"2\" diffuseConstant=\"1.5\" lighting-color=\"#ff8000\"><feDistantLight azimuth=\"45\" elevation=\"60\"/></feDiffuseLighting>"
+               "<feSpecularLighting specularConstant=\"2\" specularExponent=\"20\"><feSpotLight x=\"1\" y=\"2\" z=\"3\" pointsAtX=\"4\" pointsAtY=\"5\" pointsAtZ=\"6\" "
+               "specularExponent=\"2\" limitingConeAngle=\"30\"/></feSpecularLighting></filter>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  ASSERT_EQ(f.primitive_count, 3u);
+  EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_TURBULENCE);
+  EXPECT_EQ(f.primitives[0].input_count, 0u);
+  EXPECT_EQ(f.primitives[0].sx, 0.05);
+  EXPECT_EQ(f.primitives[0].sy, 0.1);
+  EXPECT_EQ(f.primitives[0].octaves, 3u);
+  EXPECT_EQ(f.primitives[0].seed, 7.0);
+  EXPECT_EQ(f.primitives[0].mode, (uint32_t) GSHSCENE_FILTER_NOISE_FRACTAL);
+  EXPECT_EQ(f.primitives[0].stitch_tiles, 1u);
+  EXPECT_EQ(f.primitives[1].kind, (uint32_t) GSHSCENE_FILTER_DIFFUSE_LIGHTING);
+  EXPECT_EQ(f.primitives[1].inputs[0].kind, (uint32_t) GSHSCENE_FILTER_INPUT_SOURCE_ALPHA);
+  EXPECT_EQ(f.primitives[1].surface_scale, 2.0);
+  EXPECT_EQ(f.primitives[1].constant, 1.5);
+  EXPECT_EQ(f.primitives[1].light.kind, (uint32_t) GSHSCENE_FILTER_LIGHT_DISTANT);
+  EXPECT_EQ(f.primitives[1].light.azimuth, 45.0);
+  EXPECT_NEAR(f.primitives[1].color.rgba[1], 128.0 / 255.0, 1e-9);
+  EXPECT_EQ(f.primitives[2].kind, (uint32_t) GSHSCENE_FILTER_SPECULAR_LIGHTING);
+  EXPECT_EQ(f.primitives[2].exponent, 20.0);
+  EXPECT_EQ(f.primitives[2].light.kind, (uint32_t) GSHSCENE_FILTER_LIGHT_SPOT);
+  EXPECT_EQ(f.primitives[2].light.position[2], 3.0);
+  EXPECT_EQ(f.primitives[2].light.has_cone, 1u);
+  EXPECT_EQ(f.primitives[2].light.cone_angle, 30.0);
+  // a specular exponent out of range, or no light, draws nothing
+  Lowered bad;
+  LowerSvg(Doc("<filter id=\"f\"><feSpecularLighting specularExponent=\"200\"><feDistantLight/></feSpecularLighting></filter>"), bad);
+  EXPECT_EQ(bad.Items(), (size_t) 0);
+  EXPECT_EQ(bad.Refusals(), (size_t) 0);
+}
+
 TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   const char * refused[] = {
-      "<filter id=\"f\"><feTurbulence baseFrequency=\"0.1\"/></filter>",
       "<filter id=\"f\"><feImage href=\"#x\"/></filter>",
-      "<filter id=\"f\"><feDiffuseLighting><feDistantLight/></feDiffuseLighting></filter>",
   };
   for (const char * filter : refused) {
     Lowered l;

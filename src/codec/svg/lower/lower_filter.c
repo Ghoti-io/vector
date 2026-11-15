@@ -30,6 +30,7 @@
 
 #include <string.h>
 
+#include <ghoti.io/math/basic.h>
 #include <ghoti.io/shape-geometry/map.h>
 #include <ghoti.io/shape-scene/filter.h>
 
@@ -348,6 +349,77 @@ static GVEC_Result flood_of(fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Fi
   return GVEC_OK;
 }
 
+/** The color of the `lighting-color` property of an element, as the primitive's `color` (opaque: its alpha is not a light's). */
+static GVEC_Result lighting_color_of(fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Filter_Primitive * p) {
+  const GVEC_Svg_Instance * inst;
+  GVEC_Result r = gvec_lw_instance_of(b->ctx, el, &inst);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  GVEC_Svg_Style_Value color;
+  bool usable;
+  r = gvec_lw_read_property(b->ctx, inst, GVEC_SVG_PROP_LIGHTING_COLOR, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &color, &usable);
+  if (r != GVEC_OK || !usable) {
+    b->refused = true;
+    return r;
+  }
+  const GVEC_Svg_Color * c = color.kind == GVEC_SVG_STYLE_COLOR ? &color.color : color.kind == GVEC_SVG_STYLE_PAINT ? &color.paint.color : NULL;
+  if (!c || c->kind == GVEC_SVG_COLOR_FOREGROUND) {
+    return refuse_with(b, "a lighting color that is not a plain color is not lowered");
+  }
+  p->color.rgba[0] = c->color.rgba[0];
+  p->color.rgba[1] = c->color.rgba[1];
+  p->color.rgba[2] = c->color.rgba[2];
+  p->color.rgba[3] = 1;
+  p->color.space = c->color.space;
+  return GVEC_OK;
+}
+
+/** The light source child of a lighting primitive, in the list's space; false when there is none or it is invalid. */
+static bool light_of(const fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Filter_Light * lt) {
+  for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(el); c; c = gvec_svg_element_next_sibling(c)) {
+    const GVEC_Svg_Kind k = gvec_svg_element_kind(c);
+    memset(lt, 0, sizeof *lt);
+    if (k == GVEC_SVG_KIND_FE_DISTANT_LIGHT) {
+      lt->kind = GSHSCENE_FILTER_LIGHT_DISTANT;
+      return number_attr(c, "azimuth", 0, &lt->azimuth) && number_attr(c, "elevation", 0, &lt->elevation);
+    }
+    if (k == GVEC_SVG_KIND_FE_POINT_LIGHT || k == GVEC_SVG_KIND_FE_SPOT_LIGHT) {
+      double pos[3], at[3] = {0, 0, 0};
+      if (!number_attr(c, "x", 0, &pos[0]) || !number_attr(c, "y", 0, &pos[1]) || !number_attr(c, "z", 0, &pos[2])) {
+        return false;
+      }
+      double sx, sy;
+      fmap_lengths(&b->map, 1, 1, &sx, &sy);
+      const double zs = gmath_sqrt(sx * sy);
+      double lx, ly;
+      fmap_vector(&b->map, pos[0], pos[1], &lx, &ly);
+      lt->kind = k == GVEC_SVG_KIND_FE_POINT_LIGHT ? GSHSCENE_FILTER_LIGHT_POINT : GSHSCENE_FILTER_LIGHT_SPOT;
+      lt->position[0] = lx + b->map.e;
+      lt->position[1] = ly + b->map.f;
+      lt->position[2] = pos[2] * zs;
+      if (k == GVEC_SVG_KIND_FE_SPOT_LIGHT) {
+        if (!number_attr(c, "pointsAtX", 0, &at[0]) || !number_attr(c, "pointsAtY", 0, &at[1]) || !number_attr(c, "pointsAtZ", 0, &at[2]) ||
+            !number_attr(c, "specularExponent", 1, &lt->spot_exponent) || lt->spot_exponent <= 0) {
+          return false;
+        }
+        fmap_vector(&b->map, at[0], at[1], &lx, &ly);
+        lt->points_at[0] = lx + b->map.e;
+        lt->points_at[1] = ly + b->map.f;
+        lt->points_at[2] = at[2] * zs;
+        if (gvec_svg_element_find_attribute(c, "limitingConeAngle")) {
+          lt->has_cone = 1;
+          if (!number_attr(c, "limitingConeAngle", 0, &lt->cone_angle)) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 /** `color-interpolation-filters` of an element. */
 static GVEC_Result space_of(fbuild * b, const GVEC_Svg_Element * el, uint32_t * space) {
   const GVEC_Svg_Instance * inst;
@@ -431,7 +503,7 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
   }
   /* the inputs first: a removed keyword adds its flood before this primitive */
   const bool two = kind == GVEC_SVG_KIND_FE_BLEND || kind == GVEC_SVG_KIND_FE_COMPOSITE || kind == GVEC_SVG_KIND_FE_DISPLACEMENT_MAP;
-  const bool none = kind == GVEC_SVG_KIND_FE_FLOOD;
+  const bool none = kind == GVEC_SVG_KIND_FE_FLOOD || kind == GVEC_SVG_KIND_FE_TURBULENCE;
   size_t merge_first = b->merge_used;
   size_t merge_count = 0;
   if (kind == GVEC_SVG_KIND_FE_MERGE) {
@@ -455,7 +527,7 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       merge_count = 1;
     }
   }
-  else if (!none && kind != GVEC_SVG_KIND_FE_TURBULENCE) {
+  else if (!none && kind != GVEC_SVG_KIND_FE_TURBULENCE && kind != GVEC_SVG_KIND_FE_IMAGE) {
     r = input_of(b, el, "in", &in0, &ok);
     if (r != GVEC_OK || !ok) {
       return r;
@@ -811,8 +883,45 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       p->preserve_alpha = raw(el, "preserveAlpha", &s, &n) && word_is(s, n, "true") ? 1u : 0u;
       break;
     }
+    case GVEC_SVG_KIND_FE_TURBULENCE: {
+      const char * s;
+      size_t n;
+      double freq[2], octaves, seed;
+      p->kind = GSHSCENE_FILTER_TURBULENCE;
+      if (!pair_attr(el, "baseFrequency", 0, freq) || !number_attr(el, "numOctaves", 1, &octaves) || !number_attr(el, "seed", 0, &seed)) {
+        b->invalid = true;
+        return GVEC_OK;
+      }
+      if (freq[0] < 0 || freq[1] < 0) {
+        b->invalid = true; /* a negative frequency is an error: the element is not rendered */
+        return GVEC_OK;
+      }
+      p->sx = freq[0];
+      p->sy = freq[1];
+      p->octaves = octaves < 0 ? 0 : (octaves > GSHSCENE_FILTER_MAX_OCTAVES ? GSHSCENE_FILTER_MAX_OCTAVES : (uint32_t) octaves);
+      p->seed = seed;
+      p->mode = raw(el, "type", &s, &n) && word_is(s, n, "fractalNoise") ? GSHSCENE_FILTER_NOISE_FRACTAL : GSHSCENE_FILTER_NOISE_TURBULENCE;
+      p->stitch_tiles = raw(el, "stitchTiles", &s, &n) && word_is(s, n, "stitch") ? 1u : 0u;
+      break;
+    }
+    case GVEC_SVG_KIND_FE_DIFFUSE_LIGHTING:
+    case GVEC_SVG_KIND_FE_SPECULAR_LIGHTING: {
+      const bool spec = kind == GVEC_SVG_KIND_FE_SPECULAR_LIGHTING;
+      p->kind = spec ? GSHSCENE_FILTER_SPECULAR_LIGHTING : GSHSCENE_FILTER_DIFFUSE_LIGHTING;
+      if (!number_attr(el, "surfaceScale", 1, &p->surface_scale) || !number_attr(el, spec ? "specularConstant" : "diffuseConstant", 1, &p->constant) ||
+          p->constant < 0 || (spec && (!number_attr(el, "specularExponent", 1, &p->exponent) || p->exponent < 1 || p->exponent > 128)) ||
+          !light_of(b, el, &p->light)) {
+        b->invalid = true;
+        return GVEC_OK;
+      }
+      r = lighting_color_of(b, el, p);
+      if (r != GVEC_OK || b->refused) {
+        return r;
+      }
+      break;
+    }
     default:
-      return refuse_with(b, "a filter primitive the waist's sinks do not draw yet (feImage, feTurbulence, lighting) is not lowered");
+      return refuse_with(b, "a filter primitive the waist's sinks do not draw yet (feImage) is not lowered");
   }
   if (p->subregion_mask == 0) {
     memset(p->subregion, 0, sizeof p->subregion);
