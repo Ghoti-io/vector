@@ -30,8 +30,8 @@
  * ships is given a resource limit that the large one passes, so the sink refuses that fill. The report entry is
  * mapped back, through the trace, to the element and the line it came from. (Lowering into an edit of a retained
  * scene is the same call with `gvec_doc_lower_edit`; publishing it is the application's, so no example does.) The
- * document also has a `path` with a `filter`, which this library does not lower yet: that is a refusal of
- * the lowering itself, printed as "line N, <element>: refused, <reason>". The program checks what it shows and exits 1 when that does
+ * document also has a `path` whose `filter` mixes a `url()` reference with a function, which this library does not lower:
+ * that is a refusal of the lowering itself, printed as "line N, <element>: refused, <reason>". The program checks what it shows and exits 1 when that does
  * not hold.
  *
  * An application that renders with a real sink reads its report the same way.
@@ -52,7 +52,7 @@ static const char document[] =
     "<path d=\"M10 10H20V20H10Z\" fill=\"#c0392b\"/>\n"
     "<path d=\"M0 0H90V90H0Z\" fill=\"#2980b9\" opacity=\".5\"/>\n"
     "<defs><filter id=\"g\"><feFlood/></filter></defs>\n"
-    "<path d=\"M5 5H15V15H5Z\" filter=\"url(#g)\"/>\n"
+    "<path d=\"M5 5H15V15H5Z\" filter=\"url(#g) blur(1px)\"/>\n"
     "</svg>\n";
 
 static GSHSCENE_Result discard(void * context, const void * bytes, size_t count) {
