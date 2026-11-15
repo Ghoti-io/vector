@@ -1037,6 +1037,415 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   return r;
 }
 
+/* --- CSS filter functions ---------------------------------------------------------------------------------------------- */
+
+/** A CSS number at @p *pos of @p s: sign, digits, a point and digits (no exponent); false when there is none. */
+static bool css_number(const char * s, size_t n, size_t * pos, double * out) {
+  size_t i = *pos;
+  bool neg = false;
+  if (i < n && (s[i] == '+' || s[i] == '-')) {
+    neg = s[i] == '-';
+    i++;
+  }
+  double v = 0, scale = 1;
+  bool digits = false, point = false;
+  for (; i < n; i++) {
+    if (s[i] >= '0' && s[i] <= '9') {
+      digits = true;
+      if (point) {
+        scale /= 10;
+        v += (s[i] - '0') * scale;
+      }
+      else {
+        v = v * 10 + (s[i] - '0');
+      }
+    }
+    else if (s[i] == '.' && !point) {
+      point = true;
+    }
+    else {
+      break;
+    }
+  }
+  if (!digits) {
+    return false;
+  }
+  *out = neg ? -v : v;
+  *pos = i;
+  return true;
+}
+
+/** A CSS number or percentage (`0.5`, `50%`) as a fraction; false for anything else. */
+static bool css_amount(const char * s, size_t n, double fallback, double * out) {
+  while (n > 0 && is_wsp(s[0])) {
+    s++;
+    n--;
+  }
+  while (n > 0 && is_wsp(s[n - 1])) {
+    n--;
+  }
+  *out = fallback;
+  if (n == 0) {
+    return true;
+  }
+  size_t pos = 0;
+  double v;
+  if (!css_number(s, n, &pos, &v)) {
+    return false;
+  }
+  if (pos < n && s[pos] == '%') {
+    v /= 100.0;
+    pos++;
+  }
+  if (pos != n) {
+    return false;
+  }
+  *out = v;
+  return true;
+}
+
+/** A CSS length in pixels (`2px`, `0`) at @p *pos of @p s; false when it is not one. */
+static bool css_length(const char * s, size_t n, size_t * pos, double * out) {
+  while (*pos < n && is_wsp(s[*pos])) {
+    (*pos)++;
+  }
+  if (!css_number(s, n, pos, out)) {
+    return false;
+  }
+  if (*pos + 2 <= n && s[*pos] == 'p' && s[*pos + 1] == 'x') {
+    *pos += 2;
+    return true;
+  }
+  return *out == 0.0;
+}
+
+static int hex_digit(char c) {
+  return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+/** A color of a `drop-shadow()`: `#rgb`, `#rrggbb`, `#rrggbbaa` or one of a few names; false for the rest. */
+static bool css_color(const char * s, size_t n, double rgba[4]) {
+  static const struct {
+    const char * name;
+    double c[4];
+  } names[] = {{"black", {0, 0, 0, 1}}, {"currentcolor", {0, 0, 0, 1}}, {"currentColor", {0, 0, 0, 1}}, {"white", {1, 1, 1, 1}}, {"red", {1, 0, 0, 1}}, {"blue", {0, 0, 1, 1}}, {"transparent", {0, 0, 0, 0}},
+      {"green", {0, 128.0 / 255, 0, 1}}, {"gray", {128.0 / 255, 128.0 / 255, 128.0 / 255, 1}}, {"grey", {128.0 / 255, 128.0 / 255, 128.0 / 255, 1}}};
+  while (n > 0 && is_wsp(s[0])) {
+    s++;
+    n--;
+  }
+  while (n > 0 && is_wsp(s[n - 1])) {
+    n--;
+  }
+  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+    if (word_is(s, n, names[i].name)) {
+      memcpy(rgba, names[i].c, sizeof names[i].c);
+      return true;
+    }
+  }
+  if (n > 5 && strncmp(s, "rgb", 3) == 0) {
+    /* rgb(r g b), rgb(r, g, b), rgba(r, g, b, a) and rgb(r g b / a): the computed form a style engine writes a color in */
+    size_t i = s[3] == 'a' ? 5 : 4;
+    double c[4] = {0, 0, 0, 1};
+    for (int k = 0; k < 4; k++) {
+      while (i < n && (is_wsp(s[i]) || s[i] == ',' || s[i] == '/')) {
+        i++;
+      }
+      if (i >= n || s[i] == ')') {
+        if (k < 3) {
+          return false;
+        }
+        break;
+      }
+      if (!css_number(s, n, &i, &c[k])) {
+        return false;
+      }
+      if (i < n && s[i] == '%') {
+        c[k] = k < 3 ? c[k] * 255.0 / 100.0 : c[k] / 100.0;
+        i++;
+      }
+    }
+    for (int k = 0; k < 3; k++) {
+      rgba[k] = (c[k] < 0 ? 0 : (c[k] > 255 ? 255 : c[k])) / 255.0;
+    }
+    rgba[3] = c[3] < 0 ? 0 : (c[3] > 1 ? 1 : c[3]);
+    return true;
+  }
+  if (n < 2 || s[0] != '#') {
+    return false;
+  }
+  const size_t d = n - 1;
+  if (d != 3 && d != 6 && d != 8) {
+    return false;
+  }
+  for (int k = 0; k < 4; k++) {
+    rgba[k] = 1;
+  }
+  const size_t per = d == 3 ? 1 : 2;
+  for (size_t k = 0; k * per < d; k++) {
+    int hi = hex_digit(s[1 + k * per]), lo = per == 2 ? hex_digit(s[2 + k * per]) : hi;
+    if (hi < 0 || lo < 0) {
+      return false;
+    }
+    rgba[k] = (double) (hi * 16 + lo) / 255.0;
+  }
+  return true;
+}
+
+/** One function of a `filter` list as primitives of the build; false when it is not one the waist's primitives can say. */
+static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
+  *ok = false;
+  size_t n = strlen(text);
+  const char * open = memchr(text, '(', n);
+  if (!open || text[n - 1] != ')') {
+    return GVEC_OK;
+  }
+  const size_t name_len = (size_t) (open - text);
+  const char * args = open + 1;
+  const size_t arg_len = n - name_len - 2;
+  GSHSCENE_Filter_Primitive * p;
+  long at = add_prim(b, &p);
+  if (at < 0) {
+    return refuse_with(b, "the filter list has more primitives than the waist carries");
+  }
+  p->color_space = GSHSCENE_FILTER_SPACE_SRGB; /* the functions work in sRGB */
+  GSHSCENE_Filter_Input * slot = b->inputs[at];
+  slot[0].kind = b->prev < 0 ? GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC : GSHSCENE_FILTER_INPUT_RESULT;
+  slot[0].index = b->prev < 0 ? 0 : (uint32_t) b->prev;
+  p->input_count = 1;
+  p->inputs = slot;
+  double v;
+  if (word_is(text, name_len, "blur")) {
+    size_t pos = 0;
+    double len = 0;
+    if (arg_len > 0 && !css_length(args, arg_len, &pos, &len)) {
+      return GVEC_OK;
+    }
+    if (len < 0) {
+      return GVEC_OK;
+    }
+    double pair[2] = {len, len};
+    lengths_to_list(b, pair);
+    p->kind = GSHSCENE_FILTER_GAUSSIAN_BLUR;
+    p->sx = pair[0];
+    p->sy = pair[1];
+  }
+  else if (word_is(text, name_len, "brightness") || word_is(text, name_len, "contrast") || word_is(text, name_len, "invert") ||
+           word_is(text, name_len, "opacity")) {
+    if (!css_amount(args, arg_len, 1.0, &v) || v < 0) {
+      return GVEC_OK;
+    }
+    p->kind = GSHSCENE_FILTER_COMPONENT_TRANSFER;
+    if (text[0] == 'b' || text[0] == 'c') { /* brightness: slope n; contrast: slope n, intercept (1 - n) / 2 */
+      for (int c = 0; c < 3; c++) {
+        p->transfer[c].type = GSHSCENE_FILTER_TRANSFER_LINEAR;
+        p->transfer[c].slope = v;
+        p->transfer[c].intercept = text[0] == 'c' ? 0.5 - 0.5 * v : 0.0;
+      }
+    }
+    else if (text[0] == 'i') { /* invert: the table (n, 1 - n) */
+      v = v > 1 ? 1 : v;
+      if (b->values_used + 2 > VALUE_POOL) {
+        return refuse_with(b, "the filter's values are past what the waist carries");
+      }
+      b->values[b->values_used] = v;
+      b->values[b->values_used + 1] = 1 - v;
+      for (int c = 0; c < 3; c++) {
+        p->transfer[c].type = GSHSCENE_FILTER_TRANSFER_TABLE;
+        p->transfer[c].count = 2;
+        p->transfer[c].table = b->values + b->values_used;
+      }
+      b->values_used += 2;
+    }
+    else { /* opacity: slope n on the alpha */
+      p->transfer[3].type = GSHSCENE_FILTER_TRANSFER_LINEAR;
+      p->transfer[3].slope = v > 1 ? 1 : v;
+    }
+  }
+  else if (word_is(text, name_len, "grayscale") || word_is(text, name_len, "sepia")) {
+    if (!css_amount(args, arg_len, 1.0, &v) || v < 0) {
+      return GVEC_OK;
+    }
+    v = v > 1 ? 1 : v;
+    const double s1 = 1 - v;
+    const bool gray = text[0] == 'g';
+    double m[3][3];
+    if (gray) {
+      const double g[3][3] = {{0.2126 + 0.7874 * s1, 0.7152 - 0.7152 * s1, 0.0722 - 0.0722 * s1},
+          {0.2126 - 0.2126 * s1, 0.7152 + 0.2848 * s1, 0.0722 - 0.0722 * s1}, {0.2126 - 0.2126 * s1, 0.7152 - 0.7152 * s1, 0.0722 + 0.9278 * s1}};
+      memcpy(m, g, sizeof m);
+    }
+    else {
+      const double q[3][3] = {{0.393 + 0.607 * s1, 0.769 - 0.769 * s1, 0.189 - 0.189 * s1},
+          {0.349 - 0.349 * s1, 0.686 + 0.314 * s1, 0.168 - 0.168 * s1}, {0.272 - 0.272 * s1, 0.534 - 0.534 * s1, 0.131 + 0.869 * s1}};
+      memcpy(m, q, sizeof m);
+    }
+    if (b->values_used + 20 > VALUE_POOL) {
+      return refuse_with(b, "the filter's values are past what the waist carries");
+    }
+    double * m20 = b->values + b->values_used;
+    memset(m20, 0, 20 * sizeof *m20);
+    for (int r = 0; r < 3; r++) {
+      for (int c = 0; c < 3; c++) {
+        m20[5 * r + c] = m[r][c];
+      }
+    }
+    m20[18] = 1;
+    b->values_used += 20;
+    p->kind = GSHSCENE_FILTER_COLOR_MATRIX;
+    p->mode = GSHSCENE_FILTER_MATRIX_MATRIX;
+    p->value_count = 20;
+    p->values = m20;
+  }
+  else if (word_is(text, name_len, "saturate") || word_is(text, name_len, "hue-rotate")) {
+    const bool hue = text[0] == 'h';
+    double amount;
+    if (hue) {
+      GVEC_Svg_Length angle;
+      gvec_svg_parse_error err;
+      if (arg_len == 0) {
+        amount = 0;
+      }
+      else if (gvec_svg_parse_angle(args, arg_len, &angle, &err) == GVEC_SVG_PARSE_OK) {
+        amount = gvec_svg_angle_degrees(&angle);
+      }
+      else {
+        return GVEC_OK;
+      }
+    }
+    else if (!css_amount(args, arg_len, 1.0, &amount) || amount < 0) {
+      return GVEC_OK;
+    }
+    if (b->values_used + 1 > VALUE_POOL) {
+      return refuse_with(b, "the filter's values are past what the waist carries");
+    }
+    b->values[b->values_used] = amount;
+    p->kind = GSHSCENE_FILTER_COLOR_MATRIX;
+    p->mode = hue ? GSHSCENE_FILTER_MATRIX_HUE_ROTATE : GSHSCENE_FILTER_MATRIX_SATURATE;
+    p->value_count = 1;
+    p->values = b->values + b->values_used++;
+  }
+  else if (word_is(text, name_len, "drop-shadow")) {
+    size_t pos = 0;
+    double len[3] = {0, 0, 0};
+    size_t got = 0;
+    double rgba[4] = {0, 0, 0, 1};
+    bool color_given = false;
+    /* the color may come first, as a style engine writes the computed value */
+    while (pos < arg_len && is_wsp(args[pos])) {
+      pos++;
+    }
+    if (pos < arg_len && !((args[pos] >= '0' && args[pos] <= '9') || args[pos] == '-' || args[pos] == '+' || args[pos] == '.')) {
+      size_t end = pos;
+      int depth = 0;
+      while (end < arg_len && (depth > 0 || !is_wsp(args[end]))) {
+        depth += args[end] == '(' ? 1 : args[end] == ')' ? -1 : 0;
+        end++;
+      }
+      if (!css_color(args + pos, end - pos, rgba)) {
+        return GVEC_OK;
+      }
+      color_given = true;
+      pos = end;
+    }
+    while (got < 3) {
+      size_t save = pos;
+      if (!css_length(args, arg_len, &pos, &len[got])) {
+        pos = save;
+        break;
+      }
+      got++;
+    }
+    if (got < 2 || (got == 3 && len[2] < 0)) {
+      return GVEC_OK;
+    }
+    if (!color_given && pos < arg_len && !css_color(args + pos, arg_len - pos, rgba)) {
+      return GVEC_OK; /* a color this subset does not read: the list is refused whole */
+    }
+    p->kind = GSHSCENE_FILTER_DROP_SHADOW;
+    fmap_vector(&b->map, len[0], len[1], &p->dx, &p->dy);
+    double dev[2] = {len[2] / 2.0, len[2] / 2.0}; /* the blur radius of CSS is twice the deviation */
+    lengths_to_list(b, dev);
+    p->sx = dev[0];
+    p->sy = dev[1];
+    for (int k = 0; k < 4; k++) {
+      p->color.rgba[k] = rgba[k];
+    }
+    p->opacity = 1;
+    p->color.space.primaries = GCOL_PRIMARIES_SRGB;
+    p->color.space.transfer = GCOL_TRANSFER_SRGB;
+  }
+  else {
+    return GVEC_OK;
+  }
+  b->names[b->count] = NULL;
+  b->name_len[b->count] = 0;
+  b->prev = (long) b->count;
+  b->count++;
+  *ok = true;
+  return GVEC_OK;
+}
+
+/** The filter of a list of CSS filter functions: an `AUTO` region and the functions' primitives in order, in sRGB. */
+static GVEC_Result make_function_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * local, const GVEC_Svg_Style_Value * v,
+    gvec_lw_filter_state * state, const GSHSCENE_Resource ** out) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  *state = GVEC_LW_FILTER_REFUSED;
+  *out = NULL;
+  fbuild b;
+  memset(&b, 0, sizeof b);
+  b.ctx = ctx;
+  b.target = e;
+  b.prev = -1;
+  if (!fmap_make(local, &b.map)) {
+    return GVEC_ERR_INTERNAL;
+  }
+  b.prims = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.prims);
+  b.inputs = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.inputs);
+  b.values = gvec_realloc(ctx->allocator, NULL, VALUE_POOL * sizeof *b.values);
+  if (!b.prims || !b.inputs || !b.values) {
+    gvec_free(ctx->allocator, b.prims);
+    gvec_free(ctx->allocator, b.inputs);
+    gvec_free(ctx->allocator, b.values);
+    return GVEC_ERR_OOM;
+  }
+  GVEC_Result r = GVEC_OK;
+  bool ok = true;
+  for (size_t i = 0; r == GVEC_OK && ok && !b.refused && i < v->reference_count; i++) {
+    r = css_function(&b, v->references[i].text, &ok);
+  }
+  const GSHSCENE_Resource * resource = NULL;
+  if (r == GVEC_OK && !b.refused && !ok) {
+    r = gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter function with arguments this library does not read (a color it does not know, a unit other than px) is not lowered");
+  }
+  else if (r == GVEC_OK && !b.refused) {
+    GSHSCENE_Filter f;
+    memset(&f, 0, sizeof f);
+    f.region_mode = GSHSCENE_FILTER_REGION_AUTO;
+    f.color_space = GSHSCENE_FILTER_SPACE_SRGB;
+    f.primitive_count = b.count;
+    f.primitives = b.prims;
+    GSHSCENE_Result sr = gshscene_store_intern_filter(ctx->store, &f, &resource);
+    if (sr == GSHSCENE_ERR_OOM) {
+      r = GVEC_ERR_OOM;
+    }
+    else if (sr != GSHSCENE_OK) {
+      r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the filter is past what the waist can carry");
+    }
+    else {
+      r = gvec_lw_hold(ctx, resource);
+      if (r == GVEC_OK) {
+        *out = resource;
+        *state = GVEC_LW_FILTER_NODE;
+      }
+    }
+  }
+  gvec_free(ctx->allocator, b.prims);
+  gvec_free(ctx->allocator, b.inputs);
+  gvec_free(ctx->allocator, b.values);
+  return r;
+}
+
 GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_filter_state * state,
     gvec_lw_node ** out, gvec_lw_node ** inner) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -1056,18 +1465,31 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   if (v.reference_count == 0) {
     return GVEC_OK;
   }
-  if (v.reference_count != 1 || !v.references[0].is_url || !v.references[0].local) {
+  bool all_functions = true, any_function = false;
+  for (size_t i = 0; i < v.reference_count; i++) {
+    all_functions = all_functions && !v.references[i].is_url;
+    any_function = any_function || !v.references[i].is_url;
+  }
+  const GVEC_Svg_Style_Value filter_value = v;
+  const GVEC_Svg_Element * target = NULL;
+  if (any_function && !all_functions) {
     *state = GVEC_LW_FILTER_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter function, a list of filters or a filter of another document is not lowered yet");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter list that mixes functions and url() references is not lowered yet");
   }
-  const GVEC_Svg_Style_Reference * ref = &v.references[0];
-  const GVEC_Svg_Element * target = ref->target;
-  if (!target && ref->cut && ref->id) {
-    target = gvec_svg_find_by_id(ctx->document, ref->id);
-  }
-  if (!target || gvec_svg_element_kind(target) != GVEC_SVG_KIND_FILTER) {
-    *state = GVEC_LW_FILTER_ALL; /* A reference to what is no filter: the element is not rendered. */
-    return GVEC_OK;
+  if (!any_function) {
+    if (v.reference_count != 1 || !v.references[0].is_url || !v.references[0].local) {
+      *state = GVEC_LW_FILTER_REFUSED;
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a list of filters or a filter of another document is not lowered yet");
+    }
+    const GVEC_Svg_Style_Reference * ref = &v.references[0];
+    target = ref->target;
+    if (!target && ref->cut && ref->id) {
+      target = gvec_svg_find_by_id(ctx->document, ref->id);
+    }
+    if (!target || gvec_svg_element_kind(target) != GVEC_SVG_KIND_FILTER) {
+      *state = GVEC_LW_FILTER_ALL; /* A reference to what is no filter: the element is not rendered. */
+      return GVEC_OK;
+    }
   }
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TRANSFORM, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
@@ -1092,7 +1514,8 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   }
   /* A rotated or skewed element is filtered in a picture of its own, whose space is the element's: the filter is then in that space and the
    * sink filters in canonical space (D-FL8); an axis-aligned one is filtered in the list's through its map. */
-  r = make_filter(ctx, inst, plain ? &local : &identity, target, state, &resource);
+  r = any_function ? make_function_filter(ctx, inst, plain ? &local : &identity, &filter_value, state, &resource)
+                   : make_filter(ctx, inst, plain ? &local : &identity, target, state, &resource);
   if (r != GVEC_OK || *state != GVEC_LW_FILTER_NODE) {
     return r;
   }

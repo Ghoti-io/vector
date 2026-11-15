@@ -228,8 +228,8 @@ TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
     EXPECT_EQ(l.Items(), (size_t) 0) << filter;
   }
   Lowered fn;
-  LowerSvg(Svg("width=\"40\" height=\"40\"", "<rect width=\"4\" height=\"4\" style=\"filter: blur(2px)\"/>"), fn);
-  EXPECT_NE(fn.Refusal(GVEC_LOWER_FILTER), nullptr) << "a filter function";
+  LowerSvg(Svg("width=\"40\" height=\"40\"", "<rect width=\"4\" height=\"4\" style=\"filter: blur(2px) url(#f)\"/>"), fn);
+  EXPECT_NE(fn.Refusal(GVEC_LOWER_FILTER), nullptr) << "a list that mixes functions and url()";
   Lowered turned;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(30)\" filter=\"url(#f)\""), turned);
   EXPECT_EQ(turned.Refusals(), (size_t) 0) << "a rotated element is filtered in a picture of its own";
@@ -241,6 +241,54 @@ TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   Lowered quarter;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(90)\" filter=\"url(#f)\""), quarter);
   EXPECT_EQ(quarter.Refusals(), (size_t) 0) << "a quarter turn is axis aligned";
+}
+
+TEST(LowerFilter, EachCssFilterFunctionIsLowered) {
+  for (const char * fn : {"blur(2px)", "brightness(150%)", "contrast(0.5)", "invert(0.25)", "opacity(50%)", "grayscale(1)", "sepia(0.5)",
+           "saturate(2)", "hue-rotate(90deg)", "drop-shadow(1px 2px 4px #ff0000)", "drop-shadow(1px 2px)", "blur()", "brightness()"}) {
+    Lowered l;
+    LowerSvg(Svg("width=\"40\" height=\"40\"", std::string("<rect width=\"10\" height=\"10\" style=\"filter: ") + fn + "\"/>"), l);
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << fn << ": " << (l.Refusal(GVEC_LOWER_FILTER) ? l.Refusal(GVEC_LOWER_FILTER)->message : "") << (l.Refusal(GVEC_LOWER_STYLE) ? l.Refusal(GVEC_LOWER_STYLE)->message : "");
+    GSHSCENE_Filter f;
+    EXPECT_TRUE(FilterOf(l, &f)) << fn;
+  }
+}
+
+TEST(LowerFilter, CssFilterFunctionsAreAChainOfPrimitivesInSrgbOverAnAutoRegion) {
+  Lowered l;
+  LowerSvg(Svg("width=\"40\" height=\"40\"",
+               "<rect width=\"10\" height=\"10\" transform=\"scale(2)\" style=\"filter: blur(2px) brightness(150%) contrast(0.5) invert(0.25) opacity(50%) "
+               "grayscale(1) sepia(0.5) saturate(2) hue-rotate(90deg) drop-shadow(1px 2px 4px #ff0000)\"/>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  EXPECT_EQ(f.region_mode, (uint32_t) GSHSCENE_FILTER_REGION_AUTO);
+  EXPECT_EQ(f.color_space, (uint32_t) GSHSCENE_FILTER_SPACE_SRGB);
+  ASSERT_EQ(f.primitive_count, 10u);
+  EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_GAUSSIAN_BLUR);
+  EXPECT_EQ(f.primitives[0].sx, 4.0) << "2px under scale(2)";
+  EXPECT_EQ(f.primitives[0].color_space, (uint32_t) GSHSCENE_FILTER_SPACE_SRGB);
+  EXPECT_EQ(f.primitives[0].inputs[0].kind, (uint32_t) GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC);
+  EXPECT_EQ(f.primitives[1].transfer[0].slope, 1.5);
+  EXPECT_EQ(f.primitives[1].inputs[0].index, 0u);
+  EXPECT_EQ(f.primitives[2].transfer[1].slope, 0.5);
+  EXPECT_EQ(f.primitives[2].transfer[1].intercept, 0.25);
+  EXPECT_EQ(f.primitives[3].transfer[0].type, (uint32_t) GSHSCENE_FILTER_TRANSFER_TABLE);
+  EXPECT_EQ(f.primitives[3].transfer[0].table[0], 0.25);
+  EXPECT_EQ(f.primitives[3].transfer[0].table[1], 0.75);
+  EXPECT_EQ(f.primitives[4].transfer[3].slope, 0.5);
+  EXPECT_EQ(f.primitives[5].mode, (uint32_t) GSHSCENE_FILTER_MATRIX_MATRIX);
+  EXPECT_DOUBLE_EQ(f.primitives[5].values[0], 0.2126);
+  EXPECT_EQ(f.primitives[7].mode, (uint32_t) GSHSCENE_FILTER_MATRIX_SATURATE);
+  EXPECT_EQ(f.primitives[7].values[0], 2.0);
+  EXPECT_EQ(f.primitives[8].mode, (uint32_t) GSHSCENE_FILTER_MATRIX_HUE_ROTATE);
+  EXPECT_DOUBLE_EQ(f.primitives[8].values[0], 90.0);
+  EXPECT_EQ(f.primitives[9].kind, (uint32_t) GSHSCENE_FILTER_DROP_SHADOW);
+  EXPECT_EQ(f.primitives[9].dx, 2.0);
+  EXPECT_EQ(f.primitives[9].dy, 4.0);
+  EXPECT_EQ(f.primitives[9].sx, 4.0) << "a blur radius of 4px is a deviation of 2, doubled by the scale";
+  EXPECT_EQ(f.primitives[9].color.rgba[0], 1.0);
 }
 
 TEST(LowerFilter, TheFilterIsInsideTheClipTheMaskAndTheOpacity) {
