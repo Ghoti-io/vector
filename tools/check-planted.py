@@ -533,6 +533,18 @@ PLANTS = [
      "GVEC_SVG_SOURCE_GENERATED, true, \"color-rendering\", \"auto\",", "a property the pin lacks is taken to be the pin's"),
     ("C12", "src/codec/svg/style/svg_get.c", "    out_specified->important = entry.important;", "    out_specified->important = false;",
      "an important declaration is not said to be"),
+    # The filter lowering (lower_filter.c): the primitives' fields, the inputs, the order of the wrappers, href, and the CSS functions.
+    ("F1", "src/codec/svg/lower/lower_filter.c", "      p->kind = GSHSCENE_FILTER_OFFSET;\n", "      p->kind = GSHSCENE_FILTER_FLOOD;\n", "an feOffset is lowered as a flood"),
+    ("F2", W, "    ctx->opacity_moved = inst;\n", "", "the element's opacity group stays inside its filter, so it fades what the filter reads"),
+    ("F3", "src/codec/svg/lower/lower_filter.c", "        v2[0] = v2[1] = 0; /* a negative deviation disables the effect: the result is the input (Filter Effects) */\n",
+     "        b->invalid = true;\n        return GVEC_OK;\n", "a negative deviation makes the element not rendered instead of passing the input"),
+    ("F4", "src/codec/svg/lower/lower_filter.c", "  for (int hops = 0; e && hops < 16; hops++, e = href_of(ctx, e)) {\n    if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_FILTER && gvec_svg_element_find_attribute(e, name)) {",
+     "  for (int hops = 0; e && hops < 1; hops++, e = href_of(ctx, e)) {\n    if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_FILTER && gvec_svg_element_find_attribute(e, name)) {", "a filter does not take its attributes from the filter its href names"),
+    ("F5", "src/codec/svg/lower/lower_filter.c", "    in->kind = GSHSCENE_FILTER_INPUT_SOURCE_ALPHA;\n    return GVEC_OK;\n  }\n  if (word_is(s, n, \"BackgroundImage\")",
+     "    in->kind = GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC;\n    return GVEC_OK;\n  }\n  if (word_is(s, n, \"BackgroundImage\")", "SourceAlpha names the source graphic"),
+    ("F6", "src/codec/svg/lower/lower_filter.c", "        p->transfer[c].intercept = text[0] == 'c' ? 0.5 - 0.5 * v : 0.0;", "        p->transfer[c].intercept = 0.0;", "contrast() has no intercept"),
+    ("F7", "src/codec/svg/lower/lower_filter.c", "double dev[2] = {len[2] / 2.0, len[2] / 2.0};", "double dev[2] = {len[2], len[2]};", "a drop-shadow's blur radius is the deviation, not twice it"),
+    ("F8", "src/codec/svg/lower/lower_filter.c", "  p->color_space = GSHSCENE_FILTER_SPACE_SRGB; /* the functions work in sRGB */\n", "", "a filter function works in linearRGB"),
 ]
 
 # The root check of L8 is unreachable while the probe is correct (the probe
