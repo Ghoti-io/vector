@@ -249,7 +249,7 @@ TEST(LowerFeImage, AFileUnderTheImageRootIsReadAndAFeImageIsOtherwiseLikeAnImage
   EXPECT_NE(network.Refusal(GVEC_LOWER_EXTERNAL_REFERENCE), nullptr);
   EXPECT_EQ(network.Items(), (size_t) 0) << "the element is not drawn";
   Lowered svg;
-  LowerIn(Doc("href=\"data:image/svg+xml,%3Csvg/%3E\""), svg);
+  LowerIn(Doc("href=\"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%224%22%20height%3D%224%22%2F%3E\""), svg);
   EXPECT_NE(svg.Refusal(GVEC_LOWER_IMAGE), nullptr);
   EXPECT_EQ(svg.Items(), (size_t) 0);
   Lowered unrooted;

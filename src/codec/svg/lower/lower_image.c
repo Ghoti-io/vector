@@ -28,8 +28,8 @@
  *   caller's image root (lower_image_file.c), from a file. Nothing is fetched. A reference that the policy refuses is refused whole
  *   (`external-reference`); a missing, empty, damaged or unreadable image draws nothing and says so (`GVEC_DIAG_IMAGE_UNUSABLE`),
  *   as a browser draws nothing for a broken image.
- * - An image that is an SVG document is refused by name (`image`): lowering it would nest a second document, with its own
- *   style context and its own references, inside this one.
+ * - An image that is an SVG document is loaded as a document of its own (`load_svg_image`) and lowered by a context of its own whose nodes
+ *   are drawn through an instance (lw_svg_image, lower_walk.c).
  * - The decoder is held to the document's limits before it allocates: pixels, the one allocation, and the bytes of every decoded
  *   image of the lowering together.
  * - EXIF orientation is applied, as browsers do (CSS Images 3, `image-orientation: from-image`, the initial value): by the image
@@ -40,6 +40,8 @@
  */
 
 #include <ghoti.io/vector/macros.h>
+#include <ghoti.io/vector/codec.h>
+#include <ghoti.io/vector/stream.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -427,6 +429,162 @@ done:
   return result;
 }
 
+
+//-----------------------------------------------------------------------------
+// An image that is an SVG document
+//-----------------------------------------------------------------------------
+
+/* Whether an attribute of the root gives a size of its own (a percentage is of the container, so it gives none). */
+static bool root_gives_size(const GVEC_Svg_Element * root, const char * name) {
+  const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(root, name);
+  GVEC_Svg_Length length;
+  return a && gvec_svg_attribute_class(a) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_length(a, &length) && length.unit != GVEC_SVG_UNIT_PERCENT;
+}
+
+/* The intrinsic size of a loaded document: its used width and height, except that a side it does not give is the viewBox's when it has one
+ * (the document then has an aspect ratio and no size: its image is as large as the viewBox, and `image` scales it). */
+static GVEC_Result svg_intrinsic_size(gvec_lw_ctx * ctx, GVEC_Doc * doc, double * width, double * height, bool * usable) {
+  gvec_lw_ctx probe;
+  GVEC_Result r = gvec_lw_begin(&probe, doc, ctx->options, ctx->store, NULL);
+  *usable = false;
+  if (r != GVEC_OK) {
+    return r;
+  }
+  double w = 0, h = 0;
+  r = gvec_lw_root_size(&probe, &w, &h);
+  const GVEC_Svg_Instance * root = gvec_svg_instance_root(probe.style);
+  if (r == GVEC_OK && root) {
+    const GVEC_Svg_Element * e = gvec_svg_instance_element(root);
+    const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, "viewBox");
+    GVEC_Svg_View_Box box;
+    if (attribute && gvec_svg_attribute_class(attribute) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_view_box(attribute, &box) && box.width > 0 && box.height > 0) {
+      const bool has_w = root_gives_size(e, "width"), has_h = root_gives_size(e, "height");
+      if (!has_w && !has_h) {
+        w = box.width;
+        h = box.height;
+      }
+      else if (!has_w) {
+        w = h * box.width / box.height;
+      }
+      else if (!has_h) {
+        h = w * box.height / box.width;
+      }
+    }
+  }
+  gvec_lw_end(&probe);
+  *width = w;
+  *height = h;
+  *usable = r == GVEC_OK && w > 0 && h > 0 && w <= 1e9 && h <= 1e9 && w - w == 0 && h - h == 0;
+  return r;
+}
+
+static GVEC_Result load_document(gvec_lw_ctx * ctx, const unsigned char * bytes, size_t size, double viewport_width, double viewport_height,
+    GVEC_Doc ** out, GVEC_Result * problem) {
+  GVEC_Stream * stream = NULL;
+  *out = NULL;
+  *problem = GVEC_OK;
+  GVEC_Result r = gvec_stream_create_memory(bytes, size, &stream);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  GVEC_Load_Options load;
+  memset(&load, 0, sizeof load);
+  load.limits = &ctx->document->limits;
+  load.allocator = ctx->allocator;
+  load.viewport_width = viewport_width;
+  load.viewport_height = viewport_height;
+  GVEC_Diagnostics sub;
+  gvec_diagnostics_init(&sub, ctx->allocator);
+  r = gvec_doc_load(stream, &load, &sub, out);
+  gvec_diagnostics_destroy(&sub);
+  gvec_stream_destroy(stream);
+  if (r == GVEC_ERR_OOM) {
+    return r;
+  }
+  if (r != GVEC_OK) {
+    *problem = r;
+    *out = NULL;
+    return GVEC_OK;
+  }
+  const char * format = gvec_doc_format(*out);
+  if (!format || strcmp(format, "svg") != 0) {
+    gvec_doc_free(*out);
+    *out = NULL;
+    *problem = GVEC_ERR_UNSUPPORTED;
+  }
+  return GVEC_OK;
+}
+
+static GVEC_Result hold_document(gvec_lw_ctx * ctx, GVEC_Doc * doc) {
+  if (ctx->svg_doc_count == ctx->svg_doc_capacity) {
+    size_t capacity = ctx->svg_doc_capacity ? ctx->svg_doc_capacity * 2 : 4, bytes;
+    if (!gcu_safe_mul_size(capacity, sizeof *ctx->svg_docs, &bytes)) {
+      gvec_doc_free(doc);
+      return GVEC_ERR_OOM;
+    }
+    void * fresh = gvec_realloc(ctx->allocator, ctx->svg_docs, bytes);
+    if (!fresh) {
+      gvec_doc_free(doc);
+      return GVEC_ERR_OOM;
+    }
+    ctx->svg_docs = fresh;
+    ctx->svg_doc_capacity = capacity;
+  }
+  ctx->svg_docs[ctx->svg_doc_count++] = doc;
+  return GVEC_OK;
+}
+
+/* An image that is an SVG document: loaded twice, the first time at the default viewport to read the size it asks for, and again laid out in
+ * that size, so that a document that gives none draws in its viewBox and the placement of the `image` scales it. */
+static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const unsigned char * bytes, size_t size, gvec_lw_image * out,
+    gvec_lw_image_state * state) {
+  if (ctx->image_nesting >= GVEC_LW_IMAGE_NESTING_MAX) {
+    *state = GVEC_LW_IMAGE_REFUSED;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "SVG images are nested deeper than the lowering allows");
+  }
+  GVEC_Doc * probe = NULL;
+  GVEC_Result problem;
+  GVEC_Result r = load_document(ctx, bytes, size, 0, 0, &probe, &problem);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (!probe) {
+    if (problem == GVEC_ERR_LIMIT) {
+      *state = GVEC_LW_IMAGE_REFUSED;
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the SVG image is larger than a limit of the document allows");
+    }
+    return unusable(ctx, e, GVEC_IMAGE_UNDECODABLE, "the image's bytes are not an SVG document the library reads");
+  }
+  double w, h;
+  bool usable;
+  r = svg_intrinsic_size(ctx, probe, &w, &h, &usable);
+  gvec_doc_free(probe);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (!usable) {
+    return unusable(ctx, e, GVEC_IMAGE_UNDECODABLE, "the SVG image has no size to draw at");
+  }
+  GVEC_Doc * doc = NULL;
+  r = load_document(ctx, bytes, size, w, h, &doc, &problem);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (!doc) {
+    return unusable(ctx, e, GVEC_IMAGE_UNDECODABLE, "the image's bytes are not an SVG document the library reads");
+  }
+  r = hold_document(ctx, doc);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  memset(out, 0, sizeof *out);
+  out->svg = doc;
+  out->width = w;
+  out->height = h;
+  *state = GVEC_LW_IMAGE_READY;
+  return GVEC_OK;
+}
+
 GVEC_Result gvec_lw_image_load(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, gvec_lw_image_state * state, gvec_lw_image * out) {
   const gvec_lw_image_entry * known = cache_find(ctx, e);
   if (known) {
@@ -444,9 +602,7 @@ GVEC_Result gvec_lw_image_load(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, gv
   GVEC_Result r = image_bytes(ctx, e, &bytes, &size, &svg, &bs);
   if (r == GVEC_OK && bs == BYTES_READY) {
     if (svg) {
-      /* A second document inside this one would need its own style context, ids and references; it is refused by name. */
-      *state = GVEC_LW_IMAGE_REFUSED;
-      r = gvec_lw_refuse(ctx, e, GVEC_LOWER_IMAGE, "an image that is an SVG document is not lowered: a document is not nested inside another");
+      r = load_svg_image(ctx, e, bytes, size, &result, state);
     }
     else {
       r = decode_image(ctx, e, bytes, size, &result, state);

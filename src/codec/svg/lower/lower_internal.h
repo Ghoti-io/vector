@@ -210,6 +210,13 @@ typedef struct gvec_lw_ctx {
   size_t image_count, image_capacity;
   uint64_t image_decoded;            ///< The bytes of decoded samples of the images decoded so far (`max_image_decoded_bytes`).
   gvec_lw_node root;                 ///< The root of the tree: only its children are drawn.
+  struct gvec_lw_ctx * parent;       ///< A lowering of an SVG image's document: the lowering of the document that names it (the sites are its).
+  const GVEC_Svg_Element * parent_element; ///< The `image` element of `parent` that the document is the image of: every node below it is placed at that element.
+  struct gvec_lw_ctx ** nested;      ///< The contexts of the SVG images drawn so far, whose nodes are in the tree and are freed with it.
+  size_t nested_count, nested_capacity;
+  GVEC_Doc ** svg_docs;              ///< The SVG documents the images named, loaded once for each element and held until the lowering ends.
+  size_t svg_doc_count, svg_doc_capacity;
+  uint32_t image_nesting;            ///< SVG images this document is the image of, one inside another.
 } gvec_lw_ctx;
 
 /** The key of a node (AD-9): the element's key, the chain of `use` elements above it and the node's role. */
@@ -591,9 +598,13 @@ typedef enum gvec_lw_image_state {
  * one on a 32-bit x86 target, which is an x87 instruction).
  */
 typedef struct gvec_lw_image {
-  const GSHSCENE_Resource * resource;
-  double width, height;
+  const GSHSCENE_Resource * resource; ///< The raster, or NULL for an SVG document.
+  GVEC_Doc * svg;                    ///< The SVG document (held by the context), or NULL for a raster.
+  double width, height;              ///< The intrinsic size: a raster's pixels, a document's used size (or, with a viewBox and no size, the viewBox's).
 } gvec_lw_image;
+
+/** The most SVG images one inside another. */
+#define GVEC_LW_IMAGE_NESTING_MAX 4
 
 /**
  * The image the `href` of `element` names: read under the options' image root and the document's limits, decoded and interned. The answer

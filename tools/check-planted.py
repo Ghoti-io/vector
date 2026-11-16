@@ -631,6 +631,12 @@ PLANTS += [
     ("FL1", "src/codec/svg/lower/lower_filter.c", "    const size_t k = step_count - 1 - j;", "    const size_t k = j;", "a list of filters is applied last to first"),
     ("FL2", W, "      filter.groups[0]->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);", "      filter.groups[filter.count - 1]->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);", "the opacity of a filtered element with a list is applied inside the first filter, not to the result of the last"),
     ("FL3", "src/codec/svg/lower/lower_filter.c", "    if (!v.references[i].is_url && step_count && !steps[step_count - 1].is_url) {", "    if (0) {", "each filter function of a list is a filter group of its own"),
+    # An image that is an SVG document (design R3).
+    ("R3a", "src/codec/svg/lower/lower_image.c", "        w = box.width;\n        h = box.height;", "        w = 1;\n        h = 1;", "a document that gives no size is one pixel, not the viewBox's size"),
+    ("R3b", "src/codec/svg/lower/lower_image.c", "  if (ctx->image_nesting >= GVEC_LW_IMAGE_NESTING_MAX) {", "  if (0) {", "SVG images nest without a bound"),
+    ("R3c", W, "  nested->image_nesting = ctx->image_nesting + 1;", "  nested->image_nesting = 0;", "a document that names itself nests without a bound"),
+    ("R3e", "src/codec/svg/lower/lower_filter.c", "  if (image.svg) {\n    /* The waist's image primitive draws a raster", "  if (0) {\n    /* The waist's image primitive draws a raster", "an feImage of an SVG document is drawn as if it had a raster"),
+    ("R3f", W, "  clip->resource = rect;\n  clip->rule = GSHGEOM_FILL_NONZERO;\n  gshgeom_map_identity(2, &clip->map);", "  clip->resource = rect;\n  clip->rule = GSHGEOM_FILL_NONZERO;\n  gshgeom_map_identity(2, &clip->map);\n  clip->map.m[0][0] = 2;", "the clip of an SVG image's own box is the wrong size"),
     ("FL4", "src/codec/svg/lower/lower_filter.c", "    g->key = gvec_lw_key(e->key, hash2(ctx->chain, j == 0 ? 0 : 16u + (uint64_t) j), GVEC_LW_ROLE_FILTER);", "    g->key = gvec_lw_key(e->key, hash2(ctx->chain, 0), GVEC_LW_ROLE_FILTER);", "the groups of a list of filters share one key"),
 ]
 

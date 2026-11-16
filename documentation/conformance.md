@@ -175,15 +175,15 @@ row is that case. The pair is a first setting and is expected to be refined as t
 
 ## The score today
 
-At the head of the filter-list work the score file reads **1,458 of 1,679 (86.84%)** determined correct: 563 `PASS` (33.53%), 24 `ACCEPTED`, 721 `EDGE`,
-150 `ORACLE_AGREES`; 137 `ORACLE_SPLIT` and no `DEFECT` among the 1,008 `FAIL`s, 62 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The paragraph and the
+At the head of the SVG-image work the score file reads **1,476 of 1,679 (87.91%)** determined correct: 563 `PASS` (33.53%), 27 `ACCEPTED`, 736 `EDGE`,
+150 `ORACLE_AGREES`; 139 `ORACLE_SPLIT` and no `DEFECT` among the 1,025 `FAIL`s, 42 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The paragraph and the
 table that follow are an older reading, kept for their account of what each feature moved; `make conformance` writes the current one.
 
 Images (`image` of a raster in a `data:` URI or a file under the caller's image root, `preserveAspectRatio`, `image-rendering`, an Exif orientation) and
 `feImage` of an image moved the score from 1,413 to 1,445 and emptied the exclusion of `structure/image` and `painting/image-rendering` (the other 52
 cases that were excluded). Of the 49 cases of `structure/image` 28 draw an image (`image-with-float-size-scaling` passes, `float-size` is accepted because
 its reference is the placeholder UB, and the others differ from their reference only in pixels that are fully transparent or along edges), 21 are
-refused because the image is an SVG document or a URL (nothing is fetched, and nested documents are not lowered), and the two reviewed `FAIL` rows say why
+refused because the image is a URL (nothing is fetched); an SVG document is lowered as a picture of its own (design.md, R3), and the two reviewed `FAIL` rows say why
 (the frame rows of `width-and-height-set-to-auto`, and texel boundaries in `optimizeSpeed`). Of the 27 `feImage` cases 8 draw an image, one (`empty`) draws nothing as its reference does, and 18 are refused
 (15 name an element, which the waist's image primitive cannot hold). The eight that draw are `DEFECT` rows: the CPU sink samples that primitive with the
 nearest texel only, where the reference smooths the enlarged picture; with `image-rendering: optimizeSpeed` the same drawing is 0 pixels from `resvg`.

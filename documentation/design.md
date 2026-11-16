@@ -696,11 +696,16 @@ or a directory is never opened); the file opened is the resolved one. On Windows
 or cannot be read, is a broken image (R10), not a refusal: the policy refuses what the document may not name, and a missing file is not that.
 
 **R3 Nested documents.** An image that is an SVG document (the media type, markup after an optional byte order mark and white space, a gzip
-stream, a UTF-16 byte order mark) is **refused by name** (`image`) and not lowered. It would need a second document inside the first, with its
-own style context, its own identifiers and references, a viewport of its own and a lowering whose sites, keys and trace outlive the document
-that owns them; that is a library's worth of design (and security: a nested document must not load anything the outer one may not), and the
-refusal says so rather than drawing something else. A decision, not a limit: the reason retires if nested documents are built. Corpus cases
-of such images are `REFUSED`, never scored as drawn.
+stream, a UTF-16 byte order mark) is loaded as a document of its own, under the same limits and the same policy for what it may name (a
+`data:` URI, or a file under the image root; nothing is fetched), and drawn as a picture: an instance whose map places the document's own box by
+the same `preserveAspectRatio` arithmetic as a raster, under a clip to that box. The document's size is its used width and height; a side it does
+not give is the viewBox's, so a document with a viewBox and no size has the viewBox's size and an aspect ratio, and the `image` scales it. It is
+loaded twice, once at the default viewport to read that size and once laid out in it. The document is lowered by a context of its own that shares
+the lowering's store, diagnostics and limits and records its nodes' sites at the `image` element (the trace names the element that drew them, not
+one of the image's own), so refusals inside it are reported and make the case refused, as everywhere. Its identifiers and references are its own: it
+cannot see the outer document and the outer cannot see it. A document that cannot be parsed is a broken image (R10). Images nest at most
+`GVEC_LW_IMAGE_NESTING_MAX` deep, past which the image is refused (`limit`), which also ends a document that names itself. An `feImage` of a
+document is still refused by name (`image`): the waist's image primitive draws a raster, not a picture.
 
 **R4 Limits.** `max_image_bytes` bounds the encoded bytes of one image (the decoded payload of a URI, the length of a file, read up to one byte
 past it and no further), `max_image_pixels` the pixels of one decoded image, `max_image_decoded_bytes` the bytes of decoded samples of every

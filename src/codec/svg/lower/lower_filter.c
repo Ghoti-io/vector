@@ -541,6 +541,11 @@ static GVEC_Result image_primitive(fbuild * b, const GVEC_Svg_Element * el, GSHS
     transparent_result(p);
     return GVEC_OK;
   }
+  if (image.svg) {
+    /* The waist's image primitive draws a raster; a document is a picture. */
+    b->refused = true;
+    return gvec_lw_refuse(ctx, b->target, GVEC_LOWER_IMAGE, "an feImage of an SVG document is not lowered: the waist's image primitive draws a raster, not a picture");
+  }
   /* the viewport: the subregion as the waist reads it (FL4), the filter region where a value is not given */
   const double x0 = (p->subregion_mask & 1u) ? sub[0] : b->region[0];
   const double y0 = (p->subregion_mask & 2u) ? sub[1] : b->region[1];

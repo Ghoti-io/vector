@@ -157,9 +157,11 @@ static void link_child(gvec_lw_node * parent, gvec_lw_node * child) {
   parent->content = parent->content || child->content;
 }
 
+static const GVEC_Svg_Element * site_element(const gvec_lw_ctx * ctx, uint32_t site);
+
 GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * child) {
   if (!room(ctx, parent, child->weight, child->occurrences, child->nodes, child->items)) {
-    const GVEC_Svg_Element * element = child->site != GVEC_LW_NO_SITE ? ctx->sites[child->site].element : NULL;
+    const GVEC_Svg_Element * element = child->site != GVEC_LW_NO_SITE ? site_element(ctx, child->site) : NULL;
     return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
   }
   link_child(parent, child);
@@ -169,7 +171,7 @@ GVEC_Result gvec_lw_append(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_nod
 GVEC_Result gvec_lw_append_pair(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * first, gvec_lw_node * second) {
   if (!room(ctx, parent, saturating_add(first->weight, second->weight), saturating_add(first->occurrences, second->occurrences),
           saturating_add(first->nodes, second->nodes), saturating_add(first->items, second->items))) {
-    const GVEC_Svg_Element * element = first->site != GVEC_LW_NO_SITE ? ctx->sites[first->site].element : NULL;
+    const GVEC_Svg_Element * element = first->site != GVEC_LW_NO_SITE ? site_element(ctx, first->site) : NULL;
     return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
   }
   link_child(parent, first);
@@ -186,7 +188,7 @@ GVEC_Result gvec_lw_append_all(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw
     items = saturating_add(items, nodes[i]->items);
   }
   if (!room(ctx, parent, weight, occurrences, node_count, items)) {
-    const GVEC_Svg_Element * element = count && nodes[0]->site != GVEC_LW_NO_SITE ? ctx->sites[nodes[0]->site].element : NULL;
+    const GVEC_Svg_Element * element = count && nodes[0]->site != GVEC_LW_NO_SITE ? site_element(ctx, nodes[0]->site) : NULL;
     return element ? gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "the drawing is larger than the scene's limits allow") : GVEC_OK;
   }
   for (size_t i = 0; i < count; i++) {
@@ -195,7 +197,17 @@ GVEC_Result gvec_lw_append_all(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw
   return GVEC_OK;
 }
 
+/* The element a node's site names: a lowering of an SVG image's document records its nodes' sites in the lowering of the document that
+ * names it, at the `image` element. */
+static const GVEC_Svg_Element * site_element(const gvec_lw_ctx * ctx, uint32_t site) {
+  return ctx->parent ? site_element(ctx->parent, site) : ctx->sites[site].element;
+}
+
 uint32_t gvec_lw_new_site(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, uint64_t key) {
+  if (ctx->parent) {
+    (void) element;
+    return gvec_lw_new_site(ctx->parent, ctx->parent_element, key);
+  }
   if (ctx->site_count == ctx->site_capacity) {
     size_t capacity = ctx->site_capacity ? ctx->site_capacity * 2 : 64, bytes;
     if (capacity > UINT32_MAX - 1 || !gcu_safe_mul_size(capacity, sizeof *ctx->sites, &bytes)) {
@@ -300,6 +312,15 @@ GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lo
 }
 
 void gvec_lw_end(gvec_lw_ctx * ctx) {
+  for (size_t i = 0; i < ctx->nested_count; i++) {
+    gvec_lw_end(ctx->nested[i]);
+    gvec_free(ctx->allocator, ctx->nested[i]);
+  }
+  gvec_free(ctx->allocator, ctx->nested);
+  for (size_t i = 0; i < ctx->svg_doc_count; i++) {
+    gvec_doc_free(ctx->svg_docs[i]);
+  }
+  gvec_free(ctx->allocator, ctx->svg_docs);
   for (size_t i = 0; i < ctx->held_count; i++) {
     gshscene_resource_release(ctx->held[i]);
   }
@@ -938,6 +959,109 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
 /* `image`: the raster the `href` names, drawn as the waist draws an image (IP14): a fill of the rectangle its paint maps the image to, with the
  * image paint, under the element's map. When the image is sliced (or placed so that it reaches past its viewport) and `overflow` clips, the
  * viewport is a clip around the fill. Opacity, `clip-path`, `mask` and `filter` are the wrappers of every element (lw_element). */
+
+/* An image that is an SVG document: an instance of a picture holding the document, in the document's own size (clipped to it), placed in the
+ * image's viewport by the same map as a raster. The document is lowered by a context of its own, which keeps the nodes it makes (they are in
+ * this lowering's tree, in this lowering's arena of nodes) and records their sites at the `image` element. `*out` stays NULL when the
+ * document draws nothing. */
+static GVEC_Result svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const common * c, const gvec_lw_image_geometry * g,
+    const GSHGEOM_Map * placed, gvec_lw_node ** out) {
+  *out = NULL;
+  GSHGEOM_Map map;
+  if (!gvec_lw_compose(&c->local, placed, &map)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image is placed past the range the waist can carry");
+  }
+  if (ctx->levels + 4 > ctx->caps.node_depth || ctx->picture_depth + 1 > ctx->caps.picture_depth || ctx->open + 1 > ctx->caps.open) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image nests pictures deeper than the scene's limits allow");
+  }
+  gvec_lw_geometry geometry;
+  const GSHSCENE_Resource * rect = NULL;
+  GVEC_Result r = gvec_lw_rect_path(ctx, 0, 0, g->image.width, g->image.height, &geometry, &rect);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (geometry != GVEC_LW_GEOMETRY_PATH) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image's size is past the range the waist can carry");
+  }
+  gvec_lw_node * use = gvec_lw_new_node(ctx, GVEC_LW_USE);
+  gvec_lw_node * clip = gvec_lw_new_node(ctx, GVEC_LW_CLIP);
+  if (!use || !clip) {
+    return GVEC_ERR_OOM;
+  }
+  use->map = map;
+  use->key = gvec_lw_key(e->key, ctx->chain, GVEC_LW_ROLE_INSTANCE);
+  use->container_key = gvec_lw_key(e->key, ctx->chain, GVEC_LW_ROLE_CONTAINER);
+  use->site = gvec_lw_new_site(ctx, e, use->key);
+  use->container_site = gvec_lw_new_site(ctx, e, use->container_key);
+  clip->resource = rect;
+  clip->rule = GSHGEOM_FILL_NONZERO;
+  gshgeom_map_identity(2, &clip->map);
+  clip->key = gvec_lw_key(e->key, ctx->chain, GVEC_LW_ROLE_CLIP);
+  clip->site = gvec_lw_new_site(ctx, e, clip->key);
+  if (use->site == GVEC_LW_NO_SITE || use->container_site == GVEC_LW_NO_SITE || clip->site == GVEC_LW_NO_SITE) {
+    return GVEC_ERR_OOM;
+  }
+  /* The document's own lowering. */
+  gvec_lw_ctx * nested = gvec_alloc(ctx->allocator, sizeof *nested);
+  if (!nested) {
+    return GVEC_ERR_OOM;
+  }
+  if (ctx->nested_count == ctx->nested_capacity) {
+    size_t capacity = ctx->nested_capacity ? ctx->nested_capacity * 2 : 4, bytes;
+    void * fresh = gcu_safe_mul_size(capacity, sizeof *ctx->nested, &bytes) ? gvec_realloc(ctx->allocator, ctx->nested, bytes) : NULL;
+    if (!fresh) {
+      gvec_free(ctx->allocator, nested);
+      return GVEC_ERR_OOM;
+    }
+    ctx->nested = fresh;
+    ctx->nested_capacity = capacity;
+  }
+  r = gvec_lw_begin(nested, g->image.svg, ctx->options, ctx->store, ctx->diagnostics);
+  if (r != GVEC_OK) {
+    gvec_free(ctx->allocator, nested);
+    return r;
+  }
+  ctx->nested[ctx->nested_count++] = nested;
+  nested->parent = ctx;
+  nested->parent_element = e;
+  nested->image_nesting = ctx->image_nesting + 1;
+  uint8_t buf[16];
+  for (int i = 0; i < 8; i++) {
+    buf[i] = (uint8_t) (ctx->chain >> (8 * i));
+    buf[8 + i] = (uint8_t) (e->key >> (8 * i));
+  }
+  nested->chain = gvec_svg_hash64(buf, sizeof buf);
+  nested->use_depth = ctx->use_depth + 1;
+  /* The picture is one more level and one more list; its clip is open and one level more. */
+  nested->levels = ctx->levels + 3;
+  nested->open = 1;
+  nested->picture_depth = ctx->picture_depth + 1;
+  r = gvec_lw_walk(nested);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  for (gvec_lw_node * child = nested->root.first; child;) {
+    gvec_lw_node * next = child->next;
+    child->next = NULL;
+    r = gvec_lw_append(ctx, clip, child);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    child = next;
+  }
+  if (!nested->root.content) {
+    return GVEC_OK;
+  }
+  clip->content = true;
+  r = gvec_lw_append(ctx, use, clip);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  use->content = true;
+  *out = use;
+  return GVEC_OK;
+}
+
 static GVEC_Result lw_image(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   common c;
@@ -975,17 +1099,25 @@ static GVEC_Result lw_image(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (!gvec_lw_image_place(&g.image, &g.par, g.x, g.y, g.width, g.height, &placed)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image is placed past the range the waist can carry");
   }
-  GSHSCENE_Paint paint;
-  const GSHSCENE_Resource * path = NULL;
-  bool ok;
-  r = gvec_lw_image_paint(ctx, e, &g.image, &placed, magnify, minify, &paint, &path, &ok);
-  if (r != GVEC_OK || !ok) {
-    return r;
-  }
   gvec_lw_node * fill = NULL;
-  r = shape_node(ctx, e, &c.local, path, &paint, GSHGEOM_FILL_NONZERO, NULL, &fill);
-  if (r != GVEC_OK) {
-    return r;
+  if (g.image.svg) {
+    r = svg_image_node(ctx, e, &c, &g, &placed, &fill);
+    if (r != GVEC_OK || !fill) {
+      return r;
+    }
+  }
+  else {
+    GSHSCENE_Paint paint;
+    const GSHSCENE_Resource * path = NULL;
+    bool ok;
+    r = gvec_lw_image_paint(ctx, e, &g.image, &placed, magnify, minify, &paint, &path, &ok);
+    if (r != GVEC_OK || !ok) {
+      return r;
+    }
+    r = shape_node(ctx, e, &c.local, path, &paint, GSHGEOM_FILL_NONZERO, NULL, &fill);
+    if (r != GVEC_OK) {
+      return r;
+    }
   }
   /* The viewport clips what reaches past it: only a slice does (`meet` and `none` fit inside it). */
   gvec_lw_node * clip = NULL;

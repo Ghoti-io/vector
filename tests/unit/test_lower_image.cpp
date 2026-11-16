@@ -569,37 +569,112 @@ TEST(LowerImage, AnImageWithNoDataOrBrokenDataDrawsNothingAndSaysWhy) {
   }
 }
 
-TEST(LowerImage, AnImageThatIsAnSvgDocumentIsRefusedByNameWhateverCarriesIt) {
-  // The markup of a one-element document, written so that it can sit in an attribute (the data: URI's text is what the parser gives back).
-  const std::string svg = "&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;4&quot; height=&quot;4&quot;/&gt;";
+/** The fills of the list and of the pictures its instances draw. */
+size_t FillsIn(const GSHSCENE_List * list) {
+  size_t n = 0;
+  for (size_t i = 0; i < gshscene_list_count(list); i++) {
+    const GSHSCENE_Item * it = nullptr;
+    EXPECT_EQ(gshscene_list_item(list, i, &it), GSHSCENE_OK);
+    if (it->kind == GSHSCENE_ITEM_FILL) {
+      n++;
+    } else if (it->kind == GSHSCENE_ITEM_INSTANCE && gshscene_resource_picture(it->resource)) {
+      n += FillsIn(gshscene_resource_picture(it->resource));
+    }
+  }
+  return n;
+}
+
+size_t Instances(const Lowered & l) {
+  size_t n = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    n += l.Item(i).kind == GSHSCENE_ITEM_INSTANCE;
+  }
+  return n;
+}
+
+TEST(LowerImage, AnImageThatIsAnSvgDocumentIsDrawnAsAPictureOfItsOwnWhateverCarriesIt) {
+  // The markup of a one-rectangle document, written so that it can sit in an attribute (the data: URI's text is what the parser gives back).
+  const std::string svg =
+      "&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;4&quot; height=&quot;4&quot;&gt;&lt;rect width=&quot;4&quot; height=&quot;4&quot;/&gt;&lt;/svg&gt;";
   struct Row {
     const char * name;
     std::string href;
   };
   const Row rows[] = {
       {"media type", "data:image/svg+xml;utf8," + svg},
-      {"media type with a base64 body that is not markup", "data:image/svg+xml;base64,AAAA"},
-      {"an upper-case media type", "DATA:IMAGE/SVG+XML,%3Csvg%2F%3E"},
+      {"an upper-case media type", "DATA:IMAGE/SVG+XML;utf8," + svg},
       {"markup under another media type", "data:text/plain," + svg},
       {"markup without a media type", "data:," + svg},
       {"markup with a byte order mark and white space", "data:,%EF%BB%BF%20%0A" + svg},
-      {"gzip", "data:application/gzip,%1f%8b%08%00xx"},
   };
   for (const Row & r : rows) {
     Lowered l;
     LowerSvg(Doc(Image("width=\"8\" height=\"8\"", r.href) + "<rect width=\"4\" height=\"4\"/>"), l);
-    ASSERT_EQ(l.Refusals(), (size_t) 1) << r.name;
-    const GVEC_Diagnostic * d = l.Refusal(GVEC_LOWER_IMAGE);
-    ASSERT_NE(d, nullptr) << r.name;
-    EXPECT_STREQ(d->element, "image") << r.name;
-    EXPECT_NE(std::string(d->message).find("SVG document"), std::string::npos) << r.name << ": " << d->message;
-    EXPECT_EQ(ImageFills(l), (size_t) 0) << r.name;
-    EXPECT_EQ(l.Count(GSHSCENE_ITEM_FILL), (size_t) 1) << r.name << ": the rest of the document is drawn";
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << r.name;
+    EXPECT_EQ(Instances(l), (size_t) 1) << r.name << ": the document is a picture, drawn through an instance";
+    EXPECT_EQ(FillsIn(l.list), (size_t) 2) << r.name << ": the document's rectangle and the document's own";
+    EXPECT_EQ(ImageFills(l), (size_t) 0) << r.name << ": no raster";
   }
   Lowered file;
   LowerIn(Doc(Image("width=\"8\" height=\"8\"", "document.svg")), file);
-  EXPECT_NE(file.Refusal(GVEC_LOWER_IMAGE), nullptr) << "a file that is an SVG document";
-  EXPECT_EQ(file.Refusals(), (size_t) 1);
+  EXPECT_EQ(file.Refusals(), (size_t) 0) << "a file that is an SVG document";
+  EXPECT_EQ(FillsIn(file.list), (size_t) 1);
+  Lowered broken;
+  LowerSvg(Doc(Image("width=\"8\" height=\"8\"", "data:image/svg+xml;utf8,%3Csvg%20") + "<rect width=\"4\" height=\"4\"/>"), broken);
+  EXPECT_EQ(broken.Refusals(), (size_t) 0) << "a document that does not parse is a broken image (R10)";
+  EXPECT_EQ(broken.Count(GSHSCENE_ITEM_FILL), (size_t) 1);
+  EXPECT_EQ(Instances(broken), (size_t) 0);
+}
+
+TEST(LowerImage, AnSvgImageIsPlacedByItsViewBoxWhenItGivesNoSizeAndClippedToItsSize) {
+  const std::string svg =
+      "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%2050%22%3E"
+      "%3Crect%20width%3D%22100%22%20height%3D%2250%22%2F%3E%3C%2Fsvg%3E";
+  Lowered l;
+  LowerSvg(Doc(Image("x=\"10\" y=\"20\" width=\"50\" height=\"25\"", svg)), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  const GSHSCENE_Item * instance = nullptr;
+  for (size_t i = 0; i < l.Items(); i++) {
+    if (l.Item(i).kind == GSHSCENE_ITEM_INSTANCE) {
+      instance = &l.Item(i);
+    }
+  }
+  ASSERT_NE(instance, nullptr);
+  EXPECT_NEAR(instance->map.m[0][0], 0.5, 1e-12) << "a 100 by 50 document in a 50 by 25 viewport";
+  EXPECT_NEAR(instance->map.m[1][1], 0.5, 1e-12);
+  EXPECT_NEAR(instance->map.t[0], 10, 1e-12);
+  EXPECT_NEAR(instance->map.t[1], 20, 1e-12);
+  const GSHSCENE_List * picture = gshscene_resource_picture(instance->resource);
+  ASSERT_NE(picture, nullptr);
+  const GSHSCENE_Item * first = nullptr;
+  ASSERT_EQ(gshscene_list_item(picture, 0, &first), GSHSCENE_OK);
+  EXPECT_EQ(first->kind, GSHSCENE_ITEM_CLIP_PUSH) << "the document is clipped to its own size";
+  EXPECT_NEAR(first->map.m[0][0], 1.0, 1e-12) << "in the document's own units, which the instance's map scales";
+  EXPECT_NEAR(first->map.m[1][1], 1.0, 1e-12);
+  GSHGEOM_Bounds bounds;
+  ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(first->resource), &bounds), GSHGEOM_OK);
+  EXPECT_NEAR(bounds.max.x, 100, 1e-12) << "the box is the document's: 100 by 50";
+  EXPECT_NEAR(bounds.max.y, 50, 1e-12);
+}
+
+TEST(LowerImage, SvgImagesNestedDeeperThanTheLoweringAllowsAreRefused) {
+  // each level names the next as a data: URI inside an attribute; escaped once more at every level
+  std::string inner = "&lt;svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;4&quot; height=&quot;4&quot;&gt;&lt;rect width=&quot;4&quot; height=&quot;4&quot;/&gt;&lt;/svg&gt;";
+  std::string doc = "data:image/svg+xml;utf8," + inner;
+  for (int level = 0; level < 8; level++) {
+    std::string markup = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"><image width=\"4\" height=\"4\" href=\"" + doc + "\"/></svg>";
+    std::string percent;
+    static const char * const hex = "0123456789ABCDEF";
+    for (unsigned char c : markup) {
+      percent += '%';
+      percent += hex[c >> 4];
+      percent += hex[c & 15];
+    }
+    doc = "data:image/svg+xml;utf8," + percent;
+  }
+  Lowered l;
+  LowerSvg(Doc(Image("width=\"8\" height=\"8\"", doc)), l);
+  EXPECT_NE(l.Refusal(GVEC_LOWER_LIMIT), nullptr) << "eight levels are more than the lowering nests";
 }
 
 //-----------------------------------------------------------------------------
@@ -1111,7 +1186,7 @@ TEST(LowerImage, EveryAllocationOfAnImageLoweringMayFailAndNothingLeaks) {
                                Image("x=\"9\" y=\"1\" preserveAspectRatio=\"xMinYMin slice\" width=\"8\" height=\"4\"", Data("red-blue-2x1.png")) +
                                "<use href=\"#i\" x=\"20\"/>" + Image("x=\"1\" y=\"20\" width=\"8\" height=\"8\"", "red-blue-2x1.png") +
                                Image("x=\"20\" y=\"20\" width=\"8\" height=\"8\"", "no-such-file.png") +
-                               Image("width=\"8\" height=\"8\"", "data:image/svg+xml,%3Csvg/%3E"));
+                               Image("width=\"8\" height=\"8\"", "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%204%204%22%3E%3Crect%20width%3D%224%22%20height%3D%224%22%2F%3E%3C%2Fsvg%3E"));
   size_t total = 0;
   for (long fail_at = 1; fail_at < 4000; fail_at++) {
     Failing alloc;

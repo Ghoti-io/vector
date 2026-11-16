@@ -96,6 +96,32 @@ TEST(LowerReport, TheSameEntryIsMappedThroughTheVersionsListAndTheNodesKey) {
   EXPECT_EQ(site.line, (size_t) 3);
 }
 
+TEST(LowerReport, AnEntryInsideAnSvgImageIsMappedToTheImageElementThroughBothFormsOfTheLowering) {
+  // a document whose rectangle is far larger than the sink's resource limit allows: its fill is refused, and it is the image's element that is named
+  const std::string svg =
+      "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2280%22%20height%3D%2280%22%3E"
+      "%3Crect%20width%3D%2280%22%20height%3D%2280%22%20fill%3D%22red%22%2F%3E%3C%2Fsvg%3E";
+  Lowered l;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "\n<path d=\"" + std::string(kSmall) + "\"/>\n<image x=\"5\" y=\"5\" width=\"80\" height=\"80\" href=\"" + svg + "\"/>"), l);
+  ASSERT_EQ(l.Refusals(), (size_t) 0);
+  for (int form = 0; form < 2; form++) {
+    Reported r;
+    ASSERT_EQ(Render(form == 0 ? l.list : l.emitted, 30.0, r.report), GSHSCENE_OK);
+    size_t named_image = 0;
+    for (size_t index = 0; index < gshscene_report_count(r.report); index++) {
+      GVEC_Lower_Site site;
+      ASSERT_EQ(gvec_lower_trace_element(form == 0 ? l.list_trace : l.edit_trace, form == 0 ? nullptr : l.version, r.report, index, &site), GVEC_OK);
+      if (!site.placed) {
+        continue;
+      }
+      EXPECT_TRUE(std::string(site.element) == "path" || std::string(site.element) == "image")
+          << "form " << form << " entry " << index << ": " << site.element << " (the document's own elements are not in the lowered document)";
+      named_image += std::string(site.element) == "image";
+    }
+    EXPECT_GE(named_image, (size_t) 1) << "form " << form << ": what the document draws is placed at the image's element";
+  }
+}
+
 TEST(LowerReport, AnEntryInsideAPictureIsMappedThroughTheInstanceToTheReferentAndTheUsesDepth) {
   Lowered l;
   LowerSvg(Svg("width=\"200\" height=\"200\"",
