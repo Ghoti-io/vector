@@ -307,6 +307,7 @@ void gvec_lw_end(gvec_lw_ctx * ctx) {
   gvec_free(ctx->allocator, ctx->sites);
   gvec_free(ctx->allocator, ctx->refused);
   gvec_free(ctx->allocator, ctx->use_stack);
+  gvec_lw_image_cache_free(ctx);
   for (size_t i = 0; i < ctx->table_count; i++) {
     gvec_free(ctx->allocator, ctx->tables[i].site);
     gvec_free(ctx->allocator, ctx->tables[i].child);
@@ -885,6 +886,116 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   else {
     r = gvec_lw_append_all(ctx, TARGET(group, parent), sequence, n);
+  }
+  if (group) {
+    gvec_lw_wrap_leave(ctx);
+    if (r == GVEC_OK) {
+      r = gvec_lw_attach(ctx, parent, group);
+    }
+  }
+  return r;
+}
+
+//-----------------------------------------------------------------------------
+// `image`
+//-----------------------------------------------------------------------------
+
+/* `image`: the raster the `href` names, drawn as the waist draws an image (IP14): a fill of the rectangle its paint maps the image to, with the
+ * image paint, under the element's map. When the image is sliced (or placed so that it reaches past its viewport) and `overflow` clips, the
+ * viewport is a clip around the fill. Opacity, `clip-path`, `mask` and `filter` are the wrappers of every element (lw_element). */
+static GVEC_Result lw_image(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  common c;
+  GVEC_Result r = prepare(ctx, inst, frame, true, &c);
+  if (r != GVEC_OK || !c.draw) {
+    return r;
+  }
+  ctx->item_crisp = false;
+  gvec_lw_image_state state;
+  gvec_lw_image_geometry g;
+  r = gvec_lw_image_geometry_of(ctx, inst, &state, &g);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (state != GVEC_LW_IMAGE_READY) {
+    if (state == GVEC_LW_IMAGE_NOTHING && g.disabled) {
+      return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_RENDERING_DISABLED, 0, e->node.line, e->node.column, e->node.offset,
+          e->name, "an image of no width or no height disables the rendering of the element");
+    }
+    return GVEC_OK;
+  }
+  uint32_t magnify, minify;
+  bool usable;
+  r = gvec_lw_image_filters(ctx, inst, &magnify, &minify, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  GVEC_Svg_Style_Value overflow;
+  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OVERFLOW, GVEC_LOWER_STYLE, &overflow, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  const bool clips = !(gvec_lw_keyword_is(&overflow, "visible") || gvec_lw_keyword_is(&overflow, "auto"));
+  GSHGEOM_Map placed;
+  if (!gvec_lw_image_place(&g.image, &g.par, g.x, g.y, g.width, g.height, &placed)) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image is placed past the range the waist can carry");
+  }
+  GSHSCENE_Paint paint;
+  const GSHSCENE_Resource * path = NULL;
+  bool ok;
+  r = gvec_lw_image_paint(ctx, e, &g.image, &placed, magnify, minify, &paint, &path, &ok);
+  if (r != GVEC_OK || !ok) {
+    return r;
+  }
+  gvec_lw_node * fill = NULL;
+  r = shape_node(ctx, e, &c.local, path, &paint, GSHGEOM_FILL_NONZERO, NULL, &fill);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  /* The viewport clips what reaches past it: only a slice does (`meet` and `none` fit inside it). */
+  gvec_lw_node * clip = NULL;
+  if (clips && g.par.align != GVEC_SVG_ALIGN_NONE && g.par.slice) {
+    gvec_lw_geometry geometry;
+    const GSHSCENE_Resource * rect = NULL;
+    r = gvec_lw_rect_path(ctx, g.x, g.y, g.width, g.height, &geometry, &rect);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (geometry != GVEC_LW_GEOMETRY_PATH) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image's viewport is past the range the waist can carry");
+    }
+    clip = gvec_lw_new_node(ctx, GVEC_LW_CLIP);
+    if (!clip) {
+      return GVEC_ERR_OOM;
+    }
+    clip->map = c.local;
+    clip->resource = rect;
+    clip->rule = GSHGEOM_FILL_NONZERO;
+    clip->key = gvec_lw_key(e->key, ctx->chain, GVEC_LW_ROLE_CLIP);
+    clip->site = gvec_lw_new_site(ctx, e, clip->key);
+    if (clip->site == GVEC_LW_NO_SITE) {
+      return GVEC_ERR_OOM;
+    }
+  }
+  gvec_lw_node * group;
+  bool skip;
+  r = opacity_group(ctx, e, &c, &group, &skip);
+  if (r != GVEC_OK || skip) {
+    return r;
+  }
+  gvec_lw_node * target = TARGET(group, parent);
+  bool clip_entered = false;
+  if (clip) {
+    r = gvec_lw_wrap_enter(ctx, e, &clip_entered);
+  }
+  if (r == GVEC_OK && (!clip || clip_entered)) {
+    r = gvec_lw_append(ctx, clip ? clip : target, fill);
+    if (clip) {
+      gvec_lw_wrap_leave(ctx);
+      if (r == GVEC_OK) {
+        r = gvec_lw_attach(ctx, target, clip);
+      }
+    }
   }
   if (group) {
     gvec_lw_wrap_leave(ctx);
@@ -1502,7 +1613,7 @@ static GVEC_Result lw_content(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     r = lw_text(ctx, inst, frame, parent);
     break;
   case GVEC_SVG_KIND_IMAGE:
-    r = lw_refused_kind(ctx, inst, GVEC_LOWER_IMAGE, "images are not lowered yet", true);
+    r = lw_image(ctx, inst, frame, parent);
     break;
   case GVEC_SVG_KIND_FOREIGN_OBJECT:
     r = lw_refused_kind(ctx, inst, GVEC_LOWER_FOREIGN_OBJECT, "foreignObject content is never rendered by this library", false);

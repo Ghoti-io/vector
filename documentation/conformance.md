@@ -175,6 +175,19 @@ row is that case. The pair is a first setting and is expected to be refined as t
 
 ## The score today
 
+At the head of the images work the score file reads **1,445 of 1,679 (86.06%)** determined correct: 560 `PASS` (33.35%), 24 `ACCEPTED`, 711 `EDGE`,
+150 `ORACLE_AGREES`; 138 `ORACLE_SPLIT` and 8 `DEFECT` among the 1,007 `FAIL`s, 66 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The paragraph and the
+table that follow are an older reading, kept for their account of what each feature moved; `make conformance` writes the current one.
+
+Images (`image` of a raster in a `data:` URI or a file under the caller's image root, `preserveAspectRatio`, `image-rendering`, an Exif orientation) and
+`feImage` of an image moved the score from 1,413 to 1,445 and emptied the exclusion of `structure/image` and `painting/image-rendering` (the other 52
+cases that were excluded). Of the 49 cases of `structure/image` 28 draw an image (`image-with-float-size-scaling` passes, `float-size` is accepted because
+its reference is the placeholder UB, and the others differ from their reference only in pixels that are fully transparent or along edges), 21 are
+refused because the image is an SVG document or a URL (nothing is fetched, and nested documents are not lowered), and the two reviewed `FAIL` rows say why
+(the frame rows of `width-and-height-set-to-auto`, and texel boundaries in `optimizeSpeed`). Of the 27 `feImage` cases 8 draw an image, one (`empty`) draws nothing as its reference does, and 18 are refused
+(15 name an element, which the waist's image primitive cannot hold). The eight that draw are `DEFECT` rows: the CPU sink samples that primitive with the
+nearest texel only, where the reference smooths the enlarged picture; with `image-rendering: optimizeSpeed` the same drawing is 0 pixels from `resvg`.
+
 The lowering draws structure, solid and gradient fills and strokes (with their dashes, caps, joins and `paint-order`) of `path`, `polygon`, `polyline`, `line`, `rect`, `circle` and `ellipse`, including elliptical arcs, and the markers of those; it refuses what it cannot draw yet
 (`refusals.md`), and a case that is refused is never scored as a pass. At the pinned commit the score is **1,123 of 1,679
 (66.89%)** determined correct, of which **419 (24.96%)** match the reference, **23 (1.37%)** are accepted, **551 (32.82%)** are `EDGE` and **130 (7.74%)** are `ORACLE_AGREES`, with the tolerance at `max-diff 32` and `max-bad-ppm 2000`. At a tolerance of zero it was 6 (0.36%). The 765 `FAIL`s are the 551 `EDGE`, the 130 `ORACLE_AGREES`, 84 `ORACLE_SPLIT` (a `font-size-adjust` that resvg and Chromium do not read as an attribute, a kerning in percent, a `textLength` over chunks that have their own, vertical text on a path, text on a path under a transform or `side="right"`, a decoration along a curve or down a column, which the engines draw differently, a `tref` to an element of another file, text along a curve, whose turned glyphs each engine rasterizes differently, vertical text, whose engines place glyphs differently, right-to-left text anchored at the start, which resvg does not flip, the `ch`, `ic`, `lh` and `rlh` units, which depend on font metrics, a marker that draws itself, which each engine cuts differently, two patterns that refer to each other, which each engine cuts at a different place, a mask of masks that name each other through their children, and a pattern in the units of the box painted for a rotated group) and no `DEFECT`.

@@ -109,8 +109,11 @@ GVEC_API const char * gvec_result_string(GVEC_Result result);
  * | max_declarations | 4,194,304, the declarations of one `style` attribute |
  * | max_custom_expansion | 1,048,576 tokens, what one value may grow to by `var()` and the other functions |
  * | max_gradient_stops | 65,535 stops in one gradient, the most the scene can carry; a gradient with more is refused when it is lowered |
+ * | max_image_bytes | default 32 MiB, ceiling 1 GiB: the encoded bytes of one image (the decoded payload of a `data:` URI, or a file); an `image` or `feImage` with more is refused when it is lowered |
+ * | max_image_pixels | default 33,554,432 (2^25), ceiling 2^28 (the most the scene's image carries): pixels in one decoded image, tested before the pixels are allocated; one with more is refused when it is lowered |
+ * | max_image_decoded_bytes | default 512 MiB, ceiling 2 GiB: the bytes of the decoded samples of every image one lowering decodes, an image counted once however often it is drawn |
  *
- * The default of every field but max_diagnostics is also its ceiling: it is
+ * The default of every field but max_diagnostics and the three image limits is also its ceiling: it is
  * the XML parser's own limit for the same quantity.
  */
 typedef struct GVEC_Limits {
@@ -132,6 +135,9 @@ typedef struct GVEC_Limits {
   size_t max_declarations;          ///< Declarations in one `style` attribute; a longer list is dropped and reported.
   size_t max_custom_expansion;      ///< Tokens one value may expand to by `var()` and the other functions; past it the value is invalid at computed-value time.
   size_t max_gradient_stops;        ///< Stops one gradient may have, after `href` inheritance; an element painted by a gradient with more is refused (`LIMIT`).
+  size_t max_image_bytes;           ///< Encoded bytes of one image, read from a `data:` URI or a file; an `image` or `feImage` with more is refused (`LIMIT`).
+  size_t max_image_pixels;          ///< Pixels of one decoded image; checked by the decoder before it allocates; an image with more is refused (`LIMIT`).
+  size_t max_image_decoded_bytes;   ///< Bytes of decoded samples over every image one lowering decodes; an image that would pass it is refused (`LIMIT`).
   uint8_t _reserved[8];             ///< Zero.
 } GVEC_Limits;
 
@@ -155,6 +161,9 @@ typedef enum GVEC_Limit_Field {
   GVEC_LIMIT_DECLARATIONS,
   GVEC_LIMIT_CUSTOM_EXPANSION,
   GVEC_LIMIT_GRADIENT_STOPS,
+  GVEC_LIMIT_IMAGE_BYTES,
+  GVEC_LIMIT_IMAGE_PIXELS,
+  GVEC_LIMIT_IMAGE_DECODED_BYTES,
   GVEC_LIMIT_FIELD_COUNT ///< The number of fields; not a field.
 } GVEC_Limit_Field;
 
@@ -201,6 +210,7 @@ typedef enum GVEC_Diag_Code {
   GVEC_DIAG_STYLE_INVALID,     ///< A declaration of a `style` attribute or a presentation attribute is not a value of its property, or a style could not be computed; it was dropped. `detail` is the byte offset of the declaration in the attribute's value.
   GVEC_DIAG_UNSUPPORTED_COLOR_SPACE, ///< A colour the shape waist cannot carry (a space `text` parses and the waist has no gamut for, or a colour that needs conversion); the element using it is refused.
   GVEC_DIAG_RENDERING_DISABLED, ///< An element's geometry disables its rendering (a viewport or viewBox of zero size, SVG 2 8.2): nothing is drawn for it, and that is the document's meaning, not a refusal.
+  GVEC_DIAG_IMAGE_UNUSABLE, ///< An `image` or `feImage` names data that cannot be used (no data, a file that cannot be read, bytes no decoder reads, a reference that is not an image): nothing is drawn for it, as a browser draws nothing for a broken image, and that is not a refusal. `detail` is a GVEC_Image_Problem (lower.h).
   GVEC_DIAG_CODE_COUNT      ///< One past the last code; not a code.
 } GVEC_Diag_Code;
 

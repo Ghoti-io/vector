@@ -22,8 +22,9 @@
  * The `filter` property: a reference to a `filter` element becomes a filter resource of the waist (shape-scene filter.h) and a group that
  * names it around the element's content, inside the clip and the mask (Filter Effects: the filter comes first, then the clip, the mask and
  * the opacity).  The primitives lowered are feOffset, feFlood, feMerge, feBlend, feComposite, feColorMatrix, feComponentTransfer,
- * feGaussianBlur, feDropShadow, feMorphology, feConvolveMatrix, feTile and feDisplacementMap; an element that names a filter with any
- * other primitive is refused whole.  The waist's filter is in the space of the group's items, the list's, so the filter's lengths and
+ * feGaussianBlur, feDropShadow, feMorphology, feConvolveMatrix, feTile, feDisplacementMap, feTurbulence, the two lightings and feImage of an
+ * image (a `data:` URI or a file under the options' image root: lower_image.c); an element that names a filter with any other primitive
+ * (feImage of an element of the document) is refused whole.  The waist's filter is in the space of the group's items, the list's, so the filter's lengths and
  * regions are put into it through the element's own map, which must be axis aligned (a scale, a mirror, a quarter turn and a translation:
  * the filter of a rotated or skewed element needs canonical space, which no sink draws yet).
  */
@@ -221,6 +222,8 @@ typedef struct fbuild {
   gvec_lw_ctx * ctx;
   const GVEC_Svg_Element * target; /* the element the filter is on, for the refusals */
   fmap map;
+  GSHGEOM_Map local;               /* the element's map into the list: what `map` is made of */
+  double region[4];                /* the filter region in the element's space: x y width height (feImage fills it by default) */
   bool prim_box;                   /* primitiveUnits is objectBoundingBox */
   double box[4];                   /* its box: x y w h, in the element's space */
   GSHSCENE_Filter_Primitive * prims;
@@ -490,6 +493,91 @@ static void lengths_to_list(const fbuild * b, double v[2]) {
 }
 
 /** One `feXxx` element as a primitive (and the helpers its inputs add). */
+/* An empty result: transparent black, which is what a feImage with nothing to draw is (a dummy flood, as the reference does). */
+static void transparent_result(GSHSCENE_Filter_Primitive * p) {
+  p->kind = GSHSCENE_FILTER_FLOOD;
+  p->input_count = 0;
+  p->inputs = NULL;
+  memset(&p->color, 0, sizeof p->color);
+  p->opacity = 0;
+}
+
+/*
+ * feImage: the image of its `href` (a `data:` URI, or a file under the options' image root) fitted into the primitive subregion by
+ * `preserveAspectRatio` (default xMidYMid meet) and drawn by the waist's IMAGE primitive under a placement map into the list's space.
+ * The subregion is the filter region where the element gives none of x, y, width and height, and is what clips a slice (FL4, FL17).
+ *
+ * An element of the document as the `href` (`#id`) is refused: the waist's IMAGE primitive takes an image resource, not a picture of the
+ * document, and an element drawn into a filter is a picture. A reference to nothing, an image that cannot be used and a subregion of no size
+ * are an empty result.
+ *
+ * @param sub The subregion's x, y, width and height in the element's space, those the element gives (`p->subregion_mask`).
+ */
+static GVEC_Result image_primitive(fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Filter_Primitive * p, const double sub[4]) {
+  gvec_lw_ctx * ctx = b->ctx;
+  const GVEC_Svg_Attribute * href = gvec_svg_element_find_attribute(el, "href");
+  if (!href) {
+    href = gvec_svg_element_find_attribute(el, "xlink:href");
+  }
+  GVEC_Svg_Reference ref;
+  if (href && gvec_svg_attribute_class(href) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_reference(href, &ref) && ref.kind == GVEC_SVG_REF_INTERNAL) {
+    if (gvec_svg_find_by_id(ctx->document, ref.fragment)) {
+      return refuse_with(b, "an feImage that renders an element is not lowered: the waist's image primitive draws an image, not a picture of the document");
+    }
+    transparent_result(p);
+    return GVEC_OK;
+  }
+  gvec_lw_image_state state;
+  gvec_lw_image image;
+  GVEC_Result r = gvec_lw_image_load(ctx, el, &state, &image);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (state == GVEC_LW_IMAGE_REFUSED) {
+    b->refused = true;
+    return GVEC_OK;
+  }
+  if (state == GVEC_LW_IMAGE_NOTHING) {
+    transparent_result(p);
+    return GVEC_OK;
+  }
+  /* the viewport: the subregion as the waist reads it (FL4), the filter region where a value is not given */
+  const double x0 = (p->subregion_mask & 1u) ? sub[0] : b->region[0];
+  const double y0 = (p->subregion_mask & 2u) ? sub[1] : b->region[1];
+  const double x1 = (p->subregion_mask & 4u) ? x0 + sub[2] : b->region[0] + b->region[2];
+  const double y1 = (p->subregion_mask & 8u) ? y0 + sub[3] : b->region[1] + b->region[3];
+  if (!(x1 - x0 > 0) || !(y1 - y0 > 0) || x1 - x1 != 0 || y1 - y1 != 0) { /* no area, or an edge that is not finite */
+    transparent_result(p);
+    return GVEC_OK;
+  }
+  GVEC_Svg_Preserve_Aspect_Ratio par = {GVEC_SVG_ALIGN_X_MID_Y_MID, 0, 0};
+  const GVEC_Svg_Attribute * pa = gvec_svg_element_find_attribute(el, "preserveAspectRatio");
+  if (pa && gvec_svg_attribute_class(pa) == GVEC_SVG_ATTR_TYPED) {
+    gvec_svg_attribute_preserve_aspect_ratio(pa, &par);
+  }
+  GSHGEOM_Map placed;
+  if (!gvec_lw_image_place(&image, &par, x0, y0, x1 - x0, y1 - y0, &placed) || !gvec_lw_compose(&b->local, &placed, &p->placement)) {
+    return refuse_with(b, "the image of an feImage is placed past the range the waist can carry");
+  }
+  const GVEC_Svg_Instance * inst;
+  r = gvec_lw_instance_of(ctx, el, &inst);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  uint32_t magnify, minify;
+  bool usable;
+  r = gvec_lw_image_filters(ctx, inst, &magnify, &minify, &usable);
+  if (r != GVEC_OK || !usable) {
+    b->refused = !usable;
+    return r;
+  }
+  (void) minify;
+  p->kind = GSHSCENE_FILTER_IMAGE;
+  p->image = image.resource;
+  p->rendering = magnify;
+  return GVEC_OK;
+}
+
 static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC_Svg_Element * filter) {
   (void) filter;
   const GVEC_Svg_Kind kind = gvec_svg_element_kind(el);
@@ -503,7 +591,7 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
   }
   /* the inputs first: a removed keyword adds its flood before this primitive */
   const bool two = kind == GVEC_SVG_KIND_FE_BLEND || kind == GVEC_SVG_KIND_FE_COMPOSITE || kind == GVEC_SVG_KIND_FE_DISPLACEMENT_MAP;
-  const bool none = kind == GVEC_SVG_KIND_FE_FLOOD || kind == GVEC_SVG_KIND_FE_TURBULENCE;
+  const bool none = kind == GVEC_SVG_KIND_FE_FLOOD || kind == GVEC_SVG_KIND_FE_TURBULENCE || kind == GVEC_SVG_KIND_FE_IMAGE;
   size_t merge_first = b->merge_used;
   size_t merge_count = 0;
   if (kind == GVEC_SVG_KIND_FE_MERGE) {
@@ -527,7 +615,7 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       merge_count = 1;
     }
   }
-  else if (!none && kind != GVEC_SVG_KIND_FE_TURBULENCE && kind != GVEC_SVG_KIND_FE_IMAGE) {
+  else if (!none) {
     r = input_of(b, el, "in", &in0, &ok);
     if (r != GVEC_OK || !ok) {
       return r;
@@ -553,9 +641,9 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
     p->inputs = slot;
   }
   /* the subregion, put into the list's space: coordinate by coordinate under a positive scale, whole under a mirror or a quarter turn */
+  double sub[4] = {0, 0, 0, 0}; /* in the element's space: what feImage fits its image into */
   {
     static const char * const names[4] = {"x", "y", "width", "height"};
-    double sub[4] = {0, 0, 0, 0};
     for (int k = 0; k < 4; k++) {
       bool present;
       if (!length_attr(el, names[k], b->prim_box, (k & 1) ? b->vh : b->vw, &present, &sub[k])) {
@@ -920,8 +1008,14 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       }
       break;
     }
+    case GVEC_SVG_KIND_FE_IMAGE:
+      r = image_primitive(b, el, p, sub);
+      if (r != GVEC_OK || b->refused) {
+        return r;
+      }
+      break;
     default:
-      return refuse_with(b, "a filter primitive the waist's sinks do not draw yet (feImage) is not lowered");
+      return refuse_with(b, "a filter primitive the waist's sinks do not draw yet is not lowered");
   }
   if (p->subregion_mask == 0) {
     memset(p->subregion, 0, sizeof p->subregion);
@@ -1091,6 +1185,8 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   double list_region[4];
   fmap_rect(&b.map, region, list_region);
+  memcpy(b.region, region, sizeof b.region);
+  b.local = *local;
   /* the primitives */
   b.prims = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.prims);
   b.inputs = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.inputs);

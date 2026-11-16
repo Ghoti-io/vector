@@ -57,7 +57,15 @@ extern "C" {
 #define GVEC_DEFAULT_MAX_DECLARATIONS ((size_t)4194304)
 #define GVEC_DEFAULT_MAX_CUSTOM_EXPANSION ((size_t)1048576)
 #define GVEC_DEFAULT_MAX_GRADIENT_STOPS ((size_t)65535)
+#define GVEC_DEFAULT_MAX_IMAGE_BYTES ((size_t)32 * 1024 * 1024)
+#define GVEC_DEFAULT_MAX_IMAGE_PIXELS ((size_t)1 << 25)
+#define GVEC_DEFAULT_MAX_IMAGE_DECODED_BYTES ((size_t)512 * 1024 * 1024)
 #define GVEC_CEILING_MAX_DIAGNOSTICS ((size_t)1 << 20)
+/* The image limits have no parser behind them to set the ceiling: it is the most the shape waist's image resource carries (2^28 texels),
+ * and generous bounds on the bytes. */
+#define GVEC_CEILING_MAX_IMAGE_BYTES ((size_t)1 << 30)
+#define GVEC_CEILING_MAX_IMAGE_PIXELS ((size_t)1 << 28)
+#define GVEC_CEILING_MAX_IMAGE_DECODED_BYTES ((size_t)1 << 31)
 
 /**
  * The limits a load uses: each zero field replaced by its default, each field

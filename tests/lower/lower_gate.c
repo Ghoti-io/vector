@@ -203,6 +203,18 @@ static const char * base_name(const char * path, char * out, size_t cap) {
   return out;
 }
 
+/** The directory part of `path` (`.` when it has none), written to `out`. */
+static void directory_of(const char * path, char * out, size_t size) {
+  const char * slash = strrchr(path, '/');
+  size_t n = slash ? (size_t) (slash - path) : 0;
+  if (!slash || n == 0 || n + 1 > size) {
+    snprintf(out, size, "%s", slash && n == 0 ? "/" : ".");
+    return;
+  }
+  memcpy(out, path, n);
+  out[n] = 0;
+}
+
 static void check_fixture(const char * path, const char * golden_dir, int update) {
   char name[256];
   base_name(path, name, sizeof name);
@@ -244,6 +256,12 @@ static void check_fixture(const char * path, const char * golden_dir, int update
   memset(&options, 0, sizeof options);
   options.store = gshscene_scene_store(scene);
   options.fonts = g_fonts;
+  /* An image a fixture names by file is read beside the fixture, and under the directory above it (tests/data), where tests/data/images is. */
+  char base[512], root[512];
+  directory_of(path, base, sizeof base);
+  directory_of(base, root, sizeof root);
+  options.image_base = base;
+  options.image_root = root;
   if (gvec_doc_lower_list(doc, &options, list, &by_list) != GVEC_OK || gshscene_list_close(list) != GSHSCENE_OK) {
     fail(name, "lowering into a list");
     goto done;

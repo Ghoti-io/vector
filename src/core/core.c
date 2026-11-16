@@ -104,11 +104,23 @@ static const size_t gvec_limit_defaults[GVEC_LIMIT_FIELD_COUNT] = {
     GVEC_DEFAULT_MAX_DECLARATIONS,
     GVEC_DEFAULT_MAX_CUSTOM_EXPANSION,
     GVEC_DEFAULT_MAX_GRADIENT_STOPS,
+    GVEC_DEFAULT_MAX_IMAGE_BYTES,
+    GVEC_DEFAULT_MAX_IMAGE_PIXELS,
+    GVEC_DEFAULT_MAX_IMAGE_DECODED_BYTES,
 };
 
 size_t gvec_limits_ceiling(GVEC_Limit_Field field) {
   if (field == GVEC_LIMIT_DIAGNOSTICS) {
     return GVEC_CEILING_MAX_DIAGNOSTICS;
+  }
+  if (field == GVEC_LIMIT_IMAGE_BYTES) {
+    return GVEC_CEILING_MAX_IMAGE_BYTES;
+  }
+  if (field == GVEC_LIMIT_IMAGE_PIXELS) {
+    return GVEC_CEILING_MAX_IMAGE_PIXELS;
+  }
+  if (field == GVEC_LIMIT_IMAGE_DECODED_BYTES) {
+    return GVEC_CEILING_MAX_IMAGE_DECODED_BYTES;
   }
   if ((unsigned) field >= GVEC_LIMIT_FIELD_COUNT) {
     return 0;
@@ -155,6 +167,12 @@ static size_t * gvec_limits_field(GVEC_Limits * limits, GVEC_Limit_Field field) 
     return &limits->max_custom_expansion;
   case GVEC_LIMIT_GRADIENT_STOPS:
     return &limits->max_gradient_stops;
+  case GVEC_LIMIT_IMAGE_BYTES:
+    return &limits->max_image_bytes;
+  case GVEC_LIMIT_IMAGE_PIXELS:
+    return &limits->max_image_pixels;
+  case GVEC_LIMIT_IMAGE_DECODED_BYTES:
+    return &limits->max_image_decoded_bytes;
   case GVEC_LIMIT_FIELD_COUNT:
     break;
   }

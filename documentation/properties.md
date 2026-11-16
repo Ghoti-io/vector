@@ -40,7 +40,7 @@ Types: **keyword** is the computed value as text; **length** is in user units; a
 | `glyph-orientation-horizontal` | registered | keyword |  |  |
 | `glyph-orientation-vertical` | overridden | keyword |  |  |
 | `height` | generated | length | height |  |
-| `image-rendering` | generated | keyword |  |  |
+| `image-rendering` | overridden | keyword |  |  |
 | `isolation` | generated | keyword |  |  |
 | `letter-spacing` | generated | keyword |  |  |
 | `lighting-color` | generated | color |  |  |
@@ -116,6 +116,13 @@ Types: **keyword** is the computed value as text; **length** is in user units; a
 - initial value: `auto`
 - value: `auto | <angle> | <number>`
 - why: The pin's text is not a definition (the property has no grammar); SVG 2 CR Appendix H: `auto | <angle> | <number>`, initial `auto`, inherited.
+
+### `image-rendering` (overridden)
+
+- inherited: yes
+- initial value: `auto`
+- value: `auto | optimizeSpeed | optimizeQuality | smooth | high-quality | crisp-edges | pixelated`
+- why: SVG 2 CR, Appendix H: `auto | optimizeSpeed | optimizeQuality`, initial `auto`, inherited; the pin (CSS Images 3) has `auto | smooth | high-quality | crisp-edges | pixelated` and not the SVG keywords, which browsers and the reference renderer still accept, so the value is their union.
 
 ### `stop-color` (overridden)
 

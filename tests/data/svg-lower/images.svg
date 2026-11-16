@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Raster images (P3, SVG 2 section 5.3; written by tools/gen-lower-fixtures.py from tests/data/images): every format and color type, preserveAspectRatio
+     meet and slice, an Exif orientation, opacity and a transform, a clip, image-rendering, and an image drawn through a use. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#ecf0f1"/>
+  <image x="2" y="2" width="28" height="20" image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAE0lEQVR42mP4z8DAAMX///8HYwBKyQj4CDRrHAAAAABJRU5ErkJggg=="/>
+  <image x="34" y="2" width="28" height="20" preserveAspectRatio="xMinYMin slice" image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAGklEQVR42mP4z8DwHwgbQBQQAwHD/wYgwQAAkBUL9lACXZcAAAAASUVORK5CYII="/>
+  <image x="2" y="24" width="14" height="20" image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAGmVYSWZNTQAqAAAACAABARIAAwAAAAEABgAAAAAAANZnS2kAAAATSURBVHjaY/jPwMAAxf///wdjAErJCPgINGscAAAAAElFTkSuQmCC"/>
+  <image x="20" y="26" width="16" height="8" opacity="0.5" transform="rotate(10 28 30)" image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAAAAABawyK/AAAAEklEQVR42mNgCF31n+H/qlAGABP2A/0sBBLjAAAAAElFTkSuQmCC"/>
+  <clipPath id="c"><circle cx="50" cy="34" r="9"/></clipPath>
+  <image x="40" y="24" width="20" height="20" preserveAspectRatio="none" clip-path="url(#c)" image-rendering="smooth" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAMAAABFaP0WAAAABlBMVEX/AAAAAP9sof2OAAAADElEQVR42mNgYARCAAAMAAMVnhj8AAAAAElFTkSuQmCC"/>
+  <image x="2" y="48" width="24" height="12" image-rendering="pixelated" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABEAIAAAAr0DSeAAAAEElEQVR42mP4/58BCv7/BwAZ8wP9oA6u/gAAAABJRU5ErkJggg=="/>
+  <defs><image id="again" width="10" height="10" image-rendering="optimizeSpeed" href="data:image/webp;base64,UklGRjAAAABXRUJQVlA4TCMAAAAvAUAAEB8gEEjeHzqN+RcQFPwfnYCg6LrlImYPwg0YIvofAgA="/></defs>
+  <image x="30" y="48" width="12" height="12" href="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAIAAgDAREAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDmfhR+yp/qf9D9P4a9XOeMN/eI8NuPfg98/9k="/>
+  <use href="#again" x="44" y="48"/>
+  <image x="54" y="48" width="8" height="8" image-rendering="optimizeSpeed" href="data:image/gif;base64,R0lGODlhAgACAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAAAIBgABCAQQEAAh+QQBCgABACwAAAAAAgACAIEAAP8AAAAAAAAAAAAIBgABCAQQEAA7"/>
+</svg>

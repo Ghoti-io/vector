@@ -256,7 +256,7 @@ TEST(LowerFilter, TurbulenceAndTheLightingsAreLowered) {
 
 TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   const char * refused[] = {
-      "<filter id=\"f\"><feImage href=\"#x\"/></filter>",
+      "<filter id=\"f\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/>",
   };
   for (const char * filter : refused) {
     Lowered l;

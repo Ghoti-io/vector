@@ -939,7 +939,8 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
   for (const GVEC_Svg_Element * child = gvec_svg_element_first_child(group); child; child = gvec_svg_element_next_sibling(child)) {
     GVEC_Svg_Kind ck = gvec_svg_element_kind(child);
     bool shape = is_shape(ck), container = ck == GVEC_SVG_KIND_G || ck == GVEC_SVG_KIND_A, text_leaf = ck == GVEC_SVG_KIND_TEXT;
-    if (!shape && !container && !text_leaf) {
+    const bool image_leaf = ck == GVEC_SVG_KIND_IMAGE;
+    if (!shape && !container && !text_leaf && !image_leaf) {
       switch (ck) {
       case GVEC_SVG_KIND_DEFS: case GVEC_SVG_KIND_DESC: case GVEC_SVG_KIND_TITLE: case GVEC_SVG_KIND_METADATA:
       case GVEC_SVG_KIND_LINEAR_GRADIENT: case GVEC_SVG_KIND_RADIAL_GRADIENT: case GVEC_SVG_KIND_CLIP_PATH: case GVEC_SVG_KIND_MASK:
@@ -982,9 +983,9 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
       }
       continue;
     }
-    if (text_leaf) {
+    if (text_leaf || image_leaf) {
       bool ok;
-      r = text_leaf_box(ctx, ci, &inner, box, &ok);
+      r = text_leaf ? text_leaf_box(ctx, ci, &inner, box, &ok) : gvec_lw_image_leaf_box(ctx, ci, &inner, box, &ok);
       if (r != GVEC_OK || !ok) {
         *known = false;
         return r;
@@ -1042,6 +1043,12 @@ GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     *known = ok;
     return r;
   }
+  if (kind == GVEC_SVG_KIND_IMAGE) {
+    bool ok;
+    r = gvec_lw_image_leaf_box(ctx, inst, &own, box, &ok);
+    *known = ok;
+    return r;
+  }
   if (!is_shape(kind)) {
     *known = false;
     return GVEC_OK;
@@ -1063,6 +1070,16 @@ GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   *known = true;
   box->empty = 1;
+  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_IMAGE) {
+    GSHGEOM_Map identity;
+    bool ok;
+    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+      return GVEC_ERR_INTERNAL;
+    }
+    GVEC_Result image_result = gvec_lw_image_leaf_box(ctx, inst, &identity, box, &ok);
+    *known = ok;
+    return image_result;
+  }
   if (!is_shape(gvec_svg_element_kind(e))) {
     GSHGEOM_Map identity;
     if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
@@ -1168,7 +1185,12 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
       if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
         return GVEC_ERR_INTERNAL;
       }
-      r = group_box(ctx, e, e, c->inst, &identity, &box, &known, 0);
+      if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_IMAGE) {
+        r = gvec_lw_image_leaf_box(ctx, c->inst, &identity, &box, &known); /* an image's box is its viewport */
+      }
+      else {
+        r = group_box(ctx, e, e, c->inst, &identity, &box, &known, 0);
+      }
       if (r != GVEC_OK) {
         return r;
       }

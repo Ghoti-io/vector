@@ -30,7 +30,7 @@ PROJECT := vector
 # The libraries this one depends on, by the end of the milestone: the fourth
 # field of its line in suite/libraries.txt, without the optional ones.
 # Each is found by pkg-config and is a hard error when it is not.
-DEPS := cutil compress text shape-scene shape-geometry color math font
+DEPS := cutil compress text shape-scene shape-geometry color math font image
 
 # The libraries whose headers this one may include and whose shared objects it
 # may link (check-edges), as a regular expression alternation. Itself is always
@@ -40,7 +40,7 @@ DEPS := cutil compress text shape-scene shape-geometry color math font
 # shape-scene is a front end's only edge into the shape family; every sink
 # (shape-cpu and the rest) stays outside the list, which is how check-edges
 # enforces that this library never links or includes one.
-EDGES_ALLOWED := cutil|compress|text|shape-scene|shape-geometry|color|math|font
+EDGES_ALLOWED := cutil|compress|text|shape-scene|shape-geometry|color|math|font|image
 
 # no, for every library: nothing is exempt from check-libm; elementary
 # functions come from math. Anything else fails check-gates.
@@ -591,6 +591,7 @@ check-planted: $(LIBOBJECTS) $(TEST_OBJECTS) ## Fail unless each planted defect 
 
 check-test-data: ## Fail unless the fixtures, the fuzz seeds, the vectors and the reason tables are what the generators write
 	@python3 tools/gen-test-data.py --check
+	@python3 tools/gen-test-images.py --check
 	@python3 tools/gen-grammar-vectors.py --check
 	@python3 tools/gen-style-vectors.py --check
 	@python3 tools/gen-namespace.py --check

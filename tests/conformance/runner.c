@@ -346,6 +346,15 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   lower.store = store;
   lower.trace = trace;
   lower.fonts = o->fonts;
+  /* The images a case names are files of the corpus, beside it or in its resources directory: the root is the corpus, the base the case's directory. */
+  char base[4096];
+  snprintf(base, sizeof base, "%s", svg);
+  char * slash = strrchr(base, '/');
+  if (slash) {
+    *slash = 0;
+  }
+  lower.image_root = o->corpus;
+  lower.image_base = base;
   lower.flags = GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN | GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK; /* the reference images are resvg's */
   GVEC_Result lr = o->lower(doc, &lower, list, &diag);
   if (lr != GVEC_OK) {

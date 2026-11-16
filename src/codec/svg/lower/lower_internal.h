@@ -204,6 +204,9 @@ typedef struct gvec_lw_ctx {
   const GVEC_Svg_Instance * blend_moved; ///< The instance whose `mix-blend-mode` its mask group carries (the blend is the outermost of the stack: lower_walk.c).
   const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
   size_t pattern_depth;
+  void * images;                     ///< What each element that names an image came to (lower_image.c): an array of `image_count` entries.
+  size_t image_count, image_capacity;
+  uint64_t image_decoded;            ///< The bytes of decoded samples of the images decoded so far (`max_image_decoded_bytes`).
   gvec_lw_node root;                 ///< The root of the tree: only its children are drawn.
 } gvec_lw_ctx;
 
@@ -557,6 +560,109 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_markers(
 /** The paint of `property` (fill or stroke) of `inst` as a context paint names it: its own, or, inside a marker or a use, the one it takes from there. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_context_paint(
     gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GVEC_Svg_Property property, GVEC_Svg_Paint * out, bool * usable);
+
+//-----------------------------------------------------------------------------
+// Images (lower_image.c, lower_image_file.c)
+//-----------------------------------------------------------------------------
+
+/** What an element that names an image came to. */
+typedef enum gvec_lw_image_state {
+  GVEC_LW_IMAGE_READY = 0, ///< `gvec_lw_image` is the image.
+  GVEC_LW_IMAGE_NOTHING,   ///< The image cannot be used and draws nothing (reported as GVEC_DIAG_IMAGE_UNUSABLE).
+  GVEC_LW_IMAGE_REFUSED    ///< The element is refused (reported).
+} gvec_lw_image_state;
+
+/**
+ * A decoded image: the waist's resource (held by the context) and its size, which is its intrinsic size in user units (one per pixel).
+ * The sides are whole numbers kept as doubles, converted once through a signed 32-bit integer (an unsigned one converts through a 64-bit
+ * one on a 32-bit x86 target, which is an x87 instruction).
+ */
+typedef struct gvec_lw_image {
+  const GSHSCENE_Resource * resource;
+  double width, height;
+} gvec_lw_image;
+
+/**
+ * The image the `href` of `element` names: read under the options' image root and the document's limits, decoded and interned. The answer
+ * is kept for the element, so a `use` that draws it again decodes nothing.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_load(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, gvec_lw_image_state * state, gvec_lw_image * out);
+
+/** Free what the context kept of the images (not the resources: the context holds those). */
+GVEC_INTERNAL_API void gvec_lw_image_cache_free(gvec_lw_ctx * ctx);
+
+/** The size of an image whose `width` or `height` is `auto` or missing: the intrinsic size, or the given side with the image's aspect ratio (SVG 2, 5.3). */
+GVEC_INTERNAL_API void gvec_lw_image_auto_size(const gvec_lw_image * image, bool has_width, double * width, bool has_height, double * height);
+
+/**
+ * The map of the image's texels to the user space of the element that draws it in the viewport `x`, `y`, `width`, `height`:
+ * the `preserveAspectRatio` fit of the image into the viewport.
+ *
+ * @return false when the viewport has no size or the result leaves the waist's range.
+ */
+GVEC_INTERNAL_API bool gvec_lw_image_place(const gvec_lw_image * image, const GVEC_Svg_Preserve_Aspect_Ratio * par, double x, double y,
+    double width, double height, GSHGEOM_Map * out);
+
+/** The `image-rendering` of an element as the image paint's two filters (the magnify and the minify filter, a GSHSCENE_Image_Filter each). */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_filters(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, uint32_t * magnify, uint32_t * minify, bool * usable);
+
+/**
+ * The image paint of `image` under `map` and the path a fill of it is, interned (the waist's drawn image, IP14); both held by the context.
+ * `*ok` is false when the element was refused (reported).
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const gvec_lw_image * image,
+    const GSHGEOM_Map * map, uint32_t magnify, uint32_t minify, GSHSCENE_Paint * paint, const GSHSCENE_Resource ** path, bool * ok);
+
+/** What the policy made of an image reference. */
+typedef enum gvec_lw_image_path_status {
+  GVEC_LW_IMAGE_PATH_OK = 0, ///< `*out_path` is the path to open.
+  GVEC_LW_IMAGE_PATH_NO_ROOT, ///< The options name no image root.
+  GVEC_LW_IMAGE_PATH_NETWORK, ///< A scheme or a network-path reference.
+  GVEC_LW_IMAGE_PATH_ABSOLUTE, ///< An absolute path.
+  GVEC_LW_IMAGE_PATH_OUTSIDE, ///< The path leaves the root.
+  GVEC_LW_IMAGE_PATH_INVALID, ///< A character the policy does not follow (a NUL, a control character, a backslash, a bad escape).
+  GVEC_LW_IMAGE_PATH_EMPTY    ///< The reference has no path (only a query or a fragment).
+} gvec_lw_image_path_status;
+
+/**
+ * The lexical half of the resource policy: where the relative `reference` leads from `base` (NULL for `root`), provided that stays inside
+ * `root`. The path is allocated with `allocator`.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_resolve(const GVEC_Allocator * allocator, const char * root, const char * base, const char * reference,
+    gvec_lw_image_path_status * status, char ** out_path);
+
+/** What reading a file came to. */
+typedef enum gvec_lw_image_file_status {
+  GVEC_LW_IMAGE_FILE_OK = 0,
+  GVEC_LW_IMAGE_FILE_UNREADABLE, ///< It does not exist, is not a regular file, or could not be read.
+  GVEC_LW_IMAGE_FILE_OUTSIDE,    ///< Resolved through its links it lies outside the root.
+  GVEC_LW_IMAGE_FILE_TOO_BIG     ///< It has more than `max_bytes`.
+} gvec_lw_image_file_status;
+
+/** The bytes of the file at `path` (resolved by gvec_lw_image_resolve()), at most `max_bytes` of them, once it is shown to be inside `root`. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_read_file(const GVEC_Allocator * allocator, const char * root, const char * path, size_t max_bytes,
+    gvec_lw_image_file_status * status, void ** out, size_t * size);
+
+/** Where an `image` element draws: its viewport, how the image fits it, and the image. */
+typedef struct gvec_lw_image_geometry {
+  double x, y, width, height;           ///< The viewport in the element's user space (the used values: an `auto` side is worked out).
+  GVEC_Svg_Preserve_Aspect_Ratio par;
+  gvec_lw_image image;
+  bool disabled;                        ///< NOTHING because a given width or height is zero or negative (the document's meaning: a notice, not a broken image).
+} gvec_lw_image_geometry;
+
+/**
+ * The geometry of the `image` element of `inst`, reading `x`, `y`, `width`, `height` and `preserveAspectRatio` and loading its image
+ * (not before a size of zero is excluded). `*state` is NOTHING for an element that draws nothing (a size of zero, an image that cannot be
+ * used) and REFUSED for one refused (both reported).
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_geometry_of(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_image_state * state, gvec_lw_image_geometry * out);
+
+/** The box of the viewport of the `image` element of `inst` in the space `map` leads to, merged into `box` (an image with nothing to draw adds nothing). `*ok` is false when it is not known. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_leaf_box(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * ok);
 
 //-----------------------------------------------------------------------------
 // Emitters (lower_emit_list.c, lower_emit_edit.c) and the trace (lower_trace.c)

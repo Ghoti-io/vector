@@ -674,6 +674,81 @@ back so that its top is on the side the line comes from). The pen continues from
 the glyphs are visible (an invisible text counts, as the test of that name says). That is what a context gradient on a `use` and an
 `objectBoundingBox` clip or mask on a group are placed in.
 
+## Images (R1 to R11)
+
+`image` and `feImage` read a raster. `lower_image.c` and `lower_image_file.c` read the bytes, decode them under the document's limits and
+place the picture; `lower_walk.c` draws an `image` element and `lower_filter.c` an `feImage`.
+
+**R1 Sources.** The `href` (or `xlink:href`; `href` wins) is a `data:` URI, base64 or percent-encoded, or a path to a file. The media type is
+never believed: the bytes decide the format (the image library reads PNG, JPEG, GIF, WebP and the rest it supports), so a PNG called
+`image/jpeg`, or with no type, is a PNG. The first frame of an animation is the image. An element of the document as an `href` (`#id`) is not
+an image. A file is read only under the resource policy (R2).
+
+**R2 The resource policy.** The library never reads outside its input except where the caller names a directory. `GVEC_Lower_Options` has
+`image_root`, the directory every file must lie in, and `image_base`, the directory a relative reference is resolved against (the document's
+directory; the root when it is NULL). With no root every file is refused. A reference with a scheme (`http:`, `https:`, `file:`, `javascript:`,
+a Windows drive), a network path (`//host/x`), an absolute path, a path with a backslash, a NUL or another control character (written or
+percent-encoded), or a path that leaves the root is **refused** (`external-reference`), and nothing is fetched from a network. The check is
+lexical first: the reference is cut at its query or fragment, percent-decoded (so `%2e%2e` is `..`), applied to the base's components, and the
+result must have the root's components as a prefix (`/root-other` is not inside `/root`), the root itself not being a file. Where the platform can
+say (POSIX) the file and the root are then resolved through links and the file must still be inside the root and a regular file (a device, a pipe
+or a directory is never opened); the file opened is the resolved one. On Windows the check is the lexical one alone. A file that does not exist,
+or cannot be read, is a broken image (R10), not a refusal: the policy refuses what the document may not name, and a missing file is not that.
+
+**R3 Nested documents.** An image that is an SVG document (the media type, markup after an optional byte order mark and white space, a gzip
+stream, a UTF-16 byte order mark) is **refused by name** (`image`) and not lowered. It would need a second document inside the first, with its
+own style context, its own identifiers and references, a viewport of its own and a lowering whose sites, keys and trace outlive the document
+that owns them; that is a library's worth of design (and security: a nested document must not load anything the outer one may not), and the
+refusal says so rather than drawing something else. A decision, not a limit: the reason retires if nested documents are built. Corpus cases
+of such images are `REFUSED`, never scored as drawn.
+
+**R4 Limits.** `max_image_bytes` bounds the encoded bytes of one image (the decoded payload of a URI, the length of a file, read up to one byte
+past it and no further), `max_image_pixels` the pixels of one decoded image, `max_image_decoded_bytes` the bytes of decoded samples of every
+image one lowering decodes. A hostile size in a small file is refused before anything is allocated: the decoder is given the pixel limit, and
+its one-allocation cap is the budget that is left (never below one mebibyte, so that its working buffers fit), and the raster is held to the
+budget again exactly once it is known. An image is counted when it is decoded, once for each element that names it, however many `use`
+instances draw it (the answer is kept for the element). An image past a limit is **refused** (`limit`); the rest of the document is drawn.
+
+**R5 Orientation.** An Exif orientation is applied, as every browser does for an image (`image-orientation: from-image`, the initial value in CSS
+Images 3): the image library's decode hands back the picture as displayed, so the raster interned is the oriented one and the intrinsic size is its
+size (a picture stored 3 by 2 with orientation 6 is 2 by 3). The reference renderer has no case for it; the browsers' behavior is the authority.
+
+**R6 Color and format.** The waist's image resource keeps the samples as decoded (gray, RGBA, 8 or 16 bits; the decoder expands an indexed picture
+and gives color pictures with an opaque alpha channel); a format it does not carry (a four-ink JPEG) is converted to RGBA at the depth it had.
+The color space is the one the raster states if the waist carries it, and otherwise the target's (sRGB): an embedded ICC profile is not applied.
+
+**R7 Placement.** `x` and `y` are the viewport's corner, `width` and `height` its size; a missing or `auto` side is the image's own (one user unit
+for each pixel), or, with one given, the other side at the image's aspect ratio; a size of zero disables the element (a notice, not a broken image);
+a negative one is invalid, and the style layer then takes the initial value, `auto`. `preserveAspectRatio` is the arithmetic of a `viewBox`
+(`gvec_lw_viewbox_map`, exact): the image's size is the box and the viewport the target. The element's `overflow` clips to the viewport (the user
+agent sheet gives an `image` `overflow: hidden`), and only a **slice** reaches past it, so only a slice is given a clip; `overflow: visible` removes it.
+The bounding box of an image is its viewport, so a clip, a mask or a filter in the units of the box, and a basic shape's reference box, work on it.
+
+**R8 What is drawn.** A fill of the rectangle the paint's window maps to, with an image paint and `PAD` on both axes: the waist's *drawn image*
+(IP14), which a writer recognizes with `gshscene_image_fill_is_draw`. The map of the paint takes texels to the element's user space; the item's map is
+the element's. Opacity, `mix-blend-mode`, `clip-path`, `mask` and `filter` are the groups every element has (`lw_element`). A `use` of an image is an
+instance of a picture whose content is the fill.
+
+**R9 `image-rendering`.** The paint carries two filters, one for an enlargement and one for a reduction (shape-scene IP8). `auto`, `optimizeQuality`
+and `high-quality` enlarge with the cubic (Mitchell) filter, as the reference renderer does, and reduce with the area filter, the exact mean over
+the pixel's preimage (the reference point-samples a reduced image; a mean does not alias); `smooth` enlarges with the linear one; `optimizeSpeed`,
+`crisp-edges` and `pixelated` use the nearest texel both ways. The property's grammar is the union of SVG 2's (`auto | optimizeSpeed |
+optimizeQuality`) and CSS Images 3's, because the pinned CSS has only the second and browsers and the reference read both. It inherits.
+
+**R10 A broken image.** Data that cannot be used (no `href`, an empty one, a payload that is not base64 or percent-encoding, a file that is not there,
+bytes that no decoder reads, a damaged picture, an `href` naming an element) draws nothing and is reported as `GVEC_DIAG_IMAGE_UNUSABLE`, a warning
+whose `detail` says which (`GVEC_Image_Problem`). It is not a refusal: a browser draws nothing for it, and the report and the picture agree. An image that
+is not seen (`display: none`, `visibility: hidden`, opacity zero, inside `defs`) is not read at all.
+
+**R11 `feImage`.** The image of the element's `href` is fitted by `preserveAspectRatio` (default `xMidYMid meet`) into the primitive subregion, read as
+FL4 reads it: the filter region where none of `x`, `y`, `width` and `height` is given, and what is given over the region's edges otherwise (a `width`
+or `height` that is not given runs to the region's right or bottom edge). The map that places the image is the element's map composed with that fit,
+and the subregion is passed to the waist as it was written, so that its clip is the clip of a slice. A result with nothing to draw (no `href`, a
+reference to an id that names nothing, an image that cannot be used, a subregion of no area) is transparent black, a flood, and the element is still
+drawn through the filter. An element of the document as the `href` is **refused** (`filter`): the waist's IMAGE primitive takes an image resource
+and not a picture, and an element drawn into a filter is a picture. The rendering the primitive carries is the magnify filter of R9, which the CPU sink
+does not yet use: it draws the primitive with the nearest texel only (the corpus rows say so).
+
 ## Gates
 
 | Gate | What it refuses |

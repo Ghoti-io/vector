@@ -52,7 +52,7 @@ font-weight	NUMBER	-		G
 glyph-orientation-horizontal	KEYWORD	-		R	yes	0deg	<angle> | <number>	SVG 1.1 section 10.7.3 (deprecated in SVG 2, still a presentation attribute of the CR's list): `<angle>`, initial 0deg, inherited.
 glyph-orientation-vertical	KEYWORD	-		O	yes	auto	auto | <angle> | <number>	The pin's text is not a definition (the property has no grammar); SVG 2 CR Appendix H: `auto | <angle> | <number>`, initial `auto`, inherited.
 height	LENGTH	H		G				
-image-rendering	KEYWORD	-		G				
+image-rendering	KEYWORD	-		O	yes	auto	auto | optimizeSpeed | optimizeQuality | smooth | high-quality | crisp-edges | pixelated	SVG 2 CR, Appendix H: `auto | optimizeSpeed | optimizeQuality`, initial `auto`, inherited; the pin (CSS Images 3) has `auto | smooth | high-quality | crisp-edges | pixelated` and not the SVG keywords, which browsers and the reference renderer still accept, so the value is their union.
 isolation	KEYWORD	-		G				
 letter-spacing	KEYWORD	-		G				
 lighting-color	COLOR	-		G				

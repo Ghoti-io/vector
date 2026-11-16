@@ -111,6 +111,14 @@ typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_REASON_COUNT              ///< One past the last reason; not a reason.
 } GVEC_Lower_Reason;
 
+/** What was wrong with the data of an `image` or `feImage` that drew nothing (the `detail` of GVEC_DIAG_IMAGE_UNUSABLE). The numbers are stable. */
+typedef enum GVEC_Image_Problem {
+  GVEC_IMAGE_NO_DATA = 1,    ///< The `href` is missing or empty, or the `data:` URI's payload is empty or is not valid base64 or percent-encoding.
+  GVEC_IMAGE_UNREADABLE,     ///< A file inside the image root that does not exist, is not a regular file, or could not be read.
+  GVEC_IMAGE_UNDECODABLE,    ///< Bytes that no image decoder reads, or a damaged image.
+  GVEC_IMAGE_NOT_AN_IMAGE    ///< The `href` names an element of the document (`#id`), which is not an image.
+} GVEC_Image_Problem;
+
 /** The name of a reason, for example "gradient"; "unknown" for a value outside the enum. Static. */
 GVEC_API const char * gvec_lower_reason_string(GVEC_Lower_Reason reason);
 
@@ -204,6 +212,21 @@ typedef struct GVEC_Lower_Options {
    * scene the lowering makes.
    */
   const GVEC_Fonts * fonts;
+  /**
+   * Where an `image` or `feImage` may read an image file from (the resource policy): the directory every file must lie in, as a UTF-8
+   * path. NULL for none, and then a reference to a file is refused with GVEC_LOWER_EXTERNAL_REFERENCE; a `data:` URI needs no root.
+   * Only a relative reference is resolved, against `image_base`, and only to a regular file that stays inside this directory once `.`
+   * and `..` are resolved and, where the platform can say (POSIX), once symbolic links are: a reference with a scheme (`http:`,
+   * `https:`, `file:`), a network-path reference (`//host/path`), an absolute path and one that leaves the root are refused with
+   * GVEC_LOWER_EXTERNAL_REFERENCE. Nothing is ever fetched from a network.
+   * Both paths are relative to the working directory or both absolute; `\` is not a separator in a reference (it is refused).
+   */
+  const char * image_root;
+  /**
+   * The directory a relative image reference is resolved against, usually the directory of the document: NULL for `image_root`.
+   * It must lie in `image_root`; one that does not refuses every reference to a file.
+   */
+  const char * image_base;
   uint8_t _reserved[8];                  ///< Zero.
 } GVEC_Lower_Options;
 

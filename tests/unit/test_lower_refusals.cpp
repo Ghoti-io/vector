@@ -35,14 +35,15 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"clip-path shape", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\" style=\"clip-path: inset(1px)\"/><rect width=\"2\" height=\"2\"/></clipPath></defs>\n<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#c)\"/>", "path", 2, 0},
       {"clip-path group", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<g clip-path=\"url(#c)\"><path d=\"M0 0H4V4H0Z\"/></g>", "g", 2, 0},
       {"mask", GVEC_LOWER_MASK, "\n<path d=\"M0 0H4V4H0Z\" mask=\"url(other.svg#k)\"/>", "path", 2, 0},
-      {"image", GVEC_LOWER_IMAGE, "\n<image width=\"4\" height=\"4\"/>", "image", 2, 0},
-      {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"><feImage href=\"#x\"/></filter></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
+      {"image", GVEC_LOWER_IMAGE, "\n<image width=\"4\" height=\"4\" href=\"data:image/svg+xml,%3Csvg/%3E\"/>", "image", 2, 0},
+      {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
       {"filter list that mixes a function and a reference", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"blur(2px) url(#nothing)\"/>", "path", 2, 0},
       {"text", GVEC_LOWER_TEXT, "\n<text>hello</text>", "text", 2, 0},
       {"context paint", GVEC_LOWER_CONTEXT_PAINT, "<defs><rect id=\"r\" width=\"4\" height=\"4\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs><use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>\n<use id=\"u1\" href=\"#u2\" stroke=\"green\" fill=\"blue\"/>", "rect", 1, 0},
       {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/>", "path", 2, 0},
       {"foreignObject", GVEC_LOWER_FOREIGN_OBJECT, "\n<foreignObject width=\"4\" height=\"4\"/>", "foreignObject", 2, 0},
       {"external reference", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<use href=\"other.svg#x\"/>", "use", 2, 0},
+      {"external image", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<image width=\"4\" height=\"4\" href=\"https://example.com/a.png\"/>", "image", 2, 0},
       {"data reference", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<use href=\"data:image/svg+xml;utf8,&lt;svg/&gt;\"/>", "use", 2, 0},
       {"cycle", GVEC_LOWER_REFERENCE_CYCLE, "\n<use id=\"u\" href=\"#u\"/>", "use", 2, 0},
       {"transform box", GVEC_LOWER_TRANSFORM_BOX, "\n<path d=\"M0 0H4V4H0Z\" style=\"transform: translate(5%, 0); transform-box: fill-box\"/>", "path", 2, 0},
@@ -85,7 +86,7 @@ TEST(LowerRefusals, TheExpansionLimitIsReportedAtTheUse) {
 TEST(LowerRefusals, ASinkSeenElementIsRefusedOnceHoweverOftenItIsDrawn) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><filter id=\"g\"><feImage href=\"#x\"/></filter><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
+               "<defs><filter id=\"g\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
       l);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
 }

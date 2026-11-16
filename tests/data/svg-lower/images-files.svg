@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- Images by file (the resource policy; written by tools/gen-lower-fixtures.py): a file beside the images directory is read, and what leaves the
+     directory the gate allows, names a network, or is not there is not. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#ecf0f1"/>
+  <image x="2" y="2" width="28" height="20" image-rendering="optimizeSpeed" href="../images/red-blue-2x1.png"/>
+  <image x="34" y="2" width="28" height="20" image-rendering="optimizeSpeed" href="../images/red-blue-2x1%20spaced.png"/>
+  <image x="2" y="30" width="28" height="12" image-rendering="optimizeSpeed" xlink:href="../images/rgba-3x2.png"/>
+  <image x="34" y="30" width="28" height="12" href="../../secret.png"/>
+  <image x="2" y="48" width="12" height="12" href="https://example.com/a.png"/>
+  <image x="20" y="48" width="12" height="12" href="../images/missing.png"/>
+  <image x="38" y="48" width="12" height="12" href="../images/document.svg"/>
+</svg>

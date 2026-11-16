@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- feImage (FL17; written by tools/gen-lower-fixtures.py from tests/data/images): an image fitted into the filter region, into a subregion, sliced,
+     and under the transform of its element. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#ecf0f1"/>
+  <filter id="fit" x="0" y="0" width="1" height="1"><feImage image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAE0lEQVR42mP4z8DAAMX///8HYwBKyQj4CDRrHAAAAABJRU5ErkJggg=="/></filter>
+  <filter id="part" x="0" y="0" width="1" height="1"><feImage x="36" y="4" width="8" height="6" preserveAspectRatio="none" image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAGklEQVR42mP4z8DwHwgbQBQQAwHD/wYgwQAAkBUL9lACXZcAAAAASUVORK5CYII="/></filter>
+  <filter id="slice" x="0" y="0" width="1" height="1"><feImage preserveAspectRatio="xMinYMin slice" image-rendering="optimizeSpeed" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAE0lEQVR42mP4z8DAAMX///8HYwBKyQj4CDRrHAAAAABJRU5ErkJggg=="/></filter>
+  <rect x="2" y="2" width="28" height="20" fill="red" filter="url(#fit)"/>
+  <rect x="34" y="2" width="12" height="12" fill="red" filter="url(#part)" transform="translate(-2 0)"/>
+  <rect x="2" y="30" width="20" height="14" fill="red" filter="url(#slice)"/>
+  <rect x="34" y="30" width="20" height="14" fill="red" filter="url(#fit)" transform="translate(4 4) scale(0.8)"/>
+</svg>

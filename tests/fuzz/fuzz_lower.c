@@ -46,6 +46,7 @@
 #include <string.h>
 
 #include <ghoti.io/shape-scene/dump_sink.h>
+#include <ghoti.io/shape-scene/filter.h>
 #include <ghoti.io/shape-scene/edit.h>
 #include <ghoti.io/shape-scene/list.h>
 #include <ghoti.io/shape-scene/report.h>
@@ -83,6 +84,9 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 #define SEEN_PICTURE 16u
 #define SEEN_PLACED 32u
 #define SEEN_SINK_REFUSED 64u
+#define SEEN_IMAGE 128u
+#define SEEN_UNUSABLE 256u
+#define SEEN_FILTER_IMAGE 512u
 
 int gvec_fuzz_unreached(void) {
   static const struct {
@@ -91,7 +95,8 @@ int gvec_fuzz_unreached(void) {
   } k_expected[] = {{SEEN_NO_DOC, "a document that does not load"}, {SEEN_DRAWN, "a document that draws something"},
       {SEEN_REFUSED, "an element refused"}, {SEEN_LIMIT, "an element refused for the scene's limits"},
       {SEEN_PICTURE, "a use that is a picture"}, {SEEN_PLACED, "a report entry placed at an element"},
-      {SEEN_SINK_REFUSED, "an item the sink refused"}};
+      {SEEN_SINK_REFUSED, "an item the sink refused"}, {SEEN_IMAGE, "an image drawn"},
+      {SEEN_UNUSABLE, "an image that could not be used"}, {SEEN_FILTER_IMAGE, "a feImage drawn"}};
   int missing = 0;
   for (size_t i = 0; i < sizeof k_expected / sizeof k_expected[0]; i++) {
     if (!(gvec_fuzz_seen & k_expected[i].bit)) {
@@ -257,6 +262,9 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     options.foreground.rgba[0] = 0.25;
   }
   options.fonts = fuzz_fonts();
+  /* The images of the fixtures are the only files an input may name: the root is their directory (the run's directory is the library's). */
+  options.image_root = "tests/data/images";
+  options.image_base = "tests/data/images";
   options.trace = list_trace;
   check(gvec_doc_lower_list(doc, &options, list, &by_list) == GVEC_OK, "lowering into a list is OK");
   check(gshscene_list_close(list) == GSHSCENE_OK, "the list closes");
@@ -268,6 +276,9 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     check(by_list.items[i].code == by_edit.items[i].code && by_list.items[i].detail == by_edit.items[i].detail &&
             by_list.items[i].line == by_edit.items[i].line,
         "both report the same diagnostic at the same place");
+    if (by_list.items[i].code == GVEC_DIAG_IMAGE_UNUSABLE) {
+      gvec_fuzz_seen |= SEEN_UNUSABLE;
+    }
     if (by_list.items[i].code == GVEC_DIAG_LOWER_REFUSED) {
       gvec_fuzz_seen |= SEEN_REFUSED;
       if (by_list.items[i].detail == (uint32_t) GVEC_LOWER_LIMIT) {
@@ -290,6 +301,19 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     check(gshscene_list_item(list, i, &item) == GSHSCENE_OK, "an item is read");
     if (item->kind == GSHSCENE_ITEM_INSTANCE) {
       gvec_fuzz_seen |= SEEN_PICTURE;
+    }
+    if (item->kind == GSHSCENE_ITEM_FILL && item->paint.kind == GSHSCENE_PAINT_IMAGE) {
+      gvec_fuzz_seen |= SEEN_IMAGE;
+    }
+    if (item->kind == GSHSCENE_ITEM_GROUP_PUSH && item->group.filter) {
+      GSHSCENE_Filter filter;
+      if (gshscene_resource_filter(item->group.filter, &filter) == GSHSCENE_OK) {
+        for (size_t k = 0; k < filter.primitive_count; k++) {
+          if (filter.primitives[k].kind == GSHSCENE_FILTER_IMAGE) {
+            gvec_fuzz_seen |= SEEN_FILTER_IMAGE;
+          }
+        }
+      }
     }
   }
   render_and_map(list, list_trace, NULL);

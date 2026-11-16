@@ -14,6 +14,7 @@
 # deflate stream (zlib with wbits -15), so every header byte is the one written
 # below: mtime 0, no name unless a fixture asks for one.
 
+import base64
 import os
 import struct
 import sys
@@ -355,6 +356,25 @@ def lower_corpus():
     c["many-shapes-nodes"] = seed('<svg %s>%s</svg>' % (ns, '<path d="M0 0H4V4Z"/>' * 40), 6, 3)
     c["huge-coordinates"] = seed('<svg %s><path d="M 1e308 0 l 1e308 0 l 0 1e308 z"/><svg x="1e308" width="1e308" height="10"><path d="M0 0H4V4Z"/></svg><g transform="scale(1e30)"><g transform="scale(1e30)"><g transform="scale(1e30)"><path d="M0 0H1V1Z"/></g></g></g></svg>' % ns)
     c["refusals"] = seed('<svg %s><path d="M0 0A5 5 0 0 1 9 9"/><rect width="4" height="4"/><path d="M0 0H4V4Z" stroke="red"/><text>t</text><image/><foreignObject/><video/><use href="other.svg#x"/><use id="u" href="#u"/><path d="M0 0H4V4Z" filter="url(#f)" mask="url(#m)" clip-path="url(#c)" style="mix-blend-mode: multiply"/></svg>' % ns)
+    # Images: the resource policy against hostile references (files of tests/data/images, the root the fuzzer lowers under), sizes at the
+    # edge of what the waist carries, and the filter primitive with a subregion at the edge.
+    c["images-policy"] = seed('<svg %s>%s</svg>' % (ns, "".join('<image width="4" height="4" href="%s"/>' % h for h in (
+        "red-blue-2x1.png", "../red-blue-2x1.png", "%2e%2e/red-blue-2x1.png", "sub/../../red-blue-2x1.png", "/etc/hostname", "//host/a.png", "file:///a.png",
+        "https://example.com/a.png", "a%5cb.png", "a.png%00", "red-blue-2x1.png%0a", "red-blue-2x1%20spaced.png", "red-blue-2x1.png?x#y", "document.svg",
+        "empty.bin", "not-an-image.bin", "sparse-20000x20000.png", "exif-6.png", "photo-8x8.jpg", "animated-2x2.gif", "lossless-2x2.webp", ".", "..", "#r", "")) + "<rect id='r' width='1' height='1'/>"))
+    png = base64.b64encode(open(os.path.join(ROOT, "tests", "data", "images", "red-blue-2x1.png"), "rb").read()).decode()
+    uri = "data:image/png;base64," + png
+    c["images-sizes"] = seed('<svg %s>%s</svg>' % (ns, "".join('<image %s href="%s"/>' % (a, uri) for a in (
+        'width="1e308" height="1e308"', 'width="1e-300" height="1e-300"', 'width="auto" height="auto"', 'width="1e308"', 'height="1e-300"', 'x="1e308" y="-1e308" width="4"',
+        'width="0" height="4"', 'width="-1" height="4"', 'width="50%" height="50%"', 'transform="scale(1e30)" width="4"', 'transform="scale(0)" width="4"',
+        'preserveAspectRatio="xMaxYMax slice" width="4" height="1e-30"', 'preserveAspectRatio="none" width="1e30" height="4"', 'overflow="visible" preserveAspectRatio="xMinYMin slice" width="9" height="1"',
+        'opacity="0.5" image-rendering="optimizeSpeed" width="4"', 'visibility="hidden" width="4"', 'display="none" width="4"'))))
+    c["images-filter"] = seed('<svg %s><defs><filter id="f"><feImage x="1e308" width="1e308" href="%s"/></filter><filter id="g" primitiveUnits="objectBoundingBox"><feImage x="-1e30" y="0.5" width="1e-30" height="2" preserveAspectRatio="xMaxYMid slice" href="%s"/></filter>'
+                              '<filter id="h"><feImage href="#r"/></filter><filter id="i"><feImage/><feImage href="" result="x"/><feOffset in="x" dx="1"/></filter></defs><rect id="r" width="4" height="4" filter="url(#f)"/>'
+                              '<rect width="4" height="4" filter="url(#g)"/><rect width="4" height="4" filter="url(#h)"/><rect width="4" height="4" filter="url(#i)" transform="rotate(30)"/></svg>' % (ns, uri, uri))
+    c["image-nested-in-picture"] = seed('<svg %s><defs><pattern id="p" width="4" height="4" patternUnits="userSpaceOnUse"><image width="4" height="4" href="%s"/></pattern><mask id="m"><image width="8" height="8" href="%s"/></mask>'
+                                        '<marker id="k" markerWidth="4" markerHeight="4"><image width="4" height="4" href="%s"/></marker></defs><rect width="9" height="9" fill="url(#p)" mask="url(#m)"/>'
+                                        '<path d="M2 2L9 9" stroke="black" marker-end="url(#k)"/><use href="#i"/><image id="i" width="4" height="4" clip-path="circle(40%%)" href="%s"/></svg>' % (ns, uri, uri, uri, uri))
     c["not-svg"] = seed(b"this is not xml")
     c["short"] = bytes([0x0f])
     return c
