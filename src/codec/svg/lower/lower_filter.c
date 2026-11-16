@@ -1591,9 +1591,9 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
   return GVEC_OK;
 }
 
-/** The filter of a list of CSS filter functions: an `AUTO` region and the functions' primitives in order, in sRGB. */
+/** The filter of the CSS filter functions `v->references[first .. first + count)`: an `AUTO` region and the functions' primitives in order, in sRGB. */
 static GVEC_Result make_function_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * local, const GVEC_Svg_Style_Value * v,
-    gvec_lw_filter_state * state, const GSHSCENE_Resource ** out) {
+    size_t first, size_t count, gvec_lw_filter_state * state, const GSHSCENE_Resource ** out) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   *state = GVEC_LW_FILTER_REFUSED;
   *out = NULL;
@@ -1616,7 +1616,7 @@ static GVEC_Result make_function_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instan
   }
   GVEC_Result r = GVEC_OK;
   bool ok = true;
-  for (size_t i = 0; r == GVEC_OK && ok && !b.refused && i < v->reference_count; i++) {
+  for (size_t i = first; r == GVEC_OK && ok && !b.refused && i < first + count; i++) {
     r = css_function(&b, v->references[i].text, &ok);
   }
   const GSHSCENE_Resource * resource = NULL;
@@ -1651,12 +1651,18 @@ static GVEC_Result make_function_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instan
   return r;
 }
 
+/** One step of a filter list: a `url()` of a filter element, or a run of CSS functions (made into one filter resource). */
+typedef struct filter_step {
+  bool is_url;
+  size_t first;
+  size_t count;
+} filter_step;
+
 GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_filter_state * state,
-    gvec_lw_node ** out, gvec_lw_node ** inner) {
+    gvec_lw_filter_set * set) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   *state = GVEC_LW_FILTER_NONE;
-  *out = NULL;
-  *inner = NULL;
+  memset(set, 0, sizeof *set);
   GVEC_Svg_Style_Value v;
   bool usable;
   GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_FILTER, GVEC_LOWER_STYLE, &v, &usable);
@@ -1670,32 +1676,45 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   if (v.reference_count == 0) {
     return GVEC_OK;
   }
-  bool all_functions = true, any_function = false;
+  /* A list is applied left to right, each filter to the result of the one before (Filter Effects 1): the steps are nested groups, the
+   * first innermost.  A run of functions is one step, since one resource holds them in order. */
+  filter_step steps[GVEC_LW_FILTER_LIST_MAX];
+  size_t step_count = 0;
   for (size_t i = 0; i < v.reference_count; i++) {
-    all_functions = all_functions && !v.references[i].is_url;
-    any_function = any_function || !v.references[i].is_url;
-  }
-  const GVEC_Svg_Style_Value filter_value = v;
-  const GVEC_Svg_Element * target = NULL;
-  if (any_function && !all_functions) {
-    *state = GVEC_LW_FILTER_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter list that mixes functions and url() references is not lowered yet");
-  }
-  if (!any_function) {
-    if (v.reference_count != 1 || !v.references[0].is_url || !v.references[0].local) {
-      *state = GVEC_LW_FILTER_REFUSED;
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a list of filters or a filter of another document is not lowered yet");
+    if (!v.references[i].is_url && step_count && !steps[step_count - 1].is_url) {
+      steps[step_count - 1].count++;
+      continue;
     }
-    const GVEC_Svg_Style_Reference * ref = &v.references[0];
-    target = ref->target;
+    if (step_count == GVEC_LW_FILTER_LIST_MAX) {
+      *state = GVEC_LW_FILTER_REFUSED;
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the filter list is longer than the lowering nests");
+    }
+    steps[step_count].is_url = v.references[i].is_url;
+    steps[step_count].first = i;
+    steps[step_count].count = 1;
+    step_count++;
+  }
+  const GVEC_Svg_Element * targets[GVEC_LW_FILTER_LIST_MAX] = {NULL};
+  for (size_t k = 0; k < step_count; k++) {
+    if (!steps[k].is_url) {
+      continue;
+    }
+    const GVEC_Svg_Style_Reference * ref = &v.references[steps[k].first];
+    if (!ref->local) {
+      *state = GVEC_LW_FILTER_REFUSED;
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter of another document is not lowered");
+    }
+    const GVEC_Svg_Element * target = ref->target;
     if (!target && ref->cut && ref->id) {
       target = gvec_svg_find_by_id(ctx->document, ref->id);
     }
     if (!target || gvec_svg_element_kind(target) != GVEC_SVG_KIND_FILTER) {
-      *state = GVEC_LW_FILTER_ALL; /* A reference to what is no filter: the element is not rendered. */
+      *state = GVEC_LW_FILTER_ALL; /* A reference to what is no filter: the element is not rendered, whatever else the list holds. */
       return GVEC_OK;
     }
+    targets[k] = target;
   }
+  const GVEC_Svg_Style_Value filter_value = v;
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TRANSFORM, GVEC_LOWER_STYLE, &v, &usable);
   if (r != GVEC_OK || !usable) {
     *state = GVEC_LW_FILTER_REFUSED;
@@ -1710,7 +1729,6 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     *state = GVEC_LW_FILTER_REFUSED;
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
-  const GSHSCENE_Resource * resource = NULL;
   fmap probe;
   const bool plain = fmap_make(&local, &probe);
   GSHGEOM_Map identity;
@@ -1719,11 +1737,18 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   }
   /* A rotated or skewed element is filtered in a picture of its own, whose space is the element's: the filter is then in that space and the
    * sink filters in canonical space (D-FL8); an axis-aligned one is filtered in the list's through its map. */
-  r = any_function ? make_function_filter(ctx, inst, plain ? &local : &identity, &filter_value, state, &resource)
-                   : make_filter(ctx, inst, plain ? &local : &identity, target, state, &resource);
-  if (r != GVEC_OK || *state != GVEC_LW_FILTER_NODE) {
-    return r;
+  const GSHSCENE_Resource * resources[GVEC_LW_FILTER_LIST_MAX];
+  for (size_t k = 0; k < step_count; k++) {
+    const GSHGEOM_Map * at = plain ? &local : &identity;
+    gvec_lw_filter_state one;
+    r = steps[k].is_url ? make_filter(ctx, inst, at, targets[k], &one, &resources[k])
+                        : make_function_filter(ctx, inst, at, &filter_value, steps[k].first, steps[k].count, &one, &resources[k]);
+    if (r != GVEC_OK || one != GVEC_LW_FILTER_NODE) {
+      *state = one;
+      return r;
+    }
   }
+  *state = GVEC_LW_FILTER_NODE;
   if (!plain) {
     gvec_lw_node * use = gvec_lw_new_node(ctx, GVEC_LW_USE);
     if (!use) {
@@ -1737,24 +1762,23 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     if (use->site == GVEC_LW_NO_SITE || use->container_site == GVEC_LW_NO_SITE) {
       return GVEC_ERR_OOM;
     }
-    *out = use;
+    set->outer = use;
   }
-  gvec_lw_node * g = gvec_lw_new_node(ctx, GVEC_LW_GROUP);
-  if (!g) {
-    return GVEC_ERR_OOM;
-  }
-  g->opacity = 1;
-  g->filter = resource;
-  g->key = gvec_lw_key(e->key, hash2(ctx->chain, 0), GVEC_LW_ROLE_FILTER);
-  g->site = gvec_lw_new_site(ctx, e, g->key);
-  if (g->site == GVEC_LW_NO_SITE) {
-    return GVEC_ERR_OOM;
-  }
-  if (plain) {
-    *out = g;
-  }
-  else {
-    *inner = g;
+  /* The last step is the outermost group, which carries the opacity; the first is innermost, which holds the content. */
+  for (size_t j = 0; j < step_count; j++) {
+    const size_t k = step_count - 1 - j;
+    gvec_lw_node * g = gvec_lw_new_node(ctx, GVEC_LW_GROUP);
+    if (!g) {
+      return GVEC_ERR_OOM;
+    }
+    g->opacity = 1;
+    g->filter = resources[k];
+    g->key = gvec_lw_key(e->key, hash2(ctx->chain, j == 0 ? 0 : 16u + (uint64_t) j), GVEC_LW_ROLE_FILTER);
+    g->site = gvec_lw_new_site(ctx, e, g->key);
+    if (g->site == GVEC_LW_NO_SITE) {
+      return GVEC_ERR_OOM;
+    }
+    set->groups[set->count++] = g;
   }
   return GVEC_OK;
 }

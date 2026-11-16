@@ -749,7 +749,7 @@ drawn through the filter. An element of the document as the `href` is **refused*
 and not a picture, and an element drawn into a filter is a picture. The rendering the primitive carries is the magnify filter of R9, which the CPU sink
 does not yet use: it draws the primitive with the nearest texel only (the corpus rows say so).
 
-## A filter on an element that paints nothing (X1 to X5)
+## A filter on an element that paints nothing (X1 to X6)
 
 A filter is applied to what its element renders (Filter Effects 1, 3), and an element with no visible paint renders an empty image. The
 filter's primitives that need no source (`feFlood`, `feImage`, `feTurbulence`, a lighting over a flood, `feTile` of a flood) still draw. The
@@ -775,10 +775,15 @@ the filter region is made before the element's content is walked, from the eleme
 that decides whether the shape is rendered is read only for a filtered shape that has drawn nothing, so that an unfiltered or a painted shape is
 lowered exactly as before (no resource is interned that nothing asked for, and no golden changed).
 
-**X5 What is left as it was.** A filtered `text` or `image` that draws nothing (no glyphs, a picture that cannot be used) still has no filtered
+**X5 What is left as it was.** A filtered `text` or `image` that draws nothing (no glyphs, a picture that cannot be used) has no filtered
 result: whether such an element is rendered is the element's own rule (R10 for an image, which is reported), and no corpus case or reference
-renderer settles it. A filter in the units of the box on a `use` is unchanged and has no result, painted or not: the box of a container is read from its element's
-children, and a `use` has none in the document (its target is instantiated), so the box is empty. That is a gap of its own, not of this rule.
+renderer settles it. That is a decision, not a gap: an element that renders no content has no box for the filter's units and is not rendered in
+the sense of SVG 2, 11.4, as a shape with no geometry is not.
+
+**X6 A `use` has the box of what it draws.** A filter in the units of the box (and the default region) on a `use`, and on a group that holds one,
+takes the box of the referent's instance, moved by the `use`'s `x` and `y` and the referent's own transform, in the `use`'s own space. A `use` of
+nothing or of an element `display` removes adds nothing. The box of a `use` of a viewport (a `symbol` or a nested `svg`) is still not known,
+and a clip or filter in the box units on it is refused as before.
 
 ## Gates
 

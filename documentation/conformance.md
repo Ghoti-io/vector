@@ -175,8 +175,8 @@ row is that case. The pair is a first setting and is expected to be refined as t
 
 ## The score today
 
-At the head of the images work the score file reads **1,445 of 1,679 (86.06%)** determined correct: 560 `PASS` (33.35%), 24 `ACCEPTED`, 711 `EDGE`,
-150 `ORACLE_AGREES`; 138 `ORACLE_SPLIT` and 8 `DEFECT` among the 1,007 `FAIL`s, 66 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The paragraph and the
+At the head of the filter-list work the score file reads **1,458 of 1,679 (86.84%)** determined correct: 563 `PASS` (33.53%), 24 `ACCEPTED`, 721 `EDGE`,
+150 `ORACLE_AGREES`; 137 `ORACLE_SPLIT` and no `DEFECT` among the 1,008 `FAIL`s, 62 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The paragraph and the
 table that follow are an older reading, kept for their account of what each feature moved; `make conformance` writes the current one.
 
 Images (`image` of a raster in a `data:` URI or a file under the caller's image root, `preserveAspectRatio`, `image-rendering`, an Exif orientation) and

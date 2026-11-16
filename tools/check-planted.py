@@ -547,7 +547,7 @@ PLANTS = [
     ("F7", "src/codec/svg/lower/lower_filter.c", "double dev[2] = {len[2] / 2.0, len[2] / 2.0};", "double dev[2] = {len[2], len[2]};", "a drop-shadow's blur radius is the deviation, not twice it"),
     ("F8", "src/codec/svg/lower/lower_filter.c", "  p->color_space = GSHSCENE_FILTER_SPACE_SRGB; /* the functions work in sRGB */\n", "", "a filter function works in linearRGB"),
     # A filter on an element that paints nothing (lower_walk.c): the element is rendered, so its filtered group is drawn; one that is not rendered has none.
-    ("F9", W, "    (filter_inner ? filter_inner : filter_group)->content = true;\n", "", "an element that paints nothing loses its filter, so a flood or a tile of one is not drawn"),
+    ("F9", W, "    filter_content->content = true;\n", "    (void) filter_content;\n", "an element that paints nothing loses its filter, so a flood or a tile of one is not drawn"),
     ("F10", W, "if (filtered == GVEC_LW_FILTER_NODE && ctx->filter_rendered) {", "if (filtered == GVEC_LW_FILTER_NODE) {",
      "every filtered element has its group drawn, rendered or not (display none, opacity zero, a rect of no width)"),
     ("F11", W, "  if (geometry == GVEC_LW_GEOMETRY_PATH) {\n    mark_rendered(ctx, inst);", "  if (true) {\n    mark_rendered(ctx, inst);",
@@ -620,6 +620,18 @@ PLANTS = [
      'an image has no reference box for a basic shape'),
     ('IM29', 'src/codec/svg/style/svg_prop_tables.c', 'auto | optimizeSpeed | optimizeQuality | smooth | high-quality | crisp-edges | pixelated', 'auto | smooth | high-quality | crisp-edges | pixelated',
      'the SVG keywords of image-rendering are not read'),
+]
+
+PLANTS += [
+    # The box of a `use` (design X6) and the list of filters (nested groups, the first innermost).
+    ("X6a", CL, "gshgeom_map_translate(2, xy[0], xy[1], 0, &shift)", "gshgeom_map_translate(2, 0 * xy[0], 0 * xy[1], 0, &shift)", "the x and y of a use are left out of its box"),
+    ("X6b", CL, "  if (gvec_lw_keyword_is(&display, \"none\") || gvec_svg_element_conditional_false(gvec_svg_instance_element(clone))) {", "  if (0) {", "a use of an element that display removes still has a box"),
+    ("X6c", CL, "    return use_box(ctx, inst, &identity, box, known); /* in the use's own space: its `x` and `y` are inside it */", "    return GVEC_OK;", "a filter in the units of the box of a use has an empty box and is not rendered"),
+    ("X6d", CL, "    if (use_leaf) {\n      bool ok;\n      r = use_box(ctx, ci, &inner, box, &ok);", "    if (use_leaf) {\n      bool ok;\n      r = use_box(ctx, ci, map, box, &ok);", "a use in a group is boxed without its own transform"),
+    ("FL1", "src/codec/svg/lower/lower_filter.c", "    const size_t k = step_count - 1 - j;", "    const size_t k = j;", "a list of filters is applied last to first"),
+    ("FL2", W, "      filter.groups[0]->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);", "      filter.groups[filter.count - 1]->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);", "the opacity of a filtered element with a list is applied inside the first filter, not to the result of the last"),
+    ("FL3", "src/codec/svg/lower/lower_filter.c", "    if (!v.references[i].is_url && step_count && !steps[step_count - 1].is_url) {", "    if (0) {", "each filter function of a list is a filter group of its own"),
+    ("FL4", "src/codec/svg/lower/lower_filter.c", "    g->key = gvec_lw_key(e->key, hash2(ctx->chain, j == 0 ? 0 : 16u + (uint64_t) j), GVEC_LW_ROLE_FILTER);", "    g->key = gvec_lw_key(e->key, hash2(ctx->chain, 0), GVEC_LW_ROLE_FILTER);", "the groups of a list of filters share one key"),
 ]
 
 # The root check of L8 is unreachable while the probe is correct (the probe

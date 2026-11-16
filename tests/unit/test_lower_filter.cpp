@@ -33,6 +33,8 @@
 #include <cmath>
 #include <string>
 
+#include <vector>
+
 using namespace gvec_test;
 
 namespace {
@@ -264,9 +266,6 @@ TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
     EXPECT_NE(l.Refusal(GVEC_LOWER_FILTER), nullptr) << filter;
     EXPECT_EQ(l.Items(), (size_t) 0) << filter;
   }
-  Lowered fn;
-  LowerSvg(Svg("width=\"40\" height=\"40\"", "<rect width=\"4\" height=\"4\" style=\"filter: blur(2px) url(#f)\"/>"), fn);
-  EXPECT_NE(fn.Refusal(GVEC_LOWER_FILTER), nullptr) << "a list that mixes functions and url()";
   Lowered turned;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(30)\" filter=\"url(#f)\""), turned);
   EXPECT_EQ(turned.Refusals(), (size_t) 0) << "a rotated element is filtered in a picture of its own";
@@ -278,6 +277,69 @@ TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   Lowered quarter;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(90)\" filter=\"url(#f)\""), quarter);
   EXPECT_EQ(quarter.Refusals(), (size_t) 0) << "a quarter turn is axis aligned";
+}
+
+TEST(LowerFilter, AListOfFiltersIsNestedGroupsTheFirstInnermost) {
+  const std::string two = "<filter id=\"a\"><feFlood flood-color=\"red\"/></filter><filter id=\"b\"><feGaussianBlur stdDeviation=\"2\"/></filter>";
+  Lowered l;
+  LowerSvg(Doc(two, "<rect width=\"10\" height=\"10\" fill=\"blue\" filter=\"url(#a) url(#b)\" opacity=\"0.5\""), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  std::vector<const GSHSCENE_Item *> groups;
+  for (size_t i = 0; i < l.Items(); i++) {
+    if (l.Item(i).kind == GSHSCENE_ITEM_GROUP_PUSH) {
+      groups.push_back(&l.Item(i));
+    }
+  }
+  ASSERT_EQ(groups.size(), (size_t) 2);
+  GSHSCENE_Filter outer, inner;
+  ASSERT_EQ(gshscene_resource_filter(groups[0]->group.filter, &outer), GSHSCENE_OK);
+  ASSERT_EQ(gshscene_resource_filter(groups[1]->group.filter, &inner), GSHSCENE_OK);
+  EXPECT_EQ(outer.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_GAUSSIAN_BLUR) << "the second filter is applied last, so outermost";
+  EXPECT_EQ(inner.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_FLOOD) << "the first is applied to the element";
+  EXPECT_DOUBLE_EQ(groups[0]->group.opacity, 0.5) << "the opacity is applied to the final result";
+  EXPECT_DOUBLE_EQ(groups[1]->group.opacity, 1.0);
+}
+
+TEST(LowerFilter, AListMixingFunctionsAndUrlsKeepsRunsOfFunctionsInOneFilter) {
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"a\"><feGaussianBlur stdDeviation=\"1\"/></filter>",
+               "<rect width=\"10\" height=\"10\" filter=\"grayscale(1) sepia(0.5) url(#a) opacity(0.5)\""),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  std::vector<GSHSCENE_Filter> filters;
+  for (size_t i = 0; i < l.Items(); i++) {
+    if (l.Item(i).kind == GSHSCENE_ITEM_GROUP_PUSH && l.Item(i).group.filter) {
+      GSHSCENE_Filter f;
+      ASSERT_EQ(gshscene_resource_filter(l.Item(i).group.filter, &f), GSHSCENE_OK);
+      filters.push_back(f);
+    }
+  }
+  ASSERT_EQ(filters.size(), (size_t) 3) << "functions, the reference, functions";
+  EXPECT_EQ(filters[0].primitive_count, 1u) << "opacity()";
+  EXPECT_EQ(filters[1].primitives[0].kind, (uint32_t) GSHSCENE_FILTER_GAUSSIAN_BLUR);
+  EXPECT_EQ(filters[2].primitive_count, 2u) << "grayscale() and sepia() are one filter";
+}
+
+TEST(LowerFilter, AnInvalidReferenceInAListLeavesTheElementUnrendered) {
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"a\"><feGaussianBlur stdDeviation=\"1\"/></filter>",
+               "<rect width=\"10\" height=\"10\" filter=\"url(#a) url(#missing)\""),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(l.Items(), (size_t) 0);
+}
+
+TEST(LowerFilter, AListOnATurnedElementNestsInsideThePictureOfItsOwn) {
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"a\"><feOffset dx=\"1\"/></filter><filter id=\"b\"><feOffset dy=\"1\"/></filter>",
+               "<rect width=\"10\" height=\"10\" transform=\"rotate(30)\" filter=\"url(#a) url(#b)\""),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  bool instance = false;
+  for (size_t i = 0; i < l.Items(); i++) {
+    instance = instance || l.Item(i).kind == GSHSCENE_ITEM_INSTANCE;
+  }
+  EXPECT_TRUE(instance);
 }
 
 TEST(LowerFilter, EachCssFilterFunctionIsLowered) {
@@ -513,6 +575,51 @@ TEST(LowerFilter, AUseOfAnUnpaintedShapeIsFilteredAndTheClipAndTheMaskAreAroundT
   EXPECT_NE(c.Item(1).group.filter, nullptr);
   EXPECT_EQ(c.Item(2).kind, GSHSCENE_ITEM_GROUP_POP);
   EXPECT_EQ(c.Item(3).kind, GSHSCENE_ITEM_CLIP_POP);
+}
+
+TEST(LowerFilter, AFilterInTheUnitsOfTheBoxOnAUseTakesTheBoxOfWhatTheUseDraws) {
+  Lowered l;
+  // the box of the use is the rectangle's, moved by x and y and then by the referent's own transform: (2, 3, 10, 10) to (12, 23)
+  LowerSvg(Svg("width=\"60\" height=\"60\"",
+               "<defs><filter id=\"f\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
+               "<rect id=\"r\" x=\"2\" y=\"3\" width=\"10\" height=\"10\" fill=\"red\"/></defs>"
+               "<use href=\"#r\" x=\"10\" y=\"20\" filter=\"url(#f)\"/>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f)) << "the use has a filter result: its box is known";
+  EXPECT_DOUBLE_EQ(f.region[0], 11.0);  // 12 - 10% of 10
+  EXPECT_DOUBLE_EQ(f.region[1], 22.0);  // 23 - 10% of 10
+  EXPECT_DOUBLE_EQ(f.region[2], 12.0);
+  EXPECT_DOUBLE_EQ(f.region[3], 12.0);
+}
+
+TEST(LowerFilter, AFilterInTheUnitsOfTheBoxOnAUseOfAnElementThatDisplayRemovesIsNotRendered) {
+  Lowered l;
+  LowerSvg(Svg("width=\"60\" height=\"60\"",
+               "<defs><filter id=\"f\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
+               "<rect id=\"r\" width=\"10\" height=\"10\" fill=\"red\" display=\"none\"/></defs>"
+               "<use href=\"#r\" filter=\"url(#f)\"/>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  EXPECT_FALSE(FilterOf(l, &f)) << "what display removes has no box, so the filter has nothing to place itself in";
+}
+
+TEST(LowerFilter, AFilterOnAGroupHoldingAUseBoxesTheUseToo) {
+  Lowered l;
+  LowerSvg(Svg("width=\"60\" height=\"60\"",
+               "<defs><filter id=\"f\"><feGaussianBlur stdDeviation=\"1\"/></filter>"
+               "<rect id=\"r\" width=\"10\" height=\"10\" fill=\"red\"/></defs>"
+               "<g filter=\"url(#f)\"><use href=\"#r\" x=\"20\" transform=\"translate(0 5)\"/></g>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  EXPECT_DOUBLE_EQ(f.region[0], 19.0);
+  EXPECT_DOUBLE_EQ(f.region[1], 4.0);
+  EXPECT_DOUBLE_EQ(f.region[2], 12.0);
+  EXPECT_DOUBLE_EQ(f.region[3], 12.0);
 }
 
 TEST(LowerFilter, AFilteredChildDoesNotMakeItsParentsFilteredGroupRenderedAndTheOtherWayRound) {

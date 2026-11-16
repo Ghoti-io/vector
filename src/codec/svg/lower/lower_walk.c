@@ -1677,7 +1677,7 @@ static GVEC_Result lw_content(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
  * opacity group, which composes the same way, a clip and an opacity commuting). */
 static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   gvec_lw_clip_state state;
-  gvec_lw_node * clips[GVEC_LW_CLIP_MAX + 3]; /* the clips, the mask's group and the filter's */
+  gvec_lw_node * clips[GVEC_LW_CLIP_MAX + 2 + GVEC_LW_FILTER_LIST_MAX]; /* the clips, the mask's group, and the filter's instance and groups */
   size_t count = 0;
   GVEC_Result r = gvec_lw_clip_begin(ctx, inst, frame, &state, clips, &count);
   if (r != GVEC_OK || state == GVEC_LW_CLIP_REFUSED || state == GVEC_LW_CLIP_ALL) {
@@ -1708,30 +1708,32 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   }
   /* The filter is a group inside the mask: the clipped, masked element's content is what is filtered (Filter Effects: filter, then clip, mask, opacity). */
   gvec_lw_filter_state filtered;
-  gvec_lw_node * filter_group = NULL;
-  gvec_lw_node * filter_inner = NULL; /* a rotated element: the group inside the instance that carries its transform */
-  r = gvec_lw_filter_begin(ctx, inst, frame, &filtered, &filter_group, &filter_inner);
+  gvec_lw_filter_set filter;
+  r = gvec_lw_filter_begin(ctx, inst, frame, &filtered, &filter);
   if (r != GVEC_OK || filtered == GVEC_LW_FILTER_REFUSED || filtered == GVEC_LW_FILTER_ALL) {
     gvec_svg_instance_release(ctx->style, inst);
     return r;
   }
+  gvec_lw_node * const filter_inner = filter.outer ? filter.groups[0] : NULL; /* a rotated element: the group inside the instance that carries its transform */
+  gvec_lw_node * const filter_content = filtered == GVEC_LW_FILTER_NODE ? filter.groups[filter.count - 1] : NULL; /* the innermost group */
   if (filtered == GVEC_LW_FILTER_NODE) {
-    /* The opacity applies to the filtered result (FL20), so the filter's group carries it and the content does not. */
+    /* The opacity applies to the filtered result (FL20), so the outermost filter group carries it and the content does not. */
     GVEC_Svg_Style_Value opacity;
     bool usable;
     r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &opacity, &usable);
     if (r != GVEC_OK) {
       return r;
     }
-    gvec_lw_node * carrier = filter_inner ? filter_inner : filter_group;
     if (usable && opacity.kind == GVEC_SVG_STYLE_NUMBER) {
-      carrier->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);
+      filter.groups[0]->opacity = opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number);
     }
     ctx->opacity_moved = inst;
-    clips[count++] = filter_group;
-    if (filter_inner) {
-      clips[count++] = filter_inner;
+    if (filter.outer) {
+      clips[count++] = filter.outer;
       ctx->transform_moved = inst;
+    }
+    for (size_t i = 0; i < filter.count; i++) {
+      clips[count++] = filter.groups[i];
     }
   }
   if (count == 0) {
@@ -1778,7 +1780,7 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   r = lw_content(ctx, inst, filter_inner ? &identity : frame, clips[count - 1]);
   if (filtered == GVEC_LW_FILTER_NODE && ctx->filter_rendered) {
     /* A group of a filter is drawn when the element is rendered, though nothing is inside it (an empty group is dropped otherwise). */
-    (filter_inner ? filter_inner : filter_group)->content = true;
+    filter_content->content = true;
   }
   ctx->filter_owner = saved_owner;
   ctx->filter_rendered = saved_rendered;

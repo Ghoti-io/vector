@@ -418,9 +418,16 @@ TEST(LowerClip, AGroupInTheUnitsOfTheBoundingBoxIsPlacedInTheBoxOfWhatItDraws) {
       flat);
   EXPECT_EQ(flat.Items(), (size_t) 0);
   EXPECT_EQ(flat.Refusals(), (size_t) 0);
-  Lowered unboxed;  // a group that holds text, an image or a nested use is still refused
+  Lowered used;  // a use of a shape is boxed through its referent, moved by x and y
   Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath><rect id=\"r\" width=\"5\" height=\"5\"/></defs>"
-        "<g clip-path=\"url(#c)\"><use href=\"#r\"/></g>",
+        "<g clip-path=\"url(#c)\"><use href=\"#r\" x=\"3\"/></g>",
+      used);
+  EXPECT_EQ(used.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+  EXPECT_EQ(used.Refusals(), (size_t) 0);
+  Lowered unboxed;  // a group that holds a use of a viewport is still refused
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath>"
+        "<symbol id=\"s\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></symbol></defs>"
+        "<g clip-path=\"url(#c)\"><use href=\"#s\" width=\"5\" height=\"5\"/></g>",
       unboxed);
   EXPECT_NE(unboxed.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
 }

@@ -394,9 +394,20 @@ typedef enum gvec_lw_filter_state {
   GVEC_LW_FILTER_REFUSED   ///< The element is refused (already reported).
 } gvec_lw_filter_state;
 
-/** The group a `filter` makes around the content of the element of @p inst, whose parent frame is @p frame. */
+/** The most steps a filter list is nested into: a `url()`, or a run of filter functions, each one group. */
+#define GVEC_LW_FILTER_LIST_MAX 8
+
+/** What a `filter` makes around the content of an element: the groups, outermost first (each filters what is inside it), and, for a
+ *  rotated or skewed element, the instance in the list's space that holds them in a picture of the element's own. */
+typedef struct gvec_lw_filter_set {
+  gvec_lw_node * outer; /**< NULL, or the instance that carries the element's transform; the groups are then in its picture. */
+  gvec_lw_node * groups[GVEC_LW_FILTER_LIST_MAX];
+  size_t count;
+} gvec_lw_filter_set;
+
+/** The groups a `filter` makes around the content of the element of @p inst, whose parent frame is @p frame. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame,
-    gvec_lw_filter_state * state, gvec_lw_node ** out, gvec_lw_node ** inner);
+    gvec_lw_filter_state * state, gvec_lw_filter_set * set);
 
 typedef enum gvec_lw_mask_state {
   GVEC_LW_MASK_NONE = 0, ///< The element is not masked: draw it as it is.

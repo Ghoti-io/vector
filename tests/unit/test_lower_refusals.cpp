@@ -37,7 +37,6 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"mask", GVEC_LOWER_MASK, "\n<path d=\"M0 0H4V4H0Z\" mask=\"url(other.svg#k)\"/>", "path", 2, 0},
       {"image", GVEC_LOWER_IMAGE, "\n<image width=\"4\" height=\"4\" href=\"data:image/svg+xml,%3Csvg/%3E\"/>", "image", 2, 0},
       {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
-      {"filter list that mixes a function and a reference", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"blur(2px) url(#nothing)\"/>", "path", 2, 0},
       {"text", GVEC_LOWER_TEXT, "\n<text>hello</text>", "text", 2, 0},
       {"context paint", GVEC_LOWER_CONTEXT_PAINT, "<defs><rect id=\"r\" width=\"4\" height=\"4\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs><use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>\n<use id=\"u1\" href=\"#u2\" stroke=\"green\" fill=\"blue\"/>", "rect", 1, 0},
       {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/>", "path", 2, 0},
