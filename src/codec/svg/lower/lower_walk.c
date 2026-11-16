@@ -483,6 +483,16 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   return GVEC_OK;
 }
 
+/* The element of the filter group being filled is rendered, though it may paint nothing. A filter is applied to what an element renders,
+ * and an element with no visible paint renders an empty image: the filter's primitives that need no source (a flood, an image, a
+ * turbulence, a tile of a flood) still draw (Filter Effects 1, 3). An element that is not rendered at all (`display`, a condition, an
+ * opacity of zero, a shape with no geometry, a reference to nothing) has no filtered result. */
+static void mark_rendered(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst) {
+  if (ctx->filter_owner == inst) {
+    ctx->filter_rendered = true;
+  }
+}
+
 /*
  * Enter a wrapper (an opacity group or a clip): the walk is one level deeper and one clip or group more open until it leaves.
  * Refuses the element when the scene's limits would not hold what is inside.
@@ -576,6 +586,7 @@ static GVEC_Result lw_group(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   if (r != GVEC_OK || !c.draw) {
     return r;
   }
+  mark_rendered(ctx, inst);
   gvec_lw_node * group;
   bool skip;
   r = opacity_group(ctx, gvec_svg_instance_element(inst), &c, &group, &skip);
@@ -604,6 +615,7 @@ static GVEC_Result lw_switch(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, 
   if (!selected) {
     return GVEC_OK;
   }
+  mark_rendered(ctx, inst);
   gvec_lw_node * group;
   bool skip;
   r = opacity_group(ctx, e, &c, &group, &skip);
@@ -753,6 +765,29 @@ static GVEC_Result shape_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, con
   return node->site == GVEC_LW_NO_SITE ? GVEC_ERR_OOM : GVEC_OK;
 }
 
+/* A shape that paints nothing (`fill` and `stroke` of none or of no alpha, no markers) is still rendered when it has geometry, and its
+ * filter draws what it makes without a source. One of no geometry (a rect of no width, an empty path) is not rendered (SVG 2, 11.4), and has
+ * no filtered result. The geometry is read only for a filtered element, so an unfiltered shape is lowered as it was. */
+static GVEC_Result rendered_without_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst) {
+  if (ctx->filter_owner != inst) {
+    return GVEC_OK;
+  }
+  gvec_lw_geometry geometry;
+  const GSHSCENE_Resource * path = NULL;
+  bool usable;
+  GVEC_Result r = gvec_lw_centerline_of(ctx, inst, &geometry, &path, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  if (geometry == GVEC_LW_GEOMETRY_LIMIT) {
+    return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_LIMIT, "the element's geometry is past the range the waist can carry");
+  }
+  if (geometry == GVEC_LW_GEOMETRY_PATH) {
+    mark_rendered(ctx, inst);
+  }
+  return GVEC_OK;
+}
+
 static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   GVEC_Svg_Kind kind = gvec_svg_element_kind(e);
@@ -841,7 +876,7 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   size_t parts = (fill_node != NULL) + (stroke_node != NULL) + (markers.count > 0);
   if (!parts) {
-    return GVEC_OK;
+    return rendered_without_paint(ctx, inst);
   }
   gvec_lw_part order[3] = {GVEC_LW_PART_FILL, GVEC_LW_PART_STROKE, GVEC_LW_PART_MARKERS};
   if (parts > 1) {
@@ -1235,6 +1270,7 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_RENDERING_DISABLED, 0, e->node.line, e->node.column,
         e->node.offset, e->name, "a viewport or viewBox of no size disables the rendering of the element");
   }
+  mark_rendered(ctx, inst);
   GSHGEOM_Map view;
   bool has_view = false;
   if (has_box) {
@@ -1535,6 +1571,7 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   ctx->picture_depth--;
   ctx->open = saved_open;
   if (r == GVEC_OK) {
+    mark_rendered(ctx, inst);
     r = gvec_lw_attach(ctx, TARGET(group, parent), use);
   }
   if (group) {
@@ -1733,7 +1770,18 @@ static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     ctx->picture_depth++;
     ctx->open = 0;
   }
+  /* What the walk of this element records of its own rendering is its alone: a child's filter has a flag of its own. */
+  const GVEC_Svg_Instance * saved_owner = ctx->filter_owner;
+  const bool saved_rendered = ctx->filter_rendered;
+  ctx->filter_owner = filtered == GVEC_LW_FILTER_NODE ? inst : NULL;
+  ctx->filter_rendered = false;
   r = lw_content(ctx, inst, filter_inner ? &identity : frame, clips[count - 1]);
+  if (filtered == GVEC_LW_FILTER_NODE && ctx->filter_rendered) {
+    /* A group of a filter is drawn when the element is rendered, though nothing is inside it (an empty group is dropped otherwise). */
+    (filter_inner ? filter_inner : filter_group)->content = true;
+  }
+  ctx->filter_owner = saved_owner;
+  ctx->filter_rendered = saved_rendered;
   if (filter_inner) {
     ctx->picture_depth--;
     ctx->open = saved_open;

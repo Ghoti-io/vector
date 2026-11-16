@@ -357,6 +357,174 @@ TEST(LowerFilter, TheFilterIsInsideTheClipTheMaskAndTheOpacity) {
   EXPECT_EQ(opacity, filter) << "the opacity is the filter group's: it applies to the filtered result";
 }
 
+// A filter is applied to what its element renders, and an element that paints nothing renders an empty image: the primitives that need no
+// source (a flood, a tile of one) still draw (Filter Effects 1, 3). The element's geometry is still its box, for the units and the region.
+
+namespace {
+
+/** A document of the filter and the element; an element that is not complete markup (it ends before its `/>`) is closed as an empty one. */
+std::string DocOf(const std::string & filter, const std::string & element) {
+  const bool complete = !element.empty() && element.back() == '>';
+  return complete ? Svg("width=\"40\" height=\"40\"", "<defs>" + filter + "</defs>" + element) : Doc(filter, element);
+}
+
+const char * const kFlood = "<filter id=\"f\" filterUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"30\" height=\"30\"><feFlood flood-color=\"green\"/></filter>";
+const char * const kBoxFlood = "<filter id=\"f\"><feFlood flood-color=\"green\"/></filter>";
+
+/** The list is a filter group with nothing inside it: a push and a pop, and no fill, stroke or clip. */
+void ExpectOnlyTheFilterGroup(const Lowered & l, const std::string & what) {
+  EXPECT_EQ(l.Refusals(), (size_t) 0) << what;
+  EXPECT_EQ(l.Items(), (size_t) 2) << what;
+  EXPECT_EQ(l.Count(GSHSCENE_ITEM_GROUP_PUSH), (size_t) 1) << what;
+  EXPECT_EQ(l.Count(GSHSCENE_ITEM_GROUP_POP), (size_t) 1) << what;
+  GSHSCENE_Filter f;
+  EXPECT_TRUE(FilterOf(l, &f)) << what;
+}
+
+void ExpectNothing(const std::string & filter, const std::string & element, const std::string & what) {
+  Lowered l;
+  LowerSvg(DocOf(filter, element), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0) << what;
+  EXPECT_EQ(l.Items(), (size_t) 0) << what;
+}
+
+}  // namespace
+
+TEST(LowerFilter, AShapeThatPaintsNothingIsStillFilteredWhateverTheReasonItPaintsNothing) {
+  const char * const paints[] = {
+      "fill=\"none\"", "fill=\"red\" fill-opacity=\"0\"", "fill=\"rgba(255,0,0,0)\"", "fill=\"transparent\"", "fill=\"red\" stroke=\"blue\" stroke-opacity=\"0\" fill-opacity=\"0\"",
+  };
+  for (const char * paint : paints) {
+    for (const char * shape : {"<rect x=\"2\" y=\"3\" width=\"10\" height=\"10\"", "<circle cx=\"5\" cy=\"5\" r=\"4\"", "<ellipse cx=\"5\" cy=\"5\" rx=\"4\" ry=\"2\"",
+             "<path d=\"M2 3H12V13Z\"", "<polygon points=\"2,3 12,3 12,13\"", "<polyline points=\"2,3 12,3 12,13\"", "<line x1=\"2\" y1=\"3\" x2=\"12\" y2=\"13\""}) {
+      Lowered l;
+      LowerSvg(DocOf(kFlood, std::string(shape) + " " + paint + " filter=\"url(#f)\""), l);
+      ExpectOnlyTheFilterGroup(l, std::string(shape) + " " + paint);
+    }
+  }
+}
+
+TEST(LowerFilter, TheBoxOfAnUnpaintedShapeIsItsGeometryForTheRegionInUnitsOfTheBox) {
+  Lowered l;
+  LowerSvg(DocOf(kBoxFlood, "<rect x=\"2\" y=\"3\" width=\"10\" height=\"10\" fill=\"none\" filter=\"url(#f)\""), l);
+  ExpectOnlyTheFilterGroup(l, "a box region");
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  // -10% and 120% of the box (2, 3, 10, 10): the same region as the filled rect of the first test
+  EXPECT_EQ(f.region_mode, (uint32_t) GSHSCENE_FILTER_REGION_EXPLICIT);
+  EXPECT_DOUBLE_EQ(f.region[0], 1.0);
+  EXPECT_DOUBLE_EQ(f.region[1], 2.0);
+  EXPECT_DOUBLE_EQ(f.region[2], 12.0);
+  EXPECT_DOUBLE_EQ(f.region[3], 12.0);
+  // a group of unpainted shapes has the box of its geometry
+  Lowered g;
+  LowerSvg(DocOf(kBoxFlood, "<g filter=\"url(#f)\"><rect x=\"2\" y=\"3\" width=\"4\" height=\"4\" fill=\"none\"/><rect x=\"8\" y=\"9\" width=\"4\" height=\"4\" fill=\"none\"/></g>"), g);
+  ExpectOnlyTheFilterGroup(g, "a group");
+  ASSERT_TRUE(FilterOf(g, &f));
+  EXPECT_DOUBLE_EQ(f.region[0], 1.0);
+  EXPECT_DOUBLE_EQ(f.region[2], 12.0);
+}
+
+TEST(LowerFilter, AnUnfilteredShapeThatPaintsNothingIsStillDroppedAndSoIsOneWithAFilterThatIsNone) {
+  Lowered l;
+  LowerSvg(Svg("width=\"40\" height=\"40\"", "<rect width=\"10\" height=\"10\" fill=\"none\"/><rect width=\"10\" height=\"10\" fill-opacity=\"0\"/><g><path d=\"M0 0H5V5Z\" fill=\"none\"/></g>"), l);
+  EXPECT_EQ(l.Items(), (size_t) 0);
+  Lowered n;
+  LowerSvg(DocOf(kFlood, "<rect width=\"10\" height=\"10\" fill=\"none\" filter=\"none\""), n);
+  EXPECT_EQ(n.Items(), (size_t) 0);
+}
+
+TEST(LowerFilter, AnElementThatIsNotRenderedHasNoFilteredResult) {
+  struct {
+    const char * what;
+    const char * element;
+  } const cases[] = {
+      {"display none", "<rect width=\"10\" height=\"10\" fill=\"none\" display=\"none\" filter=\"url(#f)\""},
+      {"opacity zero", "<rect width=\"10\" height=\"10\" fill=\"none\" opacity=\"0\" filter=\"url(#f)\""},
+      {"visibility hidden", "<rect width=\"10\" height=\"10\" fill=\"none\" visibility=\"hidden\" filter=\"url(#f)\""},
+      {"visibility collapse", "<rect width=\"10\" height=\"10\" fill=\"none\" visibility=\"collapse\" filter=\"url(#f)\""},
+      {"a width of zero", "<rect width=\"0\" height=\"10\" fill=\"none\" filter=\"url(#f)\""},
+      {"a radius of zero", "<circle r=\"0\" fill=\"none\" filter=\"url(#f)\""},
+      {"an empty path", "<path d=\"\" fill=\"none\" filter=\"url(#f)\""},
+      {"a lone move", "<path d=\"M3 4\" fill=\"none\" filter=\"url(#f)\""},
+      {"a false condition", "<rect width=\"10\" height=\"10\" fill=\"none\" systemLanguage=\"xx\" filter=\"url(#f)\""},
+      {"a group of display none", "<g display=\"none\" filter=\"url(#f)\"><rect width=\"10\" height=\"10\" fill=\"none\"/></g>"},
+      {"a use of nothing", "<use href=\"#nothing\" filter=\"url(#f)\""},
+      {"a filter of what is no filter", "<rect width=\"10\" height=\"10\" fill=\"none\" filter=\"url(#nothing)\""},
+  };
+  for (const auto & c : cases) {
+    ExpectNothing(kFlood, c.element, c.what);
+  }
+  // the same elements with paint and a visible state draw, so the case is the property and not the fixture
+  Lowered visible;
+  LowerSvg(DocOf(kFlood, "<rect width=\"10\" height=\"10\" fill=\"red\" filter=\"url(#f)\""), visible);
+  EXPECT_EQ(visible.Count(GSHSCENE_ITEM_GROUP_PUSH), (size_t) 1);
+  EXPECT_EQ(visible.Count(GSHSCENE_ITEM_FILL), (size_t) 1);
+}
+
+TEST(LowerFilter, AGroupWithAHiddenChildIsFilteredAndAGroupThatIsHiddenItselfIsAContainerStill) {
+  Lowered l;
+  LowerSvg(DocOf(kFlood, "<g visibility=\"hidden\" filter=\"url(#f)\"><rect width=\"10\" height=\"10\" fill=\"red\"/></g>"), l);
+  ExpectOnlyTheFilterGroup(l, "a hidden group's children are hidden by inheritance and the group is not");
+  Lowered visible_child;
+  LowerSvg(DocOf(kFlood, "<g visibility=\"hidden\" filter=\"url(#f)\"><rect width=\"10\" height=\"10\" fill=\"red\" visibility=\"visible\"/></g>"), visible_child);
+  EXPECT_EQ(visible_child.Count(GSHSCENE_ITEM_FILL), (size_t) 1);
+  EXPECT_EQ(visible_child.Count(GSHSCENE_ITEM_GROUP_PUSH), (size_t) 1);
+}
+
+TEST(LowerFilter, TheOpacityOfAnUnpaintedFilteredShapeIsTheFilterGroupsAndAnOpacityOfZeroDrawsNothing) {
+  Lowered l;
+  LowerSvg(DocOf(kFlood, "<rect width=\"10\" height=\"10\" fill=\"none\" opacity=\"0.25\" filter=\"url(#f)\""), l);
+  ExpectOnlyTheFilterGroup(l, "an opacity");
+  ASSERT_EQ(l.Count(GSHSCENE_ITEM_GROUP_PUSH), (size_t) 1);
+  for (size_t i = 0; i < l.Items(); i++) {
+    if (l.Item(i).kind == GSHSCENE_ITEM_GROUP_PUSH) {
+      EXPECT_EQ(l.Item(i).group.opacity, 0.25);
+    }
+  }
+}
+
+TEST(LowerFilter, ATurnedUnpaintedShapeIsFilteredInThePictureOfItsOwn) {
+  Lowered l;
+  LowerSvg(DocOf(kBoxFlood, "<rect x=\"2\" y=\"3\" width=\"10\" height=\"10\" fill=\"none\" transform=\"rotate(20)\" filter=\"url(#f)\""), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  // the filter's group is in the picture that the instance draws: the list holds the instance alone (the golden of filter-invisible.svg
+  // renders it)
+  EXPECT_EQ(l.Items(), (size_t) 1);
+  EXPECT_EQ(l.Count(GSHSCENE_ITEM_INSTANCE), (size_t) 1);
+  Lowered nothing;
+  LowerSvg(DocOf(kBoxFlood, "<rect x=\"2\" y=\"3\" width=\"10\" height=\"10\" fill=\"none\" transform=\"rotate(20)\" display=\"none\" filter=\"url(#f)\""), nothing);
+  EXPECT_EQ(nothing.Items(), (size_t) 0);
+}
+
+TEST(LowerFilter, AUseOfAnUnpaintedShapeIsFilteredAndTheClipAndTheMaskAreAroundTheFilter) {
+  Lowered u;
+  LowerSvg(DocOf(kFlood, "<defs><path id=\"p\" d=\"M0 0H5V5Z\" fill=\"none\"/></defs><use href=\"#p\" filter=\"url(#f)\""), u);
+  EXPECT_EQ(u.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  EXPECT_TRUE(FilterOf(u, &f));
+  Lowered c;
+  LowerSvg(DocOf(std::string(kFlood) + "<clipPath id=\"c\"><rect width=\"20\" height=\"20\"/></clipPath>",
+               "<rect width=\"10\" height=\"10\" fill=\"none\" clip-path=\"url(#c)\" filter=\"url(#f)\""), c);
+  EXPECT_EQ(c.Refusals(), (size_t) 0);
+  ASSERT_GE(c.Items(), (size_t) 4);
+  EXPECT_EQ(c.Item(0).kind, GSHSCENE_ITEM_CLIP_PUSH);
+  EXPECT_EQ(c.Item(1).kind, GSHSCENE_ITEM_GROUP_PUSH);
+  EXPECT_NE(c.Item(1).group.filter, nullptr);
+  EXPECT_EQ(c.Item(2).kind, GSHSCENE_ITEM_GROUP_POP);
+  EXPECT_EQ(c.Item(3).kind, GSHSCENE_ITEM_CLIP_POP);
+}
+
+TEST(LowerFilter, AFilteredChildDoesNotMakeItsParentsFilteredGroupRenderedAndTheOtherWayRound) {
+  // The flag that says the element of a filter group is rendered is the element's own: a child's does not leak up, and a parent's does not leak down.
+  Lowered up;
+  LowerSvg(DocOf(kFlood, "<g filter=\"url(#f)\" display=\"none\"><rect width=\"10\" height=\"10\" fill=\"none\" filter=\"url(#f)\"/></g>"), up);
+  EXPECT_EQ(up.Items(), (size_t) 0);
+  Lowered down;
+  LowerSvg(DocOf(kFlood, "<g filter=\"url(#f)\"><rect width=\"10\" height=\"10\" fill=\"none\" display=\"none\" filter=\"url(#f)\"/></g>"), down);
+  ExpectOnlyTheFilterGroup(down, "the parent alone");
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

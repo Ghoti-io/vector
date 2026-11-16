@@ -1,0 +1,18 @@
+fixture filter-invisible
+list-hash 4b330eabe659b5f4
+raster-hash 19e2adba5c21014c
+diagnostics 0
+list
+gshscene.list 1 items=12 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=4b330eabe659b5f4
+F res=path:67f6e4ef601a6a36 map=03f5566ebbcadb97 rule=0 paint=0 3fed9d9d9d9d9d9e 3fee1e1e1e1e1e1e 3fee3e3e3e3e3e3e 3ff0000000000000 space=1:2:0000000000000000 entry=0 resource=0000000000000000 layer=0 depth=0000000000000000
+G opacity=3ff0000000000000 blend=0:0:0000000000000000 composite=0 order=0 isolation=0 knockout=0 mask=0000000000000000 filter=374ec7bdcb91658e layer=0 depth=0000000000000000
+g
+G opacity=3ff0000000000000 blend=0:0:0000000000000000 composite=0 order=0 isolation=0 knockout=0 mask=0000000000000000 filter=b60b102c3b71b00a layer=0 depth=0000000000000000
+g
+G opacity=3ff0000000000000 blend=0:0:0000000000000000 composite=0 order=0 isolation=0 knockout=0 mask=0000000000000000 filter=78206fc5025adae7 layer=0 depth=0000000000000000
+g
+G opacity=3ff0000000000000 blend=0:0:0000000000000000 composite=0 order=0 isolation=0 knockout=0 mask=0000000000000000 filter=8771fcf13b776c6b layer=0 depth=0000000000000000
+g
+I res=picture:0a0d62d4c4c7453f map=641aa87b982ff936 layer=0 depth=0000000000000000
+G opacity=3ff0000000000000 blend=0:0:0000000000000000 composite=0 order=0 isolation=0 knockout=0 mask=0000000000000000 filter=9e34aaed3aba8917 layer=0 depth=0000000000000000
+g

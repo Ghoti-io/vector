@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- A filter on an element that paints nothing (Filter Effects 1, 3: the filter is applied to the element's rendering, which is empty, and
+     what its primitives make without a source is drawn). Row one: fill none with a flood over the user-space region, a fill-opacity of zero
+     with a flood over the box of the element, and a transparent color with a tile of a flood. Row two: a line, a turned rect, and a use of an
+     unpainted shape. Row three, drawn as nothing: a hidden shape, a shape of opacity zero, a rect of no width, and an element of display none. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#ecf0f1"/>
+  <filter id="user" filterUnits="userSpaceOnUse" x="2" y="2" width="12" height="12"><feFlood flood-color="#27ae60"/></filter>
+  <filter id="box"><feFlood flood-color="#2980b9"/></filter>
+  <filter id="tile" filterUnits="userSpaceOnUse" x="34" y="2" width="28" height="12">
+    <feFlood flood-color="#c0392b" x="34" y="2" width="6" height="6"/><feOffset dx="2" dy="2"/><feTile/>
+  </filter>
+  <filter id="over" filterUnits="userSpaceOnUse" x="40" y="20" width="12" height="12"><feFlood flood-color="#8e44ad"/></filter>
+  <rect x="2" y="2" width="12" height="12" fill="none" filter="url(#user)"/>
+  <rect x="18" y="2" width="12" height="12" fill="#000" fill-opacity="0" filter="url(#box)"/>
+  <rect x="34" y="2" width="28" height="12" fill="rgba(0,0,0,0)" filter="url(#tile)"/>
+  <line x1="4" y1="20" x2="14" y2="30" filter="url(#box)"/>
+  <rect x="20" y="20" width="10" height="10" fill="none" transform="rotate(20 25 25)" filter="url(#box)"/>
+  <defs><path id="shape" d="M0 0H10V10H0Z" fill="none"/></defs>
+  <use href="#shape" x="40" y="20" filter="url(#over)"/>
+  <rect x="2" y="36" width="12" height="12" fill="none" visibility="hidden" filter="url(#user)"/>
+  <rect x="18" y="36" width="12" height="12" fill="none" opacity="0" filter="url(#box)"/>
+  <rect x="34" y="36" width="0" height="12" fill="none" filter="url(#box)"/>
+  <rect x="50" y="36" width="12" height="12" fill="none" display="none" filter="url(#box)"/>
+</svg>

@@ -749,6 +749,37 @@ drawn through the filter. An element of the document as the `href` is **refused*
 and not a picture, and an element drawn into a filter is a picture. The rendering the primitive carries is the magnify filter of R9, which the CPU sink
 does not yet use: it draws the primitive with the nearest texel only (the corpus rows say so).
 
+## A filter on an element that paints nothing (X1 to X5)
+
+A filter is applied to what its element renders (Filter Effects 1, 3), and an element with no visible paint renders an empty image. The
+filter's primitives that need no source (`feFlood`, `feImage`, `feTurbulence`, a lighting over a flood, `feTile` of a flood) still draw. The
+lowering used to drop such an element before its filter group existed in the output: `lw_element` builds the filter group around the element,
+and `gvec_lw_attach` drops a group that has no content.
+
+**X1 The element is rendered, whatever it paints.** `lw_element` records, for the filter group it is filling, whether the element was rendered
+(`filter_owner` and `filter_rendered` in the context, the same shape as `opacity_moved`). The element's own walk sets the flag
+(`mark_rendered`) when it is a group (`g`, `a`), a nested `svg` or `symbol` that has a size, a `switch` that selected a child, a `use` whose
+target was instantiated, or a shape with geometry. The group is then given content and is emitted with its filter although nothing is inside it.
+The flag belongs to one element: a child's walk saves and restores it.
+
+**X2 Not rendered, no filtered result.** `display: none`, a false condition, an `opacity` of zero (the filter group carries the opacity, so
+zero draws nothing whatever the filter makes), a shape with no geometry (a `rect` of no width, a radius of zero, an empty path or a lone move:
+the format disables its rendering, SVG 2, 11.4), a `use` of nothing, and a filter reference that names no filter. These are as before.
+
+**X3 `visibility`.** A shape or a leaf with `visibility: hidden` or `collapse` is not drawn, and has no filtered result (it never reaches the
+point where its group is marked). A container with `visibility: hidden` is not a leaf: its filter is applied and its children, which inherit the
+value, draw nothing unless one sets `visible`.
+
+**X4 The box is the geometry's.** A shape that paints nothing keeps its geometry's box for `objectBoundingBox` filter units and for the region;
+the filter region is made before the element's content is walked, from the element's box, and the box never depended on the paint. The geometry
+that decides whether the shape is rendered is read only for a filtered shape that has drawn nothing, so that an unfiltered or a painted shape is
+lowered exactly as before (no resource is interned that nothing asked for, and no golden changed).
+
+**X5 What is left as it was.** A filtered `text` or `image` that draws nothing (no glyphs, a picture that cannot be used) still has no filtered
+result: whether such an element is rendered is the element's own rule (R10 for an image, which is reported), and no corpus case or reference
+renderer settles it. A filter in the units of the box on a `use` is unchanged and has no result, painted or not: the box of a container is read from its element's
+children, and a `use` has none in the document (its target is instantiated), so the box is empty. That is a gap of its own, not of this rule.
+
 ## Gates
 
 | Gate | What it refuses |

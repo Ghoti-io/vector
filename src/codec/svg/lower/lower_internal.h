@@ -201,6 +201,8 @@ typedef struct gvec_lw_ctx {
   size_t mask_depth;
   const GVEC_Svg_Instance * transform_moved; ///< The instance whose `transform` its filter's instance carries (a rotated or skewed element is filtered in a picture of its own: lower_filter.c).
   const GVEC_Svg_Instance * opacity_moved; ///< The instance whose `opacity` its filter group carries (the opacity applies to the filtered result: lower_filter.c).
+  const GVEC_Svg_Instance * filter_owner; ///< The instance whose filter group the walk is filling (lw_element): what it draws is what the filter takes as its input.
+  bool filter_rendered;              ///< The element of `filter_owner` is rendered, whatever it paints: its filtered group is drawn though nothing is inside (lower_walk.c).
   const GVEC_Svg_Instance * blend_moved; ///< The instance whose `mix-blend-mode` its mask group carries (the blend is the outermost of the stack: lower_walk.c).
   const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
   size_t pattern_depth;
