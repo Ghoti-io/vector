@@ -2,8 +2,8 @@ fixture images-files
 list-hash 39656f28a2fcc7e1
 raster-hash 03777b28371d82bd
 diagnostics 3
-diagnostic code=7 detail=10 line=9 column=3 element=image
-diagnostic code=7 detail=10 line=10 column=3 element=image
+diagnostic code=7 detail=9 line=9 column=3 element=image
+diagnostic code=7 detail=9 line=10 column=3 element=image
 diagnostic code=20 detail=2 line=11 column=3 element=image
 list
 gshscene.list 1 items=5 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=39656f28a2fcc7e1
