@@ -26,7 +26,7 @@ font-size-adjust:keyword: ours 'ex-height #' browser '#'	standard-newer	CSS Font
 font-size-adjust:keyword: ours 'ex-height #' browser 'none'	reference-old	Chromium does not support `font-size-adjust` as a presentation attribute	1
 height:length: ours # browser auto	reference-old	Chromium and Firefox have no `height` property on a use element (SVG 2 adds it)	4
 height:length: ours auto browser #px	unspecified	the resolved value of `height` is the used height of the box; this library reads the computed value, `auto`, and resolves a percentage and not `auto`	132
-image-rendering:keyword: ours 'auto' browser 'optimizespeed'	legacy-compat	Firefox keeps the SVG 1.1 keyword `optimizeSpeed`; the registry's grammar (CSS Images 3) does not have it, and Chromium ignores it	3
+image-rendering:keyword: ours 'optimizespeed' browser 'auto'	legacy-compat	the SVG 1.1 keyword `optimizeSpeed` is kept here, as Firefox and the reference renderer keep it (the lowering draws it without smoothing); Chromium ignores it and computes `auto`	3
 overflow:keyword: ours 'visible' browser 'hidden'	legacy-compat	the SVG 1.1 style sheet clips a foreignObject and the browsers keep that; the CR's (6.8) does not list it	2
 paint-order:keyword: ours 'markers fill' browser 'markers'	unspecified	Chromium writes the shortest form of `paint-order`; this library writes the keywords as specified	2
 paint-order:keyword: ours 'stroke fill' browser 'stroke'	unspecified	Chromium writes the shortest form of `paint-order`; this library writes the keywords as specified	2
