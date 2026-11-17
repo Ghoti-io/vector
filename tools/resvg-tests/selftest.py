@@ -37,6 +37,7 @@ Exit status is nonzero on the first failed check.
 
 import argparse
 import contextlib
+import hashlib
 import io
 import os
 import shutil
@@ -118,7 +119,7 @@ def build_corpus(root):
 
 
 def run_score(runner, corpus, out, cases, stub=None, tolerance=None, expected=5, expect_ok=True, fails=None):
-    argv = ["--corpus", corpus, "--runner", runner, "--out", out, "--cases", cases, "--accepted", "/nonexistent/ACCEPTED", "--expected", str(expected),
+    argv = ["--corpus", corpus, "--runner", runner, "--remote-table", os.devnull, "--out", out, "--cases", cases, "--accepted", "/nonexistent/ACCEPTED", "--expected", str(expected),
             "--tolerance", tolerance or os.path.join(HERE, "TOLERANCE"), "--fails", fails or "/nonexistent/FAILS"]
     if stub:
         argv += ["--stub", stub]
@@ -163,6 +164,81 @@ def main(argv):
     check(rows["s/badref.svg"][0] == "ERROR", "a reference that does not decode is an ERROR")
     check(rows["x/skipped.svg"][0] == "EXCLUDED", "a case a rule names is EXCLUDED, never run")
 
+    # --- the runner's resolver: what it serves, what it refuses ----------------------------
+    # The real lowering (no stub) over a corpus whose cases name a file beside them, a file outside the corpus, a URL with a scheme and a URL of the
+    # remote table: the first and the last are drawn (the case is exactly the reference), the others are refused.
+    rcorpus = os.path.join(work, "rcorpus")
+    part = b'<svg xmlns="http://www.w3.org/2000/svg"><path id="p" d="M2 2H10V10H2Z"/></svg>\n'
+    write(os.path.join(rcorpus, "resources", "part.svg"), part)
+    write(os.path.join(work, "secret.svg"), part)  # outside the corpus: reached only by climbing out of it
+    write(os.path.join(work, "remote", "pinned.svg"), part)
+    wrapper = (b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="16" height="16" viewBox="0 0 16 16">'
+               b'<use xlink:href="%s" fill="#ff0000"/></svg>\n')
+    for case, href in (("served", b"../../resources/part.svg#p"), ("climb", b"../../../secret.svg#p"), ("scheme", b"file:///nonexistent/part.svg#p"),
+                       ("remote", b"https://example.test/part.svg#p"), ("unlisted", b"https://example.test/other.svg#p")):
+        write(os.path.join(rcorpus, "tests", "r", case + ".svg"), wrapper % href)
+        write(os.path.join(rcorpus, "tests", "r", case + ".png"), rect_reference())
+    rtable = os.path.join(work, "RTABLE")
+    write(rtable, b"https://example.test/part.svg\t%s\t%d\tpinned.svg\n" % (hashlib.sha256(part).hexdigest().encode(), len(part)))
+    rlist = os.path.join(work, "rlist")
+    write(rlist, b"r/served.svg\nr/climb.svg\nr/scheme.svg\nr/remote.svg\nr/unlisted.svg\n")
+    done = subprocess.run([runner, "--corpus", rcorpus, "--list", rlist, "--max-diff", "0", "--max-bad-ppm", "0", "--remote-table", rtable,
+                           "--remote-dir", os.path.join(work, "remote")], stdout=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL)
+    rows = {line.split("\t")[0]: line.split("\t")[1] for line in done.stdout.splitlines()}
+    check(done.returncode == 0, "the runner ran over the resolver's corpus")
+    check(rows.get("r/served.svg") == "PASS", "a file beside the case is served through the resolver and drawn: %r" % rows)
+    check(rows.get("r/remote.svg") == "PASS", "a URL of the remote table is served from the pinned copy: %r" % rows)
+    check(rows.get("r/climb.svg") == "REFUSED", "a reference that climbs out of the corpus is refused, not served: %r" % rows)
+    check(rows.get("r/scheme.svg") == "REFUSED", "a URL with a scheme that is not in the remote table is refused: %r" % rows)
+    check(rows.get("r/unlisted.svg") == "REFUSED", "a URL that is not in the remote table is refused, never fetched: %r" % rows)
+    # The same corpus through the scorer, with the real lowering: it checks the pinned file and tells the runner where it is.
+    rcases = os.path.join(work, "RCASES")
+    write(rcases, b"")
+    rargv = ["--corpus", rcorpus, "--runner", runner, "--remote-table", rtable, "--remote-dir", os.path.join(work, "remote"), "--out", os.path.join(work, "out-resolver"),
+             "--cases", rcases, "--accepted", "/nonexistent/ACCEPTED", "--expected", "5", "--tolerance", zero, "--fails", "/nonexistent/FAILS"]
+    rerr = io.StringIO()
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(rerr):
+        rcode = score.main(rargv)
+    check(rcode == 0, "the scorer ran the real lowering over the resolver's corpus: %s" % rerr.getvalue().strip())
+    rrows = table(os.path.join(work, "out-resolver"))
+    check(rrows["r/remote.svg"][0] == "PASS" and rrows["r/served.svg"][0] == "PASS",
+          "the scorer gives the runner the remote table and its directory, so a pinned URL is served and drawn: %r" % rrows)
+    check(rrows["r/unlisted.svg"][0] == "REFUSED", "an unlisted URL is REFUSED through the scorer too: %r" % rrows)
+
+    # --- the pinned remote files: the run fails unless every one is the pinned file ---------
+    remote_dir = os.path.join(work, "resvg-remote")
+    remote_table = os.path.join(work, "REMOTE")
+    payload = b"the pinned bytes of a remote file\n"
+    digest = hashlib.sha256(payload).hexdigest()
+    write(remote_table, ("# the self test's own table\nhttps://example.test/a.bin\t%s\t%d\ta.bin\n" % (digest, len(payload))).encode())
+
+    def run_remote(name):
+        argv = ["--corpus", corpus, "--runner", runner, "--remote-table", remote_table, "--remote-dir", remote_dir,
+                "--out", os.path.join(work, name), "--cases", cases_file, "--accepted", "/nonexistent/ACCEPTED", "--expected", "5",
+                "--tolerance", zero, "--fails", "/nonexistent/FAILS", "--stub", "exact"]
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = score.main(argv)
+        return code, err.getvalue()
+
+    write(os.path.join(remote_dir, "a.bin"), payload)
+    code, err = run_remote("out-remote-ok")
+    check(code == 0, "a remote file that is the pinned one lets the run go ahead: %s" % err.strip())
+    write(os.path.join(remote_dir, "a.bin"), payload + b"x")
+    code, err = run_remote("out-remote-changed")
+    check(code != 0 and "SHA-256" in err and "a.bin" in err, "a remote file whose bytes differ from the pin stops the run: %r" % err)
+    write(os.path.join(remote_dir, "a.bin"), payload)
+    write(remote_table, ("https://example.test/a.bin\t%s\t%d\ta.bin\n" % (digest, len(payload) + 1)).encode())
+    code, err = run_remote("out-remote-length")
+    check(code != 0 and "bytes" in err, "a remote file whose length is not the pinned one stops the run even when its hash matches the table: %r" % err)
+    write(remote_table, ("https://example.test/a.bin\t%s\t%d\ta.bin\n" % (digest, len(payload))).encode())
+    write(os.path.join(remote_dir, "a.bin"), payload[:-1] + b"?")
+    code, err = run_remote("out-remote-samelength")
+    check(code != 0 and "SHA-256" in err, "a remote file of the pinned length but other bytes stops the run: %r" % err)
+    os.remove(os.path.join(remote_dir, "a.bin"))
+    code, err = run_remote("out-remote-missing")
+    check(code != 0 and "missing" in err, "a remote file that is not there stops the run: %r" % err)
+
     out = os.path.join(work, "out-refused")
     run_score(runner, corpus, out, cases_file, stub="exact-refused")
     rows = table(out)
@@ -202,7 +278,7 @@ def main(argv):
     # --- every FAIL is explained --------------------------------------------------------
     def run_fails(stub, rows_text, name="out-fails", accepted="/nonexistent/ACCEPTED", tolerance=None):
         write(fails_file, rows_text.encode())
-        argv = ["--corpus", corpus, "--runner", runner, "--out", os.path.join(work, name), "--cases", cases_file,
+        argv = ["--corpus", corpus, "--runner", runner, "--remote-table", os.devnull, "--out", os.path.join(work, name), "--cases", cases_file,
                 "--accepted", accepted, "--fails", fails_file, "--expected", "5",
                 "--tolerance", tolerance or os.path.join(HERE, "TOLERANCE")]
         if stub:
@@ -235,7 +311,7 @@ def main(argv):
     out = os.path.join(work, "out-sink")
     run_score(runner, corpus, out, cases_file, stub="sink-refused")
     rows = table(out)
-    check(rows["s/drawn.svg"] == ("REFUSED", "sink-report=1 first=unplaced"),
+    check(rows["s/drawn.svg"] == ("REFUSED", "sink-report=1 first=unplaced reason=placeholder"),
           "a drawing the sink reports it did not draw is REFUSED, not PASS, even when the pixels agree: %r" % (rows["s/drawn.svg"],))
 
     out = os.path.join(work, "out-real")
@@ -259,7 +335,7 @@ def main(argv):
     def run_accepted(stub, rows_text, expect_ok=True, name="out-acc"):
         write(accepted_file, rows_text.encode())
         write(fails_file, (transp if stub == "off-by-one" else "").encode())
-        argv = ["--corpus", corpus, "--runner", runner, "--out", os.path.join(work, name), "--cases", cases_file,
+        argv = ["--corpus", corpus, "--runner", runner, "--remote-table", os.devnull, "--out", os.path.join(work, name), "--cases", cases_file,
                 "--accepted", accepted_file, "--fails", fails_file, "--expected", "5"]
         if stub:
             argv += ["--stub", stub]

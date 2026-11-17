@@ -1,0 +1,10 @@
+# The files the corpus's cases name by URL and the resolver of the conformance runner serves (the library fetches nothing, ever).
+#
+# One record per line: <url> TAB <sha256> TAB <bytes> TAB <file>. fetch.sh downloads each into third_party/resvg-remote/<file> and refuses a
+# copy whose SHA-256 differs from the pin; score.py checks every file against its pin before the runner starts and fails the run when one is
+# missing or differs, so that a case judged against a moved file cannot be scored. A changed pin is a reviewed change: the cases that name the
+# URL (structure/image/url-to-png, structure/image/url-to-svg) are re-scored with it.
+#
+# The two files are Wikimedia Commons' PNG transparency demonstration (800 x 600 RGBA) and its SVG logo, as served on 2026-11-17.
+https://upload.wikimedia.org/wikipedia/commons/4/47/PNG_transparency_demonstration_1.png	c4e870d358d64ce677e958c156d0e3fba466993d8e915fc81c5dc64937a9b696	224566	c4e870d358d64ce677e958c156d0e3fba466993d8e915fc81c5dc64937a9b696.png
+https://upload.wikimedia.org/wikipedia/commons/4/4f/SVG_Logo.svg	c959a57b9dad523e1a669fafc53145c185545748703eff7cb65b2f0983998f19	4210	c959a57b9dad523e1a669fafc53145c185545748703eff7cb65b2f0983998f19.svg

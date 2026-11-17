@@ -34,6 +34,20 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 
 # (name, file, anchor, replacement)
 PLANTS = [
+    ("a remote file whose hash differs is scored", "tools/resvg-tests/score.py",
+     "if got != digest or len(data) != size:", "if False:"),
+    ("a remote file's length is not checked", "tools/resvg-tests/score.py",
+     "if got != digest or len(data) != size:", "if got != digest:"),
+    ("a missing remote file is not an error", "tools/resvg-tests/score.py",
+     'raise ScoreError("%s: the remote file for %s is missing (run tools/resvg-tests/fetch.sh)" % (path, url))', "continue"),
+    ("the remote table is not checked before the run", "tools/resvg-tests/score.py",
+     "        check_remote(remote, remote_dir)\n", ""),
+    ("the runner is not told where the pinned files are", "tools/resvg-tests/score.py",
+     '        argv += ["--remote-table", remote_table, "--remote-dir", remote_dir]', "        pass"),
+    ("the runner serves a relative reference that climbs out of the corpus", "tests/conformance/runner.c",
+     'strstr(url, "..") ||', "0 ||"),
+    ("the runner serves a URL that is not in the remote table from the corpus", "tests/conformance/runner.c",
+     "strchr(url, ':') ||", "0 ||"),
     ("a refusal is ignored", "tests/conformance/runner.c",
      "if (refusals > 0 || diag.dropped > 0) {", "if (0) {"),
     ("dropped diagnostics are not a refusal", "tests/conformance/runner.c",

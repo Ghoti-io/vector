@@ -572,18 +572,16 @@ GVEC_Result gvec_svg_instance_child(GVEC_Svg_Style_Context * context, const GVEC
   return r;
 }
 
-GVEC_Result gvec_svg_instance_use(
-    GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * use_instance, const GVEC_Svg_Instance ** out_instance) {
-  if (!context || !use_instance || !out_instance || use_instance->element->kind != GVEC_SVG_KIND_USE) {
-    return GVEC_ERR_INVALID;
-  }
-  const GVEC_Svg_Element * target = gvec_svg_element_href_target(use_instance->element);
-  if (!target) {
+GVEC_Result gvec_svg_instance_use_in(GVEC_Svg_Style_Context * context, GVEC_Svg_Style_Context * use_context,
+    const GVEC_Svg_Instance * use_instance, const GVEC_Svg_Element * target, const GVEC_Svg_Instance ** out_instance) {
+  if (!context || !use_context || !use_instance || !target || !out_instance || use_instance->element->kind != GVEC_SVG_KIND_USE) {
     return GVEC_ERR_INVALID;
   }
   /* The referent is drawn in the use's viewport; a symbol or svg establishes its own from the width and height of the use
    * when it gives them, and from its own otherwise (SVG 2, 5.6). The referent's own percentages (of its width and height)
-   * are resolved against the use's viewport. */
+   * are resolved against the use's viewport. When the referent is an element of another document, `context` is that document's
+   * and `use_context` the use's: the clone is made (and styled, by `context`'s rules) in the first and inherits from the use, whose
+   * style the second made. */
   GVEC_Svg_Instance * clone = NULL;
   GVEC_Result r = make_instance(
       context, target, use_instance, use_instance, use_instance->viewport_width, use_instance->viewport_height, &clone);
@@ -593,9 +591,9 @@ GVEC_Result gvec_svg_instance_use(
   if (target->kind == GVEC_SVG_KIND_SVG || target->kind == GVEC_SVG_KIND_SYMBOL) {
     double used[2];
     bool is_auto[2];
-    r = gvec_svg_used_length(context, use_instance, GVEC_SVG_PROP_WIDTH, &used[0], &is_auto[0]);
+    r = gvec_svg_used_length(use_context, use_instance, GVEC_SVG_PROP_WIDTH, &used[0], &is_auto[0]);
     if (r == GVEC_OK) {
-      r = gvec_svg_used_length(context, use_instance, GVEC_SVG_PROP_HEIGHT, &used[1], &is_auto[1]);
+      r = gvec_svg_used_length(use_context, use_instance, GVEC_SVG_PROP_HEIGHT, &used[1], &is_auto[1]);
     }
     if (r == GVEC_ERR_UNSUPPORTED) {
       used[0] = used[1] = 0;
@@ -612,6 +610,18 @@ GVEC_Result gvec_svg_instance_use(
   }
   *out_instance = clone;
   return GVEC_OK;
+}
+
+GVEC_Result gvec_svg_instance_use(
+    GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * use_instance, const GVEC_Svg_Instance ** out_instance) {
+  if (!context || !use_instance || !out_instance || use_instance->element->kind != GVEC_SVG_KIND_USE) {
+    return GVEC_ERR_INVALID;
+  }
+  const GVEC_Svg_Element * target = gvec_svg_element_href_target(use_instance->element);
+  if (!target) {
+    return GVEC_ERR_INVALID;
+  }
+  return gvec_svg_instance_use_in(context, context, use_instance, target, out_instance);
 }
 
 const GVEC_Svg_Element * gvec_svg_instance_element(const GVEC_Svg_Instance * instance) {

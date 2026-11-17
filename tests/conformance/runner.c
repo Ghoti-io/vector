@@ -276,7 +276,89 @@ typedef struct Options {
   int timeout_s;
   const char * dump;
   GVEC_Fonts * fonts; ///< The corpus's fonts, under the generic families its references use.
+  const char * remote_dir;   ///< Where the pinned copies of the remote files are (each named by its hash), or NULL.
+  char ** remote_url;        ///< The remote table: the URLs a case names and the file that serves each, read from --remote-table.
+  char ** remote_file;
+  size_t remote_count;
 } Options;
+
+/**
+ * The resolver the runner gives the library (the library opens nothing itself): a reference that is a URL of the remote table is served from its pinned
+ * copy (score.py checked its hash before the run), a relative one from the corpus (the case's `resources` and its neighbours), and anything else is refused.
+ * A relative reference that climbs out of the corpus, names an absolute path, or holds an escape, a backslash or a control character is refused.
+ */
+static GVEC_Resource_Status serve_file(const char * path, const GVEC_Resource_Request * request, GVEC_Resource_Reply * reply, unsigned char ** hold) {
+  FILE * f = fopen(path, "rb");
+  if (!f) {
+    return GVEC_RESOURCE_NOT_FOUND;
+  }
+  size_t capacity = 4096, used = 0;
+  unsigned char * buffer = malloc(capacity);
+  if (!buffer) {
+    fclose(f);
+    return GVEC_RESOURCE_OOM;
+  }
+  for (;;) {
+    if (used == capacity) {
+      unsigned char * fresh = realloc(buffer, capacity * 2);
+      if (!fresh) {
+        free(buffer);
+        fclose(f);
+        return GVEC_RESOURCE_OOM;
+      }
+      buffer = fresh;
+      capacity *= 2;
+    }
+    size_t got = fread(buffer + used, 1, capacity - used, f);
+    used += got;
+    if (got == 0) {
+      break;
+    }
+    if (used > request->max_bytes) {
+      break;
+    }
+  }
+  fclose(f);
+  free(*hold);
+  *hold = buffer;
+  reply->bytes = buffer;
+  reply->size = used;
+  size_t n = strlen(path);
+  reply->media_type = n > 4 && strcmp(path + n - 4, ".svg") == 0 ? "image/svg+xml" : NULL;
+  return GVEC_RESOURCE_OK;
+}
+
+typedef struct Serve {
+  const Options * o;
+  unsigned char * hold; ///< The last file served: the library copies it before the next request.
+} Serve;
+
+static GVEC_Resource_Status resolver(void * user, const GVEC_Resource_Request * request, GVEC_Resource_Reply * reply) {
+  Serve * serve = user;
+  const Options * o = serve->o;
+  const char * url = request->url;
+  char path[4096];
+  for (size_t i = 0; i < o->remote_count; i++) {
+    if (strcmp(url, o->remote_url[i]) == 0) {
+      if (!o->remote_dir) {
+        return GVEC_RESOURCE_NOT_FOUND;
+      }
+      snprintf(path, sizeof path, "%s/%s", o->remote_dir, o->remote_file[i]);
+      return serve_file(path, request, reply, &serve->hold);
+    }
+  }
+  size_t n = strlen(url);
+  if (n == 0 || url[0] == '/' || strstr(url, "..") || strchr(url, '\\') || strchr(url, '%') || strchr(url, ':') || strchr(url, '?')) {
+    return GVEC_RESOURCE_REFUSED;
+  }
+  for (size_t i = 0; i < n; i++) {
+    if ((unsigned char) url[i] < 0x20) {
+      return GVEC_RESOURCE_REFUSED;
+    }
+  }
+  snprintf(path, sizeof path, "%s/%s", o->corpus, url);
+  return serve_file(path, request, reply, &serve->hold);
+}
 
 static const char * diag_first_refusal(const GVEC_Diagnostics * d, char * buf, size_t n) {
   for (size_t i = 0; i < d->count; i++) {
@@ -316,6 +398,7 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   GSHSCENE_Report * report = NULL;
   GIMG_Raster * raster = NULL;
   GVEC_Lower_Trace * trace = NULL;
+  Serve serve = {o, NULL};
 
   if (gvec_stream_create_file(svg, &stream) != GVEC_OK) {
     say(v, "ERROR", "case file unreadable");
@@ -355,6 +438,12 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   }
   lower.image_root = o->corpus;
   lower.image_base = base;
+  /* The same references through the resolver (it takes over what `image_root` served): a URL of the remote table, a path of the corpus. */
+  lower.resolver = resolver;
+  lower.resolver_user = &serve;
+  char document_uri[4096];
+  snprintf(document_uri, sizeof document_uri, "tests/%s", name);
+  lower.base_uri = document_uri;
   lower.flags = GVEC_LOWER_MARKER_CLOSED_ENDS_OPEN | GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK; /* the reference images are resvg's */
   GVEC_Result lr = o->lower(doc, &lower, list, &diag);
   if (lr != GVEC_OK) {
@@ -432,6 +521,7 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
       (unsigned long long) d.bad, (unsigned long long) d.total, (unsigned long long) d.white_over);
 
 done:
+  free(serve.hold);
   gvec_lower_trace_free(trace);
   gshscene_report_destroy(report);
   gshscene_sink_destroy(sink);
@@ -562,7 +652,8 @@ static int usage(void) {
 }
 
 int main(int argc, char ** argv) {
-  Options o = {NULL, NULL, 0, 0, gvec_doc_lower_list, DEFAULT_TIMEOUT_S, NULL, NULL};
+  Options o = {NULL, NULL, 0, 0, gvec_doc_lower_list, DEFAULT_TIMEOUT_S, NULL, NULL, NULL, NULL, NULL, 0};
+  const char * remote_table = NULL;
   int have_diff = 0, have_ppm = 0;
   for (int i = 1; i < argc; i++) {
     const char * arg = argv[i];
@@ -587,6 +678,10 @@ int main(int argc, char ** argv) {
       o.dump = value;
     } else if (strcmp(arg, "--timeout") == 0) {
       o.timeout_s = atoi(value);
+    } else if (strcmp(arg, "--remote-dir") == 0) {
+      o.remote_dir = value;
+    } else if (strcmp(arg, "--remote-table") == 0) {
+      remote_table = value;
     } else if (strcmp(arg, "--stub") == 0) {
       o.lower = conf_stub_find(value);
       if (!o.lower) {
@@ -599,6 +694,46 @@ int main(int argc, char ** argv) {
   }
   if (!o.corpus || !o.list || !have_diff || !have_ppm || o.timeout_s <= 0) {
     return usage();
+  }
+  /* The remote table: <url> TAB <sha256> TAB <bytes> TAB <file> per line; the file is what serves the url. */
+  if (remote_table) {
+    FILE * table = fopen(remote_table, "r");
+    if (!table) {
+      fprintf(stderr, "runner: cannot read %s\n", remote_table);
+      return 2;
+    }
+    char line[4096];
+    while (fgets(line, sizeof line, table)) {
+      if (line[0] == '#' || line[0] == '\n') {
+        continue;
+      }
+      char * field[4];
+      char * at = line;
+      size_t count = 0;
+      while (count < 4 && at) {
+        field[count++] = at;
+        at = strchr(at, '\t');
+        if (at) {
+          *at++ = 0;
+        }
+      }
+      if (count < 4) {
+        fprintf(stderr, "runner: malformed line in %s\n", remote_table);
+        return 2;
+      }
+      field[3][strcspn(field[3], "\r\n")] = 0;
+      char ** urls = realloc(o.remote_url, (o.remote_count + 1) * sizeof *urls);
+      char ** files = realloc(o.remote_file, (o.remote_count + 1) * sizeof *files);
+      if (!urls || !files) {
+        return 2;
+      }
+      o.remote_url = urls;
+      o.remote_file = files;
+      o.remote_url[o.remote_count] = strdup(field[0]);
+      o.remote_file[o.remote_count] = strdup(field[3]);
+      o.remote_count++;
+    }
+    fclose(table);
   }
   /* The fonts of the corpus, with the generic families of the references' renderer (resvg's test configuration). */
   GFNT_FontSet * fontset = NULL;

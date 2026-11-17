@@ -51,6 +51,7 @@
 
 #include "../svg_arena.h"
 #include "../svg_doc.h"
+#include "../svg_resource.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -223,6 +224,12 @@ typedef struct gvec_lw_ctx {
   size_t svg_doc_count, svg_doc_capacity;
   uint32_t image_nesting;            ///< SVG images this document is the image of, one inside another.
   uint64_t source_hash;              ///< When this document is an image: the hash of its bytes (0 for the document being lowered).
+  gvec_res_state res_own;            ///< The resolver's state: made by the lowering of the document that is lowered (the outermost context).
+  gvec_res_state * res;              ///< The state in use: `res_own` of the outermost context, shared by every context it makes.
+  const char * base;                 ///< What this document's references are resolved against (the options' `base_uri`, or the url the document was loaded from); NULL for none.
+  size_t res_depth;                  ///< Documents between this one and the one being lowered (0 for it).
+  const GVEC_Doc * external_doc;     ///< A context made for the elements of a document a `use` names: the document (its `use` references closing a cycle are found by it).
+  const GVEC_Svg_Element * external_use; ///< ... and the `use` of the document that names it.
 } gvec_lw_ctx;
 
 /** The key of a node (AD-9): the element's key, the chain of `use` elements above it and the node's role. */
@@ -231,6 +238,13 @@ GVEC_INTERNAL_API uint64_t gvec_lw_key(uint64_t element_key, uint64_t chain, gve
 /** Start a lowering of `doc`: the context, with the style context made. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options,
     GSHSCENE_Store * store, GVEC_Diagnostics * diagnostics);
+
+/**
+ * As gvec_lw_begin(), for a document that was loaded through the resolver while lowering `parent` (NULL for the outermost document): the
+ * resolver's state is `parent`'s, `base` is the url the document was loaded from, and the document is one level deeper.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options,
+    GSHSCENE_Store * store, GVEC_Diagnostics * diagnostics, gvec_lw_ctx * parent, const char * base);
 
 /** Free the context: the tree, the sites, the held resources and the style context. */
 GVEC_INTERNAL_API void gvec_lw_end(gvec_lw_ctx * ctx);
@@ -613,6 +627,7 @@ typedef enum gvec_lw_image_state {
 typedef struct gvec_lw_image {
   const GSHSCENE_Resource * resource; ///< The raster, or NULL for an SVG document.
   GVEC_Doc * svg;                    ///< The SVG document (held by the context), or NULL for a raster.
+  const char * uri;                  ///< An SVG document that came from the resolver: its resolved url (the resolver state's), which its own references are resolved against; else NULL.
   uint64_t source_hash;              ///< An SVG document: the hash of its bytes, which the context that lowers it keeps (an image of the same bytes inside it is a recursion).
   double width, height;              ///< The intrinsic size: a raster's pixels, a document's used size (or, with a viewBox and no size, the viewBox's).
 } gvec_lw_image;
@@ -624,6 +639,28 @@ typedef struct gvec_lw_image {
 GVEC_INTERNAL_API GVEC_Result gvec_lw_svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHGEOM_Map * local,
     const gvec_lw_image * image, const GSHGEOM_Map * placed, gvec_lw_node ** out);
 
+
+/**
+ * Load `bytes` as an SVG document under the limits of the document being lowered, laid out in the given viewport (0 for the default). `*out` is NULL
+ * and `*problem` says why when the bytes are not an SVG document the library reads (GVEC_ERR_LIMIT: past a limit); only GVEC_ERR_OOM is returned.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_load_document(gvec_lw_ctx * ctx, const unsigned char * bytes, size_t size, double viewport_width,
+    double viewport_height, GVEC_Doc ** out, GVEC_Result * problem);
+
+/**
+ * The element a `use` of another document names (lower_external.c): the resource asked of the resolver, its document loaded once for the
+ * lowering, the element found by its id. `*ready` is false when nothing is drawn (the reason is reported: a refusal for a policy, a limit or a
+ * cycle, a warning for a document or an element that is not there). Otherwise `*nested` is a context made for the document (owned by `ctx`) and
+ * `*target` its element; call gvec_lw_external_sync() once `ctx`'s state is that of the walk of the referent.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_external_target(gvec_lw_ctx * ctx, const GVEC_Svg_Element * use, const char * reference,
+    gvec_lw_ctx ** nested, const GVEC_Svg_Element ** target, bool * ready);
+
+/** Give `nested` the state of `ctx` for the walk of what a `use` instantiates: the keys' chain, the levels and the depths, the context paints. */
+GVEC_INTERNAL_API void gvec_lw_external_sync(gvec_lw_ctx * ctx, gvec_lw_ctx * nested);
+
+/** Take back what `nested` used up that is the whole lowering's (the bytes of images decoded). */
+GVEC_INTERNAL_API void gvec_lw_external_done(gvec_lw_ctx * ctx, gvec_lw_ctx * nested);
 
 /** The most SVG images one inside another. */
 #define GVEC_LW_IMAGE_NESTING_MAX 4

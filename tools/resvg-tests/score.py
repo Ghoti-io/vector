@@ -66,6 +66,7 @@ so two runs of the same tree give the same bytes.
 """
 
 import argparse
+import hashlib
 import fnmatch
 import os
 import re
@@ -276,7 +277,37 @@ def parse_tolerance(path):
     return diff, ppm, values["evidence"]
 
 
-def run_runner(runner, corpus, to_run, tolerance, stub, work, timeout):
+def parse_remote(table):
+    """The remote table: [(url, sha256, bytes, file)], one record per line (tab separated; # comments)."""
+    rows = []
+    with open(table, encoding="utf-8") as handle:
+        for number, line in enumerate(handle, 1):
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("\t")
+            if len(fields) != 4 or len(fields[1]) != 64 or not fields[2].isdigit() or "/" in fields[3] or fields[3] in ("", ".", ".."):
+                raise ScoreError("%s:%d: a record is <url> TAB <sha256> TAB <bytes> TAB <file>" % (table, number))
+            rows.append((fields[0], fields[1], int(fields[2]), fields[3]))
+    return rows
+
+
+def check_remote(rows, directory):
+    """Every remote file is there and is the pinned one: the cases that name it by URL are judged against exactly that file, or not at all."""
+    for url, digest, size, name in rows:
+        path = os.path.join(directory, name)
+        try:
+            with open(path, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            raise ScoreError("%s: the remote file for %s is missing (run tools/resvg-tests/fetch.sh)" % (path, url))
+        got = hashlib.sha256(data).hexdigest()
+        if got != digest or len(data) != size:
+            raise ScoreError("%s: SHA-256 %s (%d bytes), REMOTE pins %s (%d bytes) for %s: a changed file is not scored"
+                             % (path, got, len(data), digest, size, url))
+
+
+def run_runner(runner, corpus, to_run, tolerance, stub, work, timeout, remote_table=None, remote_dir=None):
     """Run the runner over `to_run`; returns {case: (outcome, detail)}."""
     os.makedirs(work, exist_ok=True)
     listing = os.path.join(work, "run-list")
@@ -286,6 +317,8 @@ def run_runner(runner, corpus, to_run, tolerance, stub, work, timeout):
             "--max-bad-ppm", str(tolerance[1]), "--timeout", str(timeout)]
     if stub:
         argv += ["--stub", stub]
+    if remote_table:
+        argv += ["--remote-table", remote_table, "--remote-dir", remote_dir]
     done = subprocess.run(argv, stdout=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL)
     if done.returncode != 0:
         raise ScoreError("the runner exited %d" % done.returncode)
@@ -393,6 +426,8 @@ def main(argv):
     ap.add_argument("--expected", type=int, default=None)
     ap.add_argument("--stub", default=None)
     ap.add_argument("--timeout", type=int, default=60)
+    ap.add_argument("--remote-table", default=os.path.join(HERE, "REMOTE"))
+    ap.add_argument("--remote-dir", default=None)
     args = ap.parse_args(argv)
     started = time.monotonic()
     try:
@@ -403,8 +438,11 @@ def main(argv):
         accepted = parse_accepted(args.accepted, cases, excluded)
         tolerance = parse_tolerance(args.tolerance)
         to_run = [c for c in cases if c not in excluded]
+        remote_dir = args.remote_dir or os.path.join(os.path.dirname(os.path.abspath(args.corpus)), "resvg-remote")
+        remote = parse_remote(args.remote_table)
+        check_remote(remote, remote_dir)
         results = run_runner(args.runner, args.corpus, to_run, tolerance[:2], args.stub,
-                             os.path.join(args.out, "work"), args.timeout)
+                             os.path.join(args.out, "work"), args.timeout, args.remote_table, remote_dir)
         merged = score(cases, excluded, accepted, results)
         fails = parse_fails(args.fails, cases, excluded, accepted)
         kinds = explain_fails(merged, fails, tolerance)

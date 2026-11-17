@@ -40,6 +40,7 @@
 #include "../../../core/core_internal.h"
 #include "../svg_arena.h"
 #include "../svg_doc.h"
+#include "../svg_resource.h"
 #include "svg_prop_tables.h"
 
 #ifdef __cplusplus
@@ -141,6 +142,9 @@ struct GVEC_Svg_Style_Context {
   GVEC_Result sheets_result;        ///< What it returned.
   const GVEC_Svg_Element * sheet_refused; ///< The first `style` element whose sheet could not be applied (an `@import`, a conditional rule), else NULL.
   const char * sheet_refused_why;   ///< Static: why.
+  gvec_res_state * res;             ///< The resolver's state of the lowering (an `@import` is asked of it); NULL when there is none: an `@import` is then not fetched.
+  const char * base;                ///< What an `@import` of this document's `style` elements is resolved against; NULL for none.
+  size_t res_depth;                 ///< The depth of the document (0 for the one being lowered): an import is one deeper.
   GTEXT_CSS_Computed_Style ** styles; ///< Every style made, to free.
   size_t style_count, style_capacity;
 };
@@ -167,9 +171,11 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_style_diag(GVEC_Svg_Style_Context * conte
 /**
  * Read the document's `style` elements (those of type `text/css` or of none, in document order, a sheet being the character data of one)
  * into one rule index and make the match context over the document's tree, the first time; every computation of a style uses them.
- * A rule or declaration a sheet drops is reported as a warning at its `style` element. A sheet that cannot be applied at all (an
- * `@import`, which is never fetched, and `@media` and the other conditional rules, which need an evaluator this layer has none of) is
- * not applied and is named by gvec_svg_style_sheet_refused(): drawing without it would be drawing the wrong picture.
+ * A rule or declaration a sheet drops is reported as a warning at its `style` element. An `@import` is asked of the context's resolver
+ * (`res`, svg_resource.h): the sheet it returns is compiled like the one that names it, against its own url, and enters the cascade where the
+ * `@import` stands. A sheet that cannot be applied at all (an `@import` that is not supplied, that has a `media`, `supports` or `scope`
+ * condition, that closes a cycle or passes a limit, and `@media` and the other conditional rules, which need an evaluator this layer has
+ * none of) is not applied and is named by gvec_svg_style_sheet_refused(): drawing without it would be drawing the wrong picture.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_svg_style_sheets(GVEC_Svg_Style_Context * context);
 
@@ -184,6 +190,15 @@ GVEC_INTERNAL_API const GVEC_Svg_Element * gvec_svg_style_sheet_refused(const GV
  * declaration list of one declaration; static strings. Returns how many.
  */
 GVEC_INTERNAL_API size_t gvec_svg_ua_declarations(const GVEC_Svg_Instance * instance, const char * out[GVEC_SVG_UA_MAX]);
+
+/**
+ * An instance of `target`, an element that `use_instance` (of `use_context`) instantiates, made and styled by `context`. They are the same
+ * context for a `use` of an element of its own document (gvec_svg_instance_use()); for one of an element of another document, `context` is
+ * that document's, so that its style sheets and ids decide the element's style, and the clone inherits from the use, whose computed style
+ * must have been made already (by `use_context`) and is read, not recomputed. `context` must share the use context's environment.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_instance_use_in(GVEC_Svg_Style_Context * context, GVEC_Svg_Style_Context * use_context,
+    const GVEC_Svg_Instance * use_instance, const GVEC_Svg_Element * target, const GVEC_Svg_Instance ** out_instance);
 
 /** The computed style of an instance, computing it and its inheritance ancestors' (iteratively) the first time. */
 GVEC_INTERNAL_API GVEC_Result gvec_svg_instance_style(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance,

@@ -347,7 +347,7 @@ foreground of the list or the edit); `fill: none` and an alpha of zero emit noth
 **P8 `use` and `symbol`.** A `use` draws its referent in the clone's context into a picture (a list of its own, interned by
 content, so equal drawings share one) and is one instance with the map `transform` then `translate(x, y)`. In an edit the
 picture is a hidden group beside the instance node that draws it. A `use` that is on a cycle, that expands past the limit or
-that names a document that is never fetched is refused with its own reason; one that names nothing draws nothing.
+that names another document is refused (`external-reference`) unless the caller gave a resolver (the Resources section); one that names nothing draws nothing.
 
 **P9 Keys, and the trace.** An edit's nodes are keyed in one domain of this library, by the element's key, the chain of `use`
 elements above it and the node's role, so a lowering again finds its nodes: it sets each to the properties it has (which
@@ -546,7 +546,7 @@ interface (the parent, siblings, `id`, the words of `class`, attributes, order),
 `defs > path` matches the path whichever way it is drawn. The cascade is `text`'s: a rule beats a presentation attribute, the `style` attribute beats a
 rule, and importance, specificity and order of appearance decide between rules. A rule or declaration that is not valid is dropped and reported as a
 warning at its `style` element. A sheet that cannot be applied whole is not applied, and the lowering refuses its `style` element (GVEC_LOWER_STYLESHEET)
-so that the document is not drawn half styled: an `@import` (the library never fetches) and a conditional rule (`@media`, `@supports`, `@container`,
+so that the document is not drawn half styled: an `@import` the caller's resolver does not supply (the Resources section; the library never fetches), an `@import` with a `media`, `supports` or `scope` condition, and a conditional rule (`@media`, `@supports`, `@container`,
 `@when`), for which this layer has no evaluator of the environment. Geometry given in style (`height: 160px` on a `rect`) is read as SVG 2 reads it.
 
 **H19 Masks.** A `mask` naming a `mask` element is a group of the waist with a soft mask. The mask's picture is the `mask` element's content drawn in the
@@ -684,7 +684,7 @@ never believed: the bytes decide the format (the image library reads PNG, JPEG, 
 `image/jpeg`, or with no type, is a PNG. The first frame of an animation is the image. An element of the document as an `href` (`#id`) is not
 an image. A file is read only under the resource policy (R2).
 
-**R2 The resource policy.** The library never reads outside its input except where the caller names a directory. `GVEC_Lower_Options` has
+**R2 The resource policy.** The library never reads outside its input except where the caller names a directory, or gives a resolver (the Resources section, which answers the same references for an `image`, a `style` and a `use`, and takes over an `image` from `image_root` when there is one). `GVEC_Lower_Options` has
 `image_root`, the directory every file must lie in, and `image_base`, the directory a relative reference is resolved against (the document's
 directory; the root when it is NULL). With no root every file is refused. A reference with a scheme (`http:`, `https:`, `file:`, `javascript:`,
 a Windows drive), a network path (`//host/x`), an absolute path, a path with a backslash, a NUL or another control character (written or
@@ -759,6 +759,73 @@ two such `feImage`s are two slots. The element's own `transform`, opacity, clip,
 reference to nothing and a cycle (the element's own filter is one being built) are a transparent result. Filters nest at most `GVEC_LW_FILTER_NESTING`
 deep through their `feImage`s, past which the filter is refused (`limit`). The rendering the primitive carries is the magnify filter of R9, which the CPU sink
 does not yet use: it draws the primitive with the nearest texel only (the corpus rows say so).
+
+## Resources: the resolver (S1 to S10)
+
+A document may name bytes it does not hold: an `image` of a URL, a `style` with an `@import`, a `use` of an element of another file. By default none of them
+is read and each is refused (`external-reference`, `stylesheet`), as before. `GVEC_Lower_Options::resolver` is the one door by which they may be: a callback
+the caller supplies, asked for a reference, that answers with bytes or says why not. `svg_resource.c` holds the state, `lower_image.c`, `svg_sheet.c` and
+`lower_external.c` the three uses.
+
+**S1 The library opens nothing.** A URL is a string. The library never opens a socket or a file for a reference but through the resolver (and, for images with no
+resolver, `image_root`, R2); it reads `size` bytes at the address a reply gives, once, into a copy of its own, and keeps no pointer into the resolver's memory.
+The resolver cannot make the library read what it was not handed: a reply longer than the limit is refused without being read (the address may be anything), a
+size with no bytes is a failure, a media type that is not a short NUL-terminated string is ignored. A resolver that maps a URL to a path owns that policy
+(`..`, links, schemes): the library gives it the resolved string and nothing more.
+
+**S2 What the resolver is asked.** A `GVEC_Resource_Request`: the `kind` (`image`, `style`, `document`), the `reference` as written (without its `#fragment`),
+the `url` (the reference resolved against the `base`, RFC 3986 section 5.2.2, the fragment dropped, the dot segments removed; with no base, or a base that is
+itself relative, a `..` with nothing above it is kept, so that the string names what the document named and nothing else), the `base` (the options' `base_uri`,
+or the `url` of the resource that named this one), the byte limit (the smaller of the kind's limit, `max_image_bytes`, `max_style_bytes` or `max_input_bytes`, and
+`max_resource_bytes`) and the `depth` (1 for what the document names, 2 for what a resource it loaded names). It is never asked for a `data:` URI, for a reference
+to an element of the same document, or for anything past a limit. Statuses: `OK`; `REFUSED` (the caller's policy: the element is refused,
+`external-reference`); `NOT_FOUND` and `FAILED` (an image or a `use` draws nothing and says so, and a style sheet that cannot be had is not applied and refuses its
+`style` element); `OOM` (the lowering fails with `GVEC_ERR_OOM`). A status the enum does not have is `FAILED`.
+
+**S3 Cache and limits.** Each (kind, url) is asked once per lowering: the answer, a refusal and a failure included, is kept (the list and the edit entry points
+each have their own lowering and so their own cache, and ask the same questions). `max_resources` (default 64, ceiling 4096) bounds the calls, the one past it
+refused with `limit` without being asked; `max_resource_depth` (default 8, ceiling 64) bounds documents and sheets that name one another; `max_resource_instances`
+(default 1024, ceiling 1,048,576) bounds the `use` elements that instantiate an element of another document, each of which styles its elements afresh, so
+documents that name one another cost at most that many instantiations and not their product; `max_resource_bytes` (default 32 MiB, ceiling 1 GiB).
+
+**S4 `image_root` and the resolver.** With a resolver, an `image` that names a file or a URL is answered by the resolver and `image_root` is not consulted; without
+one, `image_root` and `image_base` still serve images from a directory (R2). The directory is kept as the convenience it is: a resolver that maps its `url` into a
+directory is the same policy with the caller holding it, and folding the fields away would only make the common case longer. It does not extend to `style` and
+`use`: nothing the library reads is named by a field that is not the resolver.
+
+**S5 An image from the resolver.** The bytes are decoded as for any image; the bytes decide the format, not the media type the resolver gave. An SVG document is
+lowered as an image (R3) with its own references resolved against its own `url` and one level deeper, so an image of a document that imports a sheet, or draws
+another image, asks for those at depth 2, and a recursion (the document being drawn as its own image) draws nothing.
+
+**S6 `@import`.** The sheet of a `style` element is compiled by `text`, which asks the caller for each `@import` and keeps the order of appearance, the layers and the
+import depth: the library's callback resolves the URL against the sheet that names it (the document's `base_uri` for the inline sheet), asks the resolver for a
+`style` resource, parses and compiles what it returns the same way (so its own imports are resolved against it, one level deeper), and gives it to `text` to enter
+the cascade where the `@import` stands. A rule after the import is later than it, and an import in a later `style` element is later than an earlier element's rules.
+`layer` and `layer(name)` are the engine's. An import with `media`, `supports` or `scope` is refused as a sheet that cannot be applied whole (the library has no evaluator
+of the environment, S4 of the style layer's rule above, and a scope's root would be the document's) and is not asked for. A sheet that imports itself, directly or
+through others, is a cycle and is refused; so is an imported sheet with conditional rules, one that is too long, one that cannot be had, or one past `max_resource_depth`
+(the whole chain is not applied, the `style` element is refused with the reason, and the rest of the document is drawn as it has it).
+
+**S7 `use` of an element of another document.** `href="other.svg#id"` asks for a `document`, loads it once for the lowering in the viewport of the document that names it,
+finds the element by its id (percent-escapes decoded) and lowers it in a context of its own for that document: the ids and the references the element makes (`url(#g)`, a `use`
+of its own `#inner`), the style sheets of that document and their selectors are the other document's, while what the element inherits is what the `use` gives it, as
+for a `use` of the same document (the clone's parent is the `use`, whose own style is computed first, by its context, and only read; the clone and what is under it are
+styled and walked by the other document's context). The `use`'s `context-fill` and `context-stroke` are its colors; a paint server in the `use`'s `fill` or `stroke` is an element of the using
+document, so the element is refused (`context-paint`). A document that does not load, is not SVG, or has no such id draws nothing and says so
+(`GVEC_DIAG_REFERENCE_MISSING`); a reference with no id names no element and draws nothing.
+
+**S8 Cycles.** A `use` that is instantiated inside its own instantiation is a cycle across documents (found by the `use` elements the nested contexts were made for, so a
+document that names itself through others is found at the second visit, not the depth limit) and is refused (`external-reference`); what lies outside the cycle is drawn.
+Internal cycles are the document's own rule (P8) inside each context.
+
+**S9 Hostile input.** A resolver may answer anything: bytes that are not XML, CSS made of braces, a document that names itself, a thousand documents that name one another, a
+size that is a lie, a media type that does not end, a refusal where it said yes before. None of it crashes or runs without bound: the byte, count, depth and instance limits
+stop what a set of documents can make, the load's limits (elements, depth, entity bombs) apply to each document and sheet as they do to the first, and the scene's limits
+to what is drawn. `tests/fuzz/fuzz_resolver.c` drives the three paths with arbitrary answers.
+
+**S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The
+`tref`, `feImage` of an element of another file, `mask`, `clip-path`, `filter`, `marker`, `pattern` and gradient `href` that name another file are not resolved: only an `image`, an
+`feImage` of an image, a `style` and a `use` are.
 
 ## A filter on an element that paints nothing (X1 to X6)
 

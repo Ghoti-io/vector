@@ -41,7 +41,7 @@ This is the first milestone's first step: the library, and loading.
   `GVEC_Limits.max_inflated_bytes`, and what is inside is recognised. Bytes after the last member are
   ignored with a warning; gzip inside gzip is refused.
 * **Loading.** XML through `text`, with the DTD processed so that files declaring their own entities
-  load, and nothing outside the file ever read: no resolver exists, so an external DTD or entity
+  load, and nothing outside the file ever read: the load has no resolver, so an external DTD or entity
   cannot be fetched. A reference to an external entity is kept in place and reported where it is
   used.
 * **Diagnostics.** Every load reports what it found to a list the caller owns, on success and on
@@ -57,6 +57,12 @@ This is the first milestone's first step: the library, and loading.
   polylines. What cannot be drawn yet is refused whole, one diagnostic with the element, its line and a
   reason (`documentation/refusals.md`), and a `GVEC_Lower_Trace` maps an entry of a sink's report back to the
   element it came from.
+* **Resources.** A document that names bytes it does not hold (an `image` of a URL, a `style` with an
+  `@import`, a `use` of an element of another file) is refused by default. `GVEC_Lower_Options::resolver` is
+  the one door: a callback the caller supplies, asked for each reference resolved against the document's
+  `base_uri`, that hands back bytes (copied, bounded, cached once per lowering) or says why not. The library
+  opens no socket and no file for a reference; a URL is a string the resolver may map. Bytes, resources,
+  nesting depth and instantiations are limited, and cycles are refused (`documentation/design.md`, Resources).
 * **The typed document.** An SVG file is read into a tree of elements, one kind for every element of SVG 2, with
   each attribute parsed by its own grammar (numbers, lengths, lists, points, `viewBox`, path data in the form it
   was written and in absolute form, references, `data:` URIs, conditional processing), its errors located, its

@@ -612,7 +612,7 @@ check-gates: ## Prove each gate fails on its planted violation and passes its co
 # point, in an ordinary build (no libFuzzer, no clang), in `make test`
 ####################################################################
 
-FUZZ_TARGETS := load style lower
+FUZZ_TARGETS := load style lower resolver
 FUZZ_REPLAYS := $(foreach f,$(FUZZ_TARGETS),$(APP_DIR)/fuzz/replay_$(f)$(EXE_EXTENSION))
 
 $(APP_DIR)/fuzz/replay_%$(EXE_EXTENSION): tests/fuzz/fuzz_%.c tests/fuzz/replay_main.c $(APP_DIR)/$(STATIC_TARGET) \

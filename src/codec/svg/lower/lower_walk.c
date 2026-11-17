@@ -248,6 +248,11 @@ GVEC_Result gvec_lw_hold(gvec_lw_ctx * ctx, const GSHSCENE_Resource * resource) 
 
 GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_Store * store,
     GVEC_Diagnostics * diagnostics) {
+  return gvec_lw_begin_in(ctx, doc, options, store, diagnostics, NULL, options ? options->base_uri : NULL);
+}
+
+GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_Store * store,
+    GVEC_Diagnostics * diagnostics, gvec_lw_ctx * parent, const char * base) {
   memset(ctx, 0, sizeof *ctx);
   ctx->doc = doc;
   ctx->document = gvec_svg_document(doc);
@@ -258,6 +263,15 @@ GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lo
   ctx->diagnostics = diagnostics;
   ctx->options = options;
   ctx->store = store;
+  if (parent) {
+    ctx->res = parent->res;
+    ctx->res_depth = parent->res_depth + 1;
+  }
+  else {
+    gvec_res_init(&ctx->res_own, ctx->allocator, options);
+    ctx->res = &ctx->res_own;
+  }
+  ctx->base = base;
   if (options) {
     ctx->scene_allocator = options->scene_allocator;
     ctx->scene_limits = options->scene_limits;
@@ -293,6 +307,9 @@ GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lo
   }
   GVEC_Result r = gvec_svg_style_context_new(ctx->document, diagnostics, ctx->allocator, &ctx->style);
   if (r == GVEC_OK) {
+    ctx->style->res = ctx->res;
+    ctx->style->base = ctx->base;
+    ctx->style->res_depth = ctx->res_depth;
     r = gvec_svg_style_resolve_references(ctx->style);
   }
   if (r != GVEC_OK) {
@@ -335,6 +352,10 @@ void gvec_lw_end(gvec_lw_ctx * ctx) {
   }
   gvec_free(ctx->allocator, ctx->tables);
   gvec_svg_style_context_free(ctx->style);
+  if (ctx->res == &ctx->res_own) {
+    /* After every context that was made for what it loaded: their documents and urls are its entries'. */
+    gvec_res_free(&ctx->res_own);
+  }
   gvec_arena_destroy(&ctx->arena);
   memset(ctx, 0, sizeof *ctx);
 }
@@ -1020,7 +1041,7 @@ GVEC_Result gvec_lw_svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e
     ctx->nested = fresh;
     ctx->nested_capacity = capacity;
   }
-  r = gvec_lw_begin(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics);
+  r = gvec_lw_begin_in(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics, ctx, image->uri);
   if (r != GVEC_OK) {
     gvec_free(ctx->allocator, nested);
     return r;
@@ -1584,6 +1605,7 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
     return r;
   }
   const GVEC_Svg_Element * target = gvec_svg_element_href_target(e);
+  gvec_lw_ctx * external = NULL; /* the context of the document of `target`, when it is in another one */
   if (!target) {
     /* Why there is no referent: a cycle, which is an error of the document (reported when it was loaded, and the use draws nothing, as
      * every renderer draws it), an expansion past the limit (diagnosed too, and refused), a reference to another document (never
@@ -1598,9 +1620,19 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
     GVEC_Svg_Reference ref;
     if (href && gvec_svg_attribute_class(href) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_reference(href, &ref) &&
         (ref.kind == GVEC_SVG_REF_EXTERNAL || ref.kind == GVEC_SVG_REF_DATA)) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_EXTERNAL_REFERENCE, "the use refers to something outside the document, which is never fetched");
+      if (ref.kind != GVEC_SVG_REF_EXTERNAL || !gvec_res_enabled(ctx->res)) {
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_EXTERNAL_REFERENCE, "the use refers to something outside the document, which is never fetched");
+      }
+      /* An element of another document, asked of the resolver: it is lowered by a context of that document's own. */
+      bool ready;
+      r = gvec_lw_external_target(ctx, e, ref.url, &external, &target, &ready);
+      if (r != GVEC_OK || !ready) {
+        return r;
+      }
     }
-    return GVEC_OK;
+    else {
+      return GVEC_OK;
+    }
   }
   for (size_t i = 0; i < ctx->use_stack_count; i++) {
     if (ctx->use_stack[i] == e) {
@@ -1622,7 +1654,17 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the use is placed past the range the waist can carry");
   }
   const GVEC_Svg_Instance * clone = NULL;
-  r = gvec_svg_instance_use(ctx->style, inst, &clone);
+  if (external) {
+    /* The use's own style is made before the clone is: the clone inherits from it, and the other document's context only reads it. */
+    const GTEXT_CSS_Computed_Style * use_style;
+    r = gvec_svg_instance_style(ctx->style, inst, &use_style);
+    if (r == GVEC_OK) {
+      r = gvec_svg_instance_use_in(external->style, ctx->style, inst, target, &clone);
+    }
+  }
+  else {
+    r = gvec_svg_instance_use(ctx->style, inst, &clone);
+  }
   if (r == GVEC_ERR_LIMIT) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_EXPANSION_LIMIT, "the use instantiates more elements than the limit allows");
   }
@@ -1681,6 +1723,11 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   if (r == GVEC_OK && usable) {
     r = gvec_lw_context_paint(ctx, inst, GVEC_SVG_PROP_STROKE, &use_stroke, &usable);
   }
+  if (r == GVEC_OK && usable && external && (use_fill.kind == GVEC_SVG_PAINT_SERVER || use_stroke.kind == GVEC_SVG_PAINT_SERVER)) {
+    /* A paint server is an element of the document that names it: the other document's elements cannot be filled with it. */
+    r = gvec_lw_refuse(ctx, e, GVEC_LOWER_CONTEXT_PAINT, "the use of an element of another document has a paint server as its fill or stroke, which that element's context-fill or context-stroke would name");
+    usable = false;
+  }
   if (r == GVEC_OK && usable) {
     ctx->context_set = true;
     ctx->context_fill = use_fill;
@@ -1715,7 +1762,14 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
     }
     if (r == GVEC_OK) {
       GSHGEOM_Map identity;
-      r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(ctx, clone, &identity, use) : GVEC_ERR_INTERNAL;
+      if (external) {
+        gvec_lw_external_sync(ctx, external);
+        r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(external, clone, &identity, use) : GVEC_ERR_INTERNAL;
+        gvec_lw_external_done(ctx, external);
+      }
+      else {
+        r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(ctx, clone, &identity, use) : GVEC_ERR_INTERNAL;
+      }
       ctx->use_stack_count--;
     }
   }

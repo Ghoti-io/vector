@@ -175,6 +175,20 @@ row is that case. The pair is a first setting and is expected to be refined as t
 
 ## The score today
 
+With the resolver (design.md, Resources) the four cases that name something outside the document are scored, not refused. The runner gives the library a resolver that serves what
+the corpus holds and nothing else: a path relative to the corpus (the case's `resources` directory, resolved against the case's own path as its `base_uri`, and refused if it
+climbs out of the corpus or holds an escape, a backslash or a control character), and the URLs of `tools/resvg-tests/REMOTE`, each served from a pinned copy
+(`third_party/resvg-remote/`, fetched by `fetch.sh`; `score.py` checks every file against its SHA-256 and length before the runner starts and fails the run when one is missing or differs,
+so a case is never judged against a file that moved). `external-CSS` (an `@import` of `resources/green.css`) matches the reference. `url-to-png` and `url-to-svg` (the two Wikimedia
+files, 800 x 600 RGBA and the SVG logo, pinned) are `EDGE`: the placement is the reference's, and what differs is the resampling of the PNG (2,291 pixels by more than one level, none past
+the tolerance) and the antialiased rounded edges of the logo (414 pixels past it, 4,794 by more than one level; the tolerance allows 500). `xlink-to-an-external-file` (a `use` of `text1` in
+`resources/simple-text.svg`, with `fill`, `font-family` and `font-size` on the `use`, which the element inherits as a `use` of its own document's would) is an `ORACLE_AGREES` row: drawn through the
+other document's context it is the text a fresh `resvg` draws for the same text written inline with the corpus's fonts only (21 pixels past the tolerance's level), and is as far from the reference
+(1,579 pixels past it, the reference's glyph edges having been rasterized by another engine) as that render is (1,566); the oracle wrapper of `make oracle-tolerance` renders without the corpus's fonts, so
+the row's evidence is that render, made once with `--skip-system-fonts --use-fonts-dir`, and not the wrapper's. At the head of the resolver work the score file reads **1,512 of 1,679 (90.05%)**
+determined correct: 592 `PASS` (35.26%), 27 `ACCEPTED`, 742 `EDGE`, 151 `ORACLE_AGREES`; 145 `ORACLE_SPLIT` and no `DEFECT` among the 1,038 `FAIL`s, no `REFUSED` (it was 4), 1 `NOT_LOADED`,
+21 `EXCLUDED`. What the resolver does not reach stays what it was: `text/tref/link-to-an-external-file-element` still names an element of another file through a `tref`, which is not resolved.
+
 At the head of the colour-emoji work the score file reads **1,508 of 1,679 (89.82%)** determined correct: 591 `PASS` (35.20%), 27 `ACCEPTED`, 740 `EDGE`,
 150 `ORACLE_AGREES`; 145 `ORACLE_SPLIT` and no `DEFECT` among the 1,035 `FAIL`s, 4 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The four that are refused each name
 something outside the document (`url-to-png`, `url-to-svg`, `external-CSS`, `xlink-to-an-external-file`): nothing is fetched, ever. The three emoji cases draw the

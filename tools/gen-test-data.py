@@ -25,6 +25,7 @@ DATA = os.path.join(ROOT, "tests", "data", "svg")
 CORPUS = os.path.join(ROOT, "tests", "fuzz", "corpus", "load")
 CORPUS_STYLE = os.path.join(ROOT, "tests", "fuzz", "corpus", "style")
 CORPUS_LOWER = os.path.join(ROOT, "tests", "fuzz", "corpus", "lower")
+CORPUS_RESOLVER = os.path.join(ROOT, "tests", "fuzz", "corpus", "resolver")
 LOWER_FIXTURES = os.path.join(ROOT, "tests", "data", "svg-lower")
 FONTS = os.path.join(ROOT, "tests", "data", "fonts")
 
@@ -470,19 +471,83 @@ def font_fixtures():
     return {"vector-test.ttf": test_font(False), "vector-test-bold.ttf": test_font(True)}
 
 
+def resolver_corpus():
+    """The resolver fuzzer's seeds: a byte for the limits (the low nibble the most resources minus one, the high nibble the depth minus one), a byte for
+    the instances minus one, a document, a NUL, then the script of the resolver's answers: a status byte (0 and 1 OK, 2 refused, 3 not found, 4 failed, 5 a
+    size over the limit, 6 a size and no bytes, 7 a status the enum lacks; bit 7 gives a media type, bits 3 and 4 choose it), a length byte and the bytes."""
+    ns = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+    c = {}
+
+    def rec(status, body=b""):
+        if isinstance(body, str):
+            body = body.encode()
+        return bytes([status, len(body)]) + body
+
+    def seed(doc, records, limits=0x7f, instances=15):
+        return bytes([limits, instances]) + doc.encode() + b"\0" + b"".join(records)
+
+    main = ('<svg %s width="40" height="40"><style>@import "a.css";</style><path id="a" d="M0 0H4V4Z"/>'
+            '<image width="8" height="8" href="pic.svg"/><use href="doc.svg#p" fill="green"/></svg>' % ns)
+    css = rec(0, "#a{fill:green}")
+    pic = rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><path d="M0 0H4V4Z"/></svg>')
+    doc = rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg"><path id="p" d="M0 0H3V3Z"/></svg>')
+    c["all-ok"] = seed(main, [css, pic, doc])
+    for status in (2, 3, 4, 5, 6, 7):
+        c["every-answer-%d" % status] = seed(main, [rec(status)] * 3)
+        c["css-answer-%d" % status] = seed(main, [rec(status), pic, doc])
+        c["image-answer-%d" % status] = seed(main, [css, rec(status), doc])
+        c["document-answer-%d" % status] = seed(main, [css, pic, rec(status)])
+    c["limits-one"] = seed(main, [css, pic, doc], limits=0x00, instances=0)
+    c["limits-resources-two"] = seed(main, [css, pic, doc], limits=0x71)
+    c["limits-depth-one"] = seed(main, [css, pic, doc], limits=0x0f)
+    c["css-cycle"] = seed(main, [rec(0, '@import "b.css"; #a{fill:red}'), rec(0, '@import "a.css"; #a{fill:blue}'), pic, doc])
+    c["css-self"] = seed(main, [rec(0, '@import "a.css";'), pic, doc])
+    c["css-conditions"] = seed('<svg %s><style>@import "a.css" screen; @import "b.css" layer(x) supports(display:block);</style><path d="M0 0H4V4Z"/></svg>' % ns,
+                               [css, css])
+    c["css-garbage"] = seed(main, [rec(0, b"\x01\xff\xfe{{{{}}}}@import url(("), pic, doc])
+    c["css-braces"] = seed(main, [rec(0, b"{" * 200), pic, doc])
+    c["image-garbage"] = seed(main, [css, rec(0x88, b"\x89PNG\r\n\x1a\n" + b"\xff" * 40), doc])
+    c["image-self"] = seed('<svg %s><image width="4" height="4" href="s.svg"/></svg>' % ns,
+                           [rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><image width="4" height="4" href="s.svg"/><path d="M0 0H2V2Z"/></svg>')])
+    c["image-chain"] = seed('<svg %s><image width="4" height="4" href="1.svg"/></svg>' % ns,
+                            [rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><image width="4" height="4" href="2.svg"/></svg>'),
+                             rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><image width="4" height="4" href="3.svg"/></svg>'),
+                             rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><path d="M0 0H4V4Z"/></svg>')])
+    c["doc-not-svg"] = seed(main, [css, pic, rec(0, "plain text, not markup")])
+    c["doc-no-id"] = seed(main, [css, pic, rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0H3V3Z"/></svg>')])
+    selfdoc = '<svg xmlns="http://www.w3.org/2000/svg"><g id="x"><use href="s.svg#x"/><path d="M0 0H3V3Z"/></g></svg>'
+    c["doc-self"] = seed('<svg %s><use href="s.svg#x"/></svg>' % ns, [rec(0x80, selfdoc)])
+    b = '<svg xmlns="http://www.w3.org/2000/svg"><g id="x"><use href="c.svg#x"/><use href="c.svg#x" x="1"/><path d="M0 0H3V3Z"/></g></svg>'
+    cc = '<svg xmlns="http://www.w3.org/2000/svg"><g id="x"><use href="b.svg#x"/><use href="b.svg#x" x="1"/><path d="M0 0H3V3Z"/></g></svg>'
+    c["doc-pair-cycle"] = seed('<svg %s><use href="b.svg#x"/></svg>' % ns, [rec(0x80, b), rec(0x80, cc)], limits=0xff, instances=63)
+    many_c = "".join('<use href="c.svg#x" x="%d"/>' % i for i in range(5))
+    many_b = "".join('<use href="b.svg#x" x="%d"/>' % i for i in range(5))
+    c["doc-fanout"] = seed('<svg %s><use href="b.svg#x"/></svg>' % ns,
+                           [rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg"><g id="x">%s<path d="M0 0H3V3Z"/></g></svg>' % many_c),
+                            rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg"><g id="x">%s<path d="M0 0H3V3Z"/></g></svg>' % many_b)],
+                           limits=0x3f, instances=40)
+    c["doc-style-and-symbol"] = seed('<svg %s><use href="d.svg#s" width="8" height="8"/></svg>' % ns,
+                                     [rec(0x80, '<svg xmlns="http://www.w3.org/2000/svg"><style>#s{fill:green}</style><symbol id="s" viewBox="0 0 4 4"><path d="M0 0H4V4Z"/></symbol></svg>')])
+    c["relative-bases"] = seed('<svg %s><image width="2" height="2" href="../../x.png"/><image width="2" height="2" href="//h/y.png"/>'
+                               '<image width="2" height="2" href="https://h/a/../b.png#f"/><use href="./o.svg?q=1#p"/></svg>' % ns, [rec(3)] * 4)
+    c["empty-script"] = seed(main, [])
+    return c
+
+
 def main():
     check = "--check" in sys.argv[1:]
     fx = fixtures()
     bad = (write_all(DATA, fx, check) + write_all(CORPUS, corpus(fx), check) + write_all(CORPUS_STYLE, style_corpus(), check) +
-           write_all(CORPUS_LOWER, lower_corpus(), check) + write_all(FONTS, font_fixtures(), check))
+           write_all(CORPUS_LOWER, lower_corpus(), check) + write_all(CORPUS_RESOLVER, resolver_corpus(), check) +
+           write_all(FONTS, font_fixtures(), check))
     if check:
         if bad:
             for b in bad:
                 print("check-test-data: " + b, file=sys.stderr)
             print("check-test-data: run tools/gen-test-data.py and commit the result", file=sys.stderr)
             return 1
-        print("check-test-data: %d fixtures and %d + %d + %d seeds are what the generator writes"
-              % (len(fx), len(corpus(fx)), len(style_corpus()), len(lower_corpus())))
+        print("check-test-data: %d fixtures and %d + %d + %d + %d seeds are what the generator writes"
+              % (len(fx), len(corpus(fx)), len(style_corpus()), len(lower_corpus()), len(resolver_corpus())))
     return 0
 
 

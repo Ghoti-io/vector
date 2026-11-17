@@ -23,6 +23,7 @@
 #   PLANT_LD_PATH               LD_LIBRARY_PATH for running
 #   PLANT_WORK                  a scratch directory
 #   PLANT_ONLY                  (optional) a rule prefix: only those plants
+#   PLANT_FILES                 (optional) comma-separated source paths: only the plants that edit one of them
 #   PLANT_BUILD_ONLY            (optional) apply and compile each plant, run nothing: to write plants quickly
 
 import os
@@ -620,6 +621,96 @@ PLANTS = [
      'an image has no reference box for a basic shape'),
     ('IM29', 'src/codec/svg/style/svg_prop_tables.c', 'auto | optimizeSpeed | optimizeQuality | smooth | high-quality | crisp-edges | pixelated', 'auto | smooth | high-quality | crisp-edges | pixelated',
      'the SVG keywords of image-rendering are not read'),
+    ('RS1', 'src/codec/svg/svg_resource.c', "            while (k > 0 && b.path[k - 1] != '/') {\n              k--;\n            }", "            while (k > 0 && b.path[k - 1] != '/' && 0) {\n              k--;\n            }",
+     'a reference is merged with the whole base path, its file name kept'),
+    ('RS2', 'src/codec/svg/svg_resource.c', "      if (count > 0 && !(len[count - 1] == 2 && flat[start[count - 1]] == '.' && flat[start[count - 1] + 1] == '.' && !rooted)) {\n        count--;", "      if (count > 0 && !(len[count - 1] == 2 && flat[start[count - 1]] == '.' && flat[start[count - 1] + 1] == '.' && !rooted)) {\n        ;",
+     'a `..` segment removes nothing'),
+    ('RS3', 'src/codec/svg/svg_resource.c', '      else if (!rooted) {\n        start[count] = i;', '      else if (0) {\n        start[count] = i;',
+     'a `..` with nothing above it in a relative path is dropped, so the reference names something else'),
+    ('RS4', 'src/codec/svg/svg_resource.c', '  (void) gvec_res_fragment(reference, &before);', '  before = strlen(reference);',
+     'the fragment is passed to the resolver as part of the reference'),
+    ('RS5', 'src/codec/svg/svg_resource.c', '  gvec_res_entry * known = find(state, kind, url);', '  gvec_res_entry * known = NULL;',
+     'a reference is asked again each time it is named'),
+    ('RS6', 'src/codec/svg/svg_resource.c', '    if (state->entries[i]->kind == kind && strcmp(', '    if ((state->entries[i]->kind | kind) != 0 && strcmp(',
+     'the cache ignores the kind: a url asked as an image answers a style sheet'),
+    ('RS7', 'src/codec/svg/svg_resource.c', '  if (state->calls >= state->max_count) {', '  if (state->calls > state->max_count) {',
+     'one resolver call past max_resources is made'),
+    ('RS8', 'src/codec/svg/svg_resource.c', '  if (depth > state->max_depth) {', '  if (depth > state->max_depth + 1) {',
+     'a reference one level past max_resource_depth is asked'),
+    ('RS9', 'src/codec/svg/svg_resource.c', '    if (reply.size > cap) {\n      entry->outcome = GVEC_RES_TOO_BIG;', '    if (0) {\n      entry->outcome = GVEC_RES_TOO_BIG;',
+     'an answer longer than the limit is copied'),
+    ('RS10', 'src/codec/svg/svg_resource.c', '    else if (reply.size > 0 && !reply.bytes) {', '    else if (0) {',
+     'a size with no bytes is read from address zero'),
+    ('RS11', 'src/codec/svg/svg_resource.c', '  if (cap > state->max_bytes) {\n    cap = state->max_bytes;\n  }', '',
+     'max_resource_bytes does not lower the limit of a kind'),
+    ('RS12', 'src/codec/svg/svg_resource.c', '  return value > ceiling ? ceiling : value;', '  (void) ceiling;\n  return value;',
+     'a limit above its ceiling is taken as given'),
+    ('RS13', 'src/codec/svg/svg_resource.c', '  if (value == 0) {\n    return fallback;', '  if (value == 1) {\n    return fallback;',
+     'zero does not select the default of a resolver limit'),
+    ('RS14', 'src/codec/svg/svg_resource.c', '  case GVEC_RESOURCE_OOM:\n    entry_free(state->allocator, entry);\n    return GVEC_ERR_OOM;', '  case GVEC_RESOURCE_OOM:\n    entry->outcome = GVEC_RES_FAILED;\n    break;',
+     'a resolver that is out of memory is a failure to find'),
+    ('RS15', 'src/codec/svg/svg_resource.c', '    entry->outcome = GVEC_RES_REFUSED;', '    entry->outcome = GVEC_RES_NOT_FOUND;',
+     'a refusal by the resolver is taken for a missing resource'),
+    ('RS16', 'src/codec/svg/svg_resource.c', '  if (!gvec_res_enabled(state)) {\n    *out_outcome = GVEC_RES_NO_RESOLVER;', '  if (0) {\n    *out_outcome = GVEC_RES_NO_RESOLVER;',
+     'a lowering with no resolver calls a null function'),
+    ('RS17', 'src/codec/svg/svg_resource.c', '  if (has_auth) {\n    put(&t, "//", 2);', '  if (0) {\n    put(&t, "//", 2);',
+     'the authority of a resolved URL is lost'),
+    ('RS18', 'src/codec/svg/svg_resource.c', '        if (r.has_query) {\n          query = r.query;', '        if (0) {\n          query = r.query;',
+     "an empty-path reference with a query keeps the base's query"),
+    ('RS19', 'src/codec/svg/svg_resource.c', '    entry->media_type[n] = 0;\n        }\n      }\n', '    entry->media_type[n] = 0;\n        }\n        entry->media_type[0] = 0;\n      }\n',
+     'the media type is lost'),
+    ('RS20', 'src/codec/svg/style/svg_sheet.c', '  if (request->has_media || request->has_supports || request->has_scope) {', '  if (request->has_media || request->has_supports) {',
+     'an import with a scope condition is fetched and applied unscoped'),
+    ('RS21', 'src/codec/svg/style/svg_sheet.c', '  if (request->has_media || request->has_supports || request->has_scope) {', '  if (request->has_supports || request->has_scope) {',
+     'an import with a media query is fetched and applied for every medium'),
+    ('RS22', 'src/codec/svg/style/svg_sheet.c', '  const char * base = frame->url ? frame->url : context->base;', '  const char * base = context->base;',
+     'an import in an imported sheet is resolved against the document, not the sheet'),
+    ('RS23', 'src/codec/svg/style/svg_sheet.c', '      context->res_depth + frame->depth + 1, &outcome, &entry);', '      context->res_depth + frame->depth, &outcome, &entry);',
+     'an import does not count its own level'),
+    ('RS24', 'src/codec/svg/style/svg_sheet.c', '    if (f->url && strcmp(f->url, entry->url) == 0) {', '    if (f->url && strcmp(f->url, entry->url) == 0 && 0) {',
+     'a sheet that imports itself is not a cycle'),
+    ('RS25', 'src/codec/svg/style/svg_sheet.c', '  if (gtext_css_sheet_condition_count(sheet) > 0) {\n    frame->failed = true;', '  if (gtext_css_sheet_condition_count(sheet) > 1000000) {\n    frame->failed = true;',
+     'an imported sheet with conditional rules is applied for every environment'),
+    ('RS26', 'src/codec/svg/style/svg_sheet.c', '  sheet_frame inner = {frame, context, frame->element, entry->url, frame->depth + 1, false};', '  sheet_frame inner = {frame, context, frame->element, NULL, frame->depth + 1, false};',
+     'an imported sheet does not know its own url'),
+    ('RS27', 'src/codec/svg/style/svg_sheet.c', '  case GVEC_RES_TOO_BIG:\n    why = "an imported style sheet is longer than the limit allows";\n    break;', '  case GVEC_RES_TOO_BIG:\n    break;',
+     'an imported sheet longer than the limit is read'),
+    ('RS28', 'src/codec/svg/style/svg_sheet.c', '  if (!context->res || !gvec_res_enabled(context->res)) {', '  if (!context->res) {',
+     'an import with no resolver asks a null function'),
+    ('RS29', 'src/codec/svg/lower/lower_image.c', '  if (gvec_res_enabled(ctx->res)) {\n    *borrowed = true;', '  if (0) {\n    *borrowed = true;',
+     'the resolver is not asked for an image'),
+    ('RS30', 'src/codec/svg/lower/lower_image.c', '  if (!borrowed) {\n    gvec_free(ctx->allocator, bytes);', '  if (1) {\n    gvec_free(ctx->allocator, bytes);',
+     "the cache's bytes of an image are freed by the image"),
+    ('RS31', 'src/codec/svg/lower/lower_image.c', '  *svg = is_svg_document(entry->bytes, entry->size, entry->media_type);', '  *svg = false;',
+     'an SVG image from the resolver is decoded as a raster'),
+    ('RS32', 'src/codec/svg/lower/lower_image.c', 'ctx->store, NULL, ctx, uri);', 'ctx->store, NULL, ctx, uri ? NULL : NULL);',
+     'the size of an SVG image is read without its url'),
+    ('RS33', 'src/codec/svg/lower/lower_walk.c', '    ctx->res_depth = parent->res_depth + 1;', '    ctx->res_depth = 0;',
+     'a document loaded through the resolver is at depth zero'),
+    ('RS34', 'src/codec/svg/lower/lower_walk.c', '    ctx->style->res_depth = ctx->res_depth;', '    ctx->style->res_depth = 0;',
+     "a nested document's imports start at depth one"),
+    ('RS35', 'src/codec/svg/lower/lower_walk.c', '  r = gvec_lw_begin_in(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics, ctx, image->uri);', '  r = gvec_lw_begin_in(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics, ctx, NULL);',
+     "the drawing of an SVG image resolves its references against the document's base"),
+    ('RS36', 'src/codec/svg/lower/lower_walk.c', '  if (r == GVEC_OK && usable && external && (use_fill.kind == GVEC_SVG_PAINT_SERVER || use_stroke.kind == GVEC_SVG_PAINT_SERVER)) {', '  if (r == GVEC_OK && usable && 0 && (use_fill.kind == GVEC_SVG_PAINT_SERVER || use_stroke.kind == GVEC_SVG_PAINT_SERVER)) {',
+     "a paint server of the using document fills the other document's element"),
+    ('RS37', 'src/codec/svg/lower/lower_walk.c', '        r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(external, clone, &identity, use) : GVEC_ERR_INTERNAL;', '        r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? lw_element(ctx, clone, &identity, use) : GVEC_ERR_INTERNAL;',
+     'the element of another document is walked by the using document: its sheets and ids are the wrong ones'),
+    ('RS38', 'src/codec/svg/lower/lower_external.c', '    if (up->external_use == use) {', '    if (0) {',
+     'documents that name one another recurse to the depth limit'),
+    ('RS39', 'src/codec/svg/lower/lower_external.c', '  if (res->instantiations >= res->max_instances) {', '  if (res->instantiations > res->max_instances) {',
+     'one instantiation past max_resource_instances is made'),
+    ('RS40', 'src/codec/svg/lower/lower_external.c', '  nested->context_set = ctx->context_set;', '  nested->context_set = false;',
+     "the use's context-fill is not the other document's"),
+    ('RS41', 'src/codec/svg/lower/lower_external.c', "    if (c == '%') {", '    if (0) {',
+     'a percent-escape in a fragment is not decoded'),
+    ('RS42', 'src/codec/svg/lower/lower_external.c', '  if (!fragment || !fragment[0]) {', '  if (0) {',
+     'a use of a document with no id draws the whole file'),
+    ('RS43', 'src/codec/svg/lower/lower_external.c', '  r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, entry->url);', '  r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, NULL);',
+     'the references of an external document are resolved against the document that names it'),
+    ('RS45', 'src/codec/svg/lower/lower_external.c', '  res->instantiations++;', '  ;',
+     'instantiations are not counted'),
+    ('RS46', 'src/codec/svg/lower/lower_external.c', '  ctx->marker_instances = nested->marker_instances;', '  ;',
+     'the markers an external element drew are not counted in the lowering'),
 ]
 
 PLANTS += [
@@ -795,6 +886,11 @@ def main():
     only = os.environ.get("PLANT_ONLY")  # a rule prefix, to rerun the plants of one rule while writing them
     if only:
         cases = [c for c in cases if c[0].startswith(only)]
+    # A change to some files is held to the plants in those files: a comma-separated list of source paths, as the plants name them.
+    files = os.environ.get("PLANT_FILES")
+    if files:
+        wanted = set(files.split(","))
+        cases = [c for c in cases if any(edit[0] in wanted for edit in c[1])]
     for n, (rule, edits, what) in enumerate(cases):
         status, log = build_and_test(os.path.join(work, "plant-%02d" % n), edits)
         if status == "broken":

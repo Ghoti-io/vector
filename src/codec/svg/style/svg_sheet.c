@@ -82,11 +82,183 @@ static GVEC_Result status_result(GTEXT_CSS_Status status) {
   return status == GTEXT_CSS_E_OOM ? GVEC_ERR_OOM : GVEC_ERR_LIMIT;
 }
 
-/* An `@import` is never fetched: it contributes nothing, and the sheet is reported as one that cannot be applied whole. */
-static GTEXT_CSS_Sheet * import_none(void * user, const GTEXT_CSS_Import_Request * request) {
-  (void) request;
-  *(bool *) user = true;
-  return NULL;
+/* One level of the sheets being compiled: the inline sheet of a `style` element, or one an `@import` loaded. */
+typedef struct sheet_frame {
+  struct sheet_frame * up;
+  GVEC_Svg_Style_Context * context;
+  const GVEC_Svg_Element * element;  /* the `style` element the whole chain is under */
+  const char * url;                  /* the resolved url of the sheet, NULL for the inline one */
+  size_t depth;                      /* 0 for the inline one */
+  bool failed;                       /* an import could not be applied: the chain is refused (the reason is already given) */
+} sheet_frame;
+
+static GVEC_Result compile_text(sheet_frame * frame, const char * text, size_t length, GTEXT_CSS_Sheet ** out);
+
+/* The sheet of one `@import`: asked of the resolver, parsed and compiled like the sheet that names it (so its own imports, at a depth one more). A
+ * sheet that cannot be had, or cannot be applied whole, is not applied and the style element is refused (a missing sheet would be drawing the wrong picture). */
+static GTEXT_CSS_Sheet * import_sheet(void * user, const GTEXT_CSS_Import_Request * request) {
+  sheet_frame * frame = user;
+  GVEC_Svg_Style_Context * context = frame->context;
+  if (request->has_media || request->has_supports || request->has_scope) {
+    frame->failed = true;
+    refuse(context, frame->element, "an @import has a media, supports or scope condition, which are not applied");
+    return NULL;
+  }
+  if (!context->res || !gvec_res_enabled(context->res)) {
+    frame->failed = true;
+    refuse(context, frame->element, "an @import is not fetched");
+    return NULL;
+  }
+  char * reference = gvec_alloc(context->allocator, request->url.length + 1);
+  if (!reference) {
+    frame->failed = true;
+    context->sheets_result = GVEC_ERR_OOM;
+    return NULL;
+  }
+  memcpy(reference, request->url.data, request->url.length);
+  reference[request->url.length] = 0;
+  gvec_res_outcome outcome;
+  gvec_res_entry * entry = NULL;
+  const char * base = frame->url ? frame->url : context->base;
+  GVEC_Result r = gvec_res_fetch(context->res, GVEC_RESOURCE_STYLE, base, reference, context->limits.max_style_bytes,
+      context->res_depth + frame->depth + 1, &outcome, &entry);
+  gvec_free(context->allocator, reference);
+  if (r != GVEC_OK) {
+    frame->failed = true;
+    context->sheets_result = r;
+    return NULL;
+  }
+  const char * why = NULL;
+  switch (outcome) {
+  case GVEC_RES_OK:
+    break;
+  case GVEC_RES_NO_RESOLVER:
+  case GVEC_RES_REFUSED:
+    why = "an @import names a style sheet that the resolver refuses";
+    break;
+  case GVEC_RES_NOT_FOUND:
+    why = "an @import names a style sheet that the resolver does not find";
+    break;
+  case GVEC_RES_FAILED:
+    why = "an @import names a style sheet that the resolver failed to give";
+    break;
+  case GVEC_RES_TOO_BIG:
+    why = "an imported style sheet is longer than the limit allows";
+    break;
+  case GVEC_RES_LIMIT_COUNT:
+    why = "an @import would pass max_resources";
+    break;
+  case GVEC_RES_LIMIT_DEPTH:
+    why = "@imports are nested deeper than max_resource_depth";
+    break;
+  }
+  if (why) {
+    frame->failed = true;
+    refuse(context, frame->element, why);
+    return NULL;
+  }
+  /* A sheet that imports itself, directly or through others, is a cycle: it contributes nothing and the chain is not applied. */
+  for (const sheet_frame * f = frame; f; f = f->up) {
+    if (f->url && strcmp(f->url, entry->url) == 0) {
+      frame->failed = true;
+      refuse(context, frame->element, "an @import closes a cycle of style sheets");
+      return NULL;
+    }
+  }
+  sheet_frame inner = {frame, context, frame->element, entry->url, frame->depth + 1, false};
+  GTEXT_CSS_Sheet * sheet = NULL;
+  r = compile_text(&inner, (const char *) entry->bytes, entry->size, &sheet);
+  if (r != GVEC_OK) {
+    frame->failed = true;
+    context->sheets_result = r;
+    return NULL;
+  }
+  if (inner.failed || !sheet) {
+    frame->failed = true;
+    gtext_css_sheet_free(sheet);
+    return NULL;
+  }
+  if (gtext_css_sheet_condition_count(sheet) > 0) {
+    frame->failed = true;
+    gtext_css_sheet_free(sheet);
+    refuse(context, frame->element, "an imported style sheet has conditional rules, which are not applied");
+    return NULL;
+  }
+  return sheet;
+}
+
+static GVEC_Result report_sheet(GVEC_Svg_Style_Context * context, const GVEC_Svg_Element * e, GTEXT_CSS_Sheet * sheet) {
+  size_t total = gtext_css_sheet_diagnostic_total(sheet);
+  for (size_t i = 0; i < total; i++) {
+    GTEXT_CSS_Sheet_Diagnostic d;
+    if (!gtext_css_sheet_diagnostic(sheet, i, &d)) {
+      continue;
+    }
+    if (d.kind == GTEXT_CSS_SHEET_DIAG_IMPORT_FAILED) {
+      refuse(context, e, "an @import is not fetched");
+    }
+    GVEC_Result r = gvec_svg_style_diag(context, GVEC_DIAG_WARNING, GVEC_DIAG_STYLE_INVALID, 0, e, NULL,
+        d.kind == GTEXT_CSS_SHEET_DIAG_INVALID_SELECTOR  ? "a rule of a style sheet has a selector that is not valid and was dropped"
+        : d.kind == GTEXT_CSS_SHEET_DIAG_UNKNOWN_PROPERTY ? "a declaration of a style sheet names a property that is not known and was dropped"
+        : d.kind == GTEXT_CSS_SHEET_DIAG_UNJUDGEABLE      ? "a declaration of a style sheet cannot be judged by the engine and was dropped"
+        : d.kind == GTEXT_CSS_SHEET_DIAG_IMPORT_FAILED    ? "an @import of a style sheet was not applied (the refusal of its style element says why)"
+        : d.kind == GTEXT_CSS_SHEET_DIAG_INVALID_RULE     ? "a rule of a style sheet is not valid where it is and was dropped"
+                                                          : "a declaration of a style sheet is not a value of its property and was dropped");
+    if (r == GVEC_ERR_OOM) {
+      return r;
+    }
+  }
+  return GVEC_OK;
+}
+
+/* Parse and compile the text of a sheet. `*out` is NULL when it cannot be applied (reported, and `frame->failed` where it is a refusal). */
+static GVEC_Result compile_text(sheet_frame * frame, const char * text, size_t length, GTEXT_CSS_Sheet ** out) {
+  GVEC_Svg_Style_Context * context = frame->context;
+  const GVEC_Svg_Element * e = frame->element;
+  *out = NULL;
+  GTEXT_CSS_Parse_Options parse = context->style_options.parse;
+  parse.max_input_bytes = context->limits.max_style_bytes;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status status = gtext_css_parse_stylesheet(text, length, &parse, &tree, NULL);
+  if (status != GTEXT_CSS_OK) {
+    if (status == GTEXT_CSS_E_OOM) {
+      return GVEC_ERR_OOM;
+    }
+    /* A sheet longer than a limit is not applied, and said so: its elements would be drawn without it. */
+    frame->failed = true;
+    refuse(context, e, "a style sheet is larger than the limits allow");
+    return gvec_svg_style_diag(context, GVEC_DIAG_WARNING, GVEC_DIAG_LIMIT, GVEC_LIMIT_STYLE_BYTES, e, NULL,
+        "a style sheet is longer than max_style_bytes and is not applied");
+  }
+  GTEXT_CSS_Sheet_Options options = gtext_css_sheet_options_default();
+  options.allocator = context->style_options.parse.allocator;
+  options.import = import_sheet;
+  options.import_user = frame;
+  GTEXT_CSS_Sheet * sheet = NULL;
+  GTEXT_CSS_Sheet_Result result;
+  memset(&result, 0, sizeof result);
+  status = gtext_css_sheet_compile(tree, context->engine->reg.registry, &options, &sheet, &result);
+  gtext_css_tree_free(tree);
+  if (context->sheets_result != GVEC_OK) {
+    gtext_css_sheet_free(sheet);
+    return context->sheets_result;
+  }
+  if (status != GTEXT_CSS_OK) {
+    if (status == GTEXT_CSS_E_OOM) {
+      return GVEC_ERR_OOM;
+    }
+    frame->failed = true;
+    refuse(context, e, "a style sheet is larger than the limits allow");
+    return gvec_svg_style_diag(context, GVEC_DIAG_WARNING, GVEC_DIAG_LIMIT, 0, e, NULL,
+        "a style sheet has more rules or a deeper nesting than the limits allow and is not applied");
+  }
+  GVEC_Result r = report_sheet(context, e, sheet);
+  if (r != GVEC_OK) {
+    gtext_css_sheet_free(sheet);
+    return r;
+  }
+  *out = sheet;
+  return GVEC_OK;
 }
 
 /* One sheet into the index. A sheet that cannot be applied is named and left out; a failure of memory or a limit ends the walk. */
@@ -105,61 +277,20 @@ static GVEC_Result add_sheet(GVEC_Svg_Style_Context * context, const GVEC_Svg_El
     gvec_free(context->allocator, text);
     return GVEC_OK;
   }
-  GTEXT_CSS_Parse_Options parse = context->style_options.parse;
-  parse.max_input_bytes = context->limits.max_style_bytes;
-  GTEXT_CSS_Tree * tree = NULL;
-  GTEXT_CSS_Status status = gtext_css_parse_stylesheet(text, length, &parse, &tree, NULL);
-  gvec_free(context->allocator, text);
-  if (status != GTEXT_CSS_OK) {
-    if (status == GTEXT_CSS_E_OOM) {
-      return GVEC_ERR_OOM;
-    }
-    /* A sheet longer than a limit is not applied, and said so: its elements would be drawn without it. */
-    refuse(context, e, "a style sheet is larger than the limits allow");
-    return gvec_svg_style_diag(context, GVEC_DIAG_WARNING, GVEC_DIAG_LIMIT, GVEC_LIMIT_STYLE_BYTES, e, NULL,
-        "a style sheet is longer than max_style_bytes and is not applied");
-  }
-  GTEXT_CSS_Sheet_Options options = gtext_css_sheet_options_default();
-  options.allocator = context->style_options.parse.allocator;
-  bool imported = false;
-  options.import = import_none;
-  options.import_user = &imported;
+  sheet_frame frame = {NULL, context, e, NULL, 0, false};
   GTEXT_CSS_Sheet * sheet = NULL;
-  GTEXT_CSS_Sheet_Result result;
-  memset(&result, 0, sizeof result);
-  status = gtext_css_sheet_compile(tree, context->engine->reg.registry, &options, &sheet, &result);
-  gtext_css_tree_free(tree);
-  if (status != GTEXT_CSS_OK) {
-    if (status == GTEXT_CSS_E_OOM) {
-      return GVEC_ERR_OOM;
-    }
-    refuse(context, e, "a style sheet is larger than the limits allow");
-    return gvec_svg_style_diag(context, GVEC_DIAG_WARNING, GVEC_DIAG_LIMIT, 0, e, NULL,
-        "a style sheet has more rules or a deeper nesting than the limits allow and is not applied");
+  r = compile_text(&frame, text, length, &sheet);
+  gvec_free(context->allocator, text);
+  if (r != GVEC_OK) {
+    return r;
   }
-  if (imported) {
-    refuse(context, e, "an @import is not fetched");
+  if (!sheet) {
+    return GVEC_OK;
   }
-  size_t total = gtext_css_sheet_diagnostic_total(sheet);
-  for (size_t i = 0; i < total; i++) {
-    GTEXT_CSS_Sheet_Diagnostic d;
-    if (!gtext_css_sheet_diagnostic(sheet, i, &d)) {
-      continue;
-    }
-    if (d.kind == GTEXT_CSS_SHEET_DIAG_IMPORT_FAILED) {
-      refuse(context, e, "an @import is not fetched");
-    }
-    r = gvec_svg_style_diag(context, GVEC_DIAG_WARNING, GVEC_DIAG_STYLE_INVALID, 0, e, NULL,
-        d.kind == GTEXT_CSS_SHEET_DIAG_INVALID_SELECTOR  ? "a rule of a style sheet has a selector that is not valid and was dropped"
-        : d.kind == GTEXT_CSS_SHEET_DIAG_UNKNOWN_PROPERTY ? "a declaration of a style sheet names a property that is not known and was dropped"
-        : d.kind == GTEXT_CSS_SHEET_DIAG_UNJUDGEABLE      ? "a declaration of a style sheet cannot be judged by the engine and was dropped"
-        : d.kind == GTEXT_CSS_SHEET_DIAG_IMPORT_FAILED    ? "an @import of a style sheet is not fetched"
-        : d.kind == GTEXT_CSS_SHEET_DIAG_INVALID_RULE     ? "a rule of a style sheet is not valid where it is and was dropped"
-                                                          : "a declaration of a style sheet is not a value of its property and was dropped");
-    if (r == GVEC_ERR_OOM) {
-      gtext_css_sheet_free(sheet);
-      return r;
-    }
+  if (frame.failed) {
+    /* An import could not be applied (the reason is given): the sheet is not applied whole. */
+    gtext_css_sheet_free(sheet);
+    return GVEC_OK;
   }
   /* A conditional rule (`@media`, `@supports`, `@container`, `@when`) needs an evaluator for its environment; this layer has none, so a sheet
    * that holds one is not applied: guessing its conditions would be drawing a picture the document does not describe. */
@@ -173,7 +304,7 @@ static GVEC_Result add_sheet(GVEC_Svg_Style_Context * context, const GVEC_Svg_El
   registration.origin = GTEXT_CSS_ORIGIN_AUTHOR;
   GTEXT_CSS_Rule_Index_Result added;
   memset(&added, 0, sizeof added);
-  status = gtext_css_rule_index_add_sheet(index, sheet, &registration, &added);
+  GTEXT_CSS_Status status = gtext_css_rule_index_add_sheet(index, sheet, &registration, &added);
   gtext_css_sheet_free(sheet);
   if (status == GTEXT_CSS_E_UNSUPPORTED) {
     refuse(context, e, "a style sheet has conditional rules, which are not applied");

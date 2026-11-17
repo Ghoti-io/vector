@@ -146,12 +146,56 @@ typedef enum bytes_state {
   BYTES_REFUSED   /* the element is refused (reported) */
 } bytes_state;
 
+/* The bytes an `href` names that are not in the document: asked of the resolver. `*borrowed` is set: the bytes are the cache's, not the caller's. */
+static GVEC_Result resolver_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * reference, unsigned char ** bytes, size_t * size,
+    bool * svg, const char ** uri, bytes_state * state) {
+  const GVEC_Limits * limits = &ctx->document->limits;
+  gvec_res_outcome outcome;
+  gvec_res_entry * entry = NULL;
+  GVEC_Result r = gvec_res_fetch(ctx->res, GVEC_RESOURCE_IMAGE, ctx->base, reference, limits->max_image_bytes, ctx->res_depth + 1, &outcome, &entry);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  switch (outcome) {
+  case GVEC_RES_OK:
+    break;
+  case GVEC_RES_NO_RESOLVER: /* not reached: the caller asks only with a resolver */
+  case GVEC_RES_REFUSED:
+    *state = BYTES_REFUSED;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_EXTERNAL_REFERENCE, "the resolver refuses the reference of the image");
+  case GVEC_RES_NOT_FOUND:
+    return unusable(ctx, e, GVEC_IMAGE_UNREADABLE, "the resolver finds nothing at the reference of the image");
+  case GVEC_RES_FAILED:
+    return unusable(ctx, e, GVEC_IMAGE_UNREADABLE, "the resolver failed to give the data of the image");
+  case GVEC_RES_TOO_BIG:
+    *state = BYTES_REFUSED;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image's data is larger than max_image_bytes or max_resource_bytes allows");
+  case GVEC_RES_LIMIT_COUNT:
+    *state = BYTES_REFUSED;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image would pass max_resources");
+  case GVEC_RES_LIMIT_DEPTH:
+    *state = BYTES_REFUSED;
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image is nested deeper than max_resource_depth allows");
+  }
+  if (entry->size == 0) {
+    return unusable(ctx, e, GVEC_IMAGE_NO_DATA, "the data the resolver gave for the image is empty");
+  }
+  *bytes = entry->bytes;
+  *size = entry->size;
+  *svg = is_svg_document(entry->bytes, entry->size, entry->media_type);
+  *uri = entry->url;
+  *state = BYTES_READY;
+  return GVEC_OK;
+}
+
 static GVEC_Result image_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, unsigned char ** bytes, size_t * size, bool * svg,
-    bytes_state * state) {
+    const char ** uri, bool * borrowed, bytes_state * state) {
   const GVEC_Limits * limits = &ctx->document->limits;
   *bytes = NULL;
   *size = 0;
   *svg = false;
+  *uri = NULL;
+  *borrowed = false;
   *state = BYTES_NOTHING;
   const GVEC_Svg_Attribute * href = href_attribute(e);
   GVEC_Svg_Reference ref;
@@ -191,7 +235,12 @@ static GVEC_Result image_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, un
     *state = BYTES_READY;
     return GVEC_OK;
   }
-  /* A reference to a file: the resource policy decides. */
+  /* A reference to something outside the document: the resolver answers when there is one (its policy is the caller's)... */
+  if (gvec_res_enabled(ctx->res)) {
+    *borrowed = true;
+    return resolver_bytes(ctx, e, ref.url, bytes, size, svg, uri, state);
+  }
+  /* ...else a reference to a file: the resource policy decides. */
   gvec_lw_image_path_status path_status;
   char * path = NULL;
   const GVEC_Lower_Options * options = ctx->options;
@@ -443,9 +492,9 @@ static bool root_gives_size(const GVEC_Svg_Element * root, const char * name) {
 
 /* The intrinsic size of a loaded document: its used width and height, except that a side it does not give is the viewBox's when it has one
  * (the document then has an aspect ratio and no size: its image is as large as the viewBox, and `image` scales it). */
-static GVEC_Result svg_intrinsic_size(gvec_lw_ctx * ctx, GVEC_Doc * doc, double * width, double * height, bool * usable) {
+static GVEC_Result svg_intrinsic_size(gvec_lw_ctx * ctx, GVEC_Doc * doc, const char * uri, double * width, double * height, bool * usable) {
   gvec_lw_ctx probe;
-  GVEC_Result r = gvec_lw_begin(&probe, doc, ctx->options, ctx->store, NULL);
+  GVEC_Result r = gvec_lw_begin_in(&probe, doc, ctx->options, ctx->store, NULL, ctx, uri);
   *usable = false;
   if (r != GVEC_OK) {
     return r;
@@ -515,6 +564,11 @@ static GVEC_Result load_document(gvec_lw_ctx * ctx, const unsigned char * bytes,
   return GVEC_OK;
 }
 
+GVEC_Result gvec_lw_load_document(gvec_lw_ctx * ctx, const unsigned char * bytes, size_t size, double viewport_width, double viewport_height,
+    GVEC_Doc ** out, GVEC_Result * problem) {
+  return load_document(ctx, bytes, size, viewport_width, viewport_height, out, problem);
+}
+
 static GVEC_Result hold_document(gvec_lw_ctx * ctx, GVEC_Doc * doc) {
   if (ctx->svg_doc_count == ctx->svg_doc_capacity) {
     size_t capacity = ctx->svg_doc_capacity ? ctx->svg_doc_capacity * 2 : 4, bytes;
@@ -536,8 +590,8 @@ static GVEC_Result hold_document(gvec_lw_ctx * ctx, GVEC_Doc * doc) {
 
 /* An image that is an SVG document: loaded twice, the first time at the default viewport to read the size it asks for, and again laid out in
  * that size, so that a document that gives none draws in its viewBox and the placement of the `image` scales it. */
-static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const unsigned char * bytes, size_t size, gvec_lw_image * out,
-    gvec_lw_image_state * state) {
+static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const unsigned char * bytes, size_t size, const char * uri,
+    gvec_lw_image * out, gvec_lw_image_state * state) {
   if (ctx->image_nesting >= GVEC_LW_IMAGE_NESTING_MAX) {
     *state = GVEC_LW_IMAGE_REFUSED;
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "SVG images are nested deeper than the lowering allows");
@@ -566,7 +620,7 @@ static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   }
   double w, h;
   bool usable;
-  r = svg_intrinsic_size(ctx, probe, &w, &h, &usable);
+  r = svg_intrinsic_size(ctx, probe, uri, &w, &h, &usable);
   gvec_doc_free(probe);
   if (r != GVEC_OK) {
     return r;
@@ -588,6 +642,7 @@ static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   }
   memset(out, 0, sizeof *out);
   out->svg = doc;
+  out->uri = uri;
   out->source_hash = source_hash;
   out->width = w;
   out->height = h;
@@ -604,15 +659,16 @@ GVEC_Result gvec_lw_image_load(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, gv
   }
   unsigned char * bytes = NULL;
   size_t size = 0;
-  bool svg = false;
+  bool svg = false, borrowed = false;
+  const char * uri = NULL;
   bytes_state bs;
   gvec_lw_image result;
   memset(&result, 0, sizeof result);
   *state = GVEC_LW_IMAGE_NOTHING;
-  GVEC_Result r = image_bytes(ctx, e, &bytes, &size, &svg, &bs);
+  GVEC_Result r = image_bytes(ctx, e, &bytes, &size, &svg, &uri, &borrowed, &bs);
   if (r == GVEC_OK && bs == BYTES_READY) {
     if (svg) {
-      r = load_svg_image(ctx, e, bytes, size, &result, state);
+      r = load_svg_image(ctx, e, bytes, size, uri, &result, state);
     }
     else {
       r = decode_image(ctx, e, bytes, size, &result, state);
@@ -621,7 +677,9 @@ GVEC_Result gvec_lw_image_load(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, gv
   else if (bs == BYTES_REFUSED) {
     *state = GVEC_LW_IMAGE_REFUSED;
   }
-  gvec_free(ctx->allocator, bytes);
+  if (!borrowed) {
+    gvec_free(ctx->allocator, bytes);
+  }
   if (r != GVEC_OK) {
     return r;
   }

@@ -117,6 +117,73 @@ typedef enum GVEC_Image_Problem {
   GVEC_IMAGE_NOT_AN_IMAGE    ///< The `href` names an element of the document (`#id`), which is not an image.
 } GVEC_Image_Problem;
 
+/**
+ * What a resolver is asked for (GVEC_Resource_Request::kind). The numbers are stable.
+ */
+typedef enum GVEC_Resource_Kind {
+  GVEC_RESOURCE_IMAGE = 1,  ///< The data of an `image` or an `feImage`: a raster, or an SVG document (the bytes decide).
+  GVEC_RESOURCE_STYLE,      ///< A style sheet named by an `@import` of a `style` element or of a sheet already imported.
+  GVEC_RESOURCE_DOCUMENT    ///< An SVG document that an `href` of a `use` names an element of.
+} GVEC_Resource_Kind;
+
+/**
+ * What a resolver is asked. Every string is valid for the call only; the resolver keeps nothing of it.
+ *
+ * A resolver is asked only for a reference the lowering could not answer from the document itself: never for a `data:`
+ * URI, never for a reference to an element of the same document (`#id`), and never for a resource past a limit.
+ */
+typedef struct GVEC_Resource_Request {
+  GVEC_Resource_Kind kind;
+  /** The reference as the document wrote it (a `url()` or a string of a sheet, an `href`), with no `#fragment`. */
+  const char * reference;
+  /**
+   * The reference resolved against `base` by the rules of RFC 3986 (section 5), still with no fragment: an absolute reference
+   * is itself, a relative one is merged with the base and its `.` and `..` segments are removed. With no base (or a base that
+   * is itself relative) a relative reference stays relative, and a `..` that has nothing above it is kept. It is only a
+   * string: the library neither opens it nor checks that it names anything, and a resolver that maps it to a file, a
+   * table, a cache or a network is the caller's own. A resolver that maps it to a path must check the path itself (a `..`
+   * in it, a symbolic link, a scheme it does not serve): the library gives it no more than the string.
+   */
+  const char * url;
+  /**
+   * What `reference` was resolved against: the `base_uri` of the options for the document being lowered, the `url` of
+   * the resource that named it for one that was loaded through a resolver. NULL when there is none.
+   */
+  const char * base;
+  /** The most bytes the library will take for this resource: the limit of its kind and `max_resource_bytes`, whichever is smaller. */
+  size_t max_bytes;
+  /** How far down the resource is: 1 for a reference of the document being lowered, 2 for one of a resource that reference loaded, and so on. */
+  size_t depth;
+} GVEC_Resource_Request;
+
+/** What a resolver answers with. */
+typedef enum GVEC_Resource_Status {
+  GVEC_RESOURCE_OK = 0,     ///< `reply` holds the resource.
+  GVEC_RESOURCE_REFUSED,    ///< The caller's policy does not allow this reference. The element that named it is refused (GVEC_LOWER_EXTERNAL_REFERENCE).
+  GVEC_RESOURCE_NOT_FOUND,  ///< There is nothing at the reference. An image draws nothing, a `use` draws nothing, a style sheet that cannot be had is not applied (and says so).
+  GVEC_RESOURCE_FAILED,     ///< The resource could not be had (an I/O error, a timeout). Treated as NOT_FOUND, with a message that says the resolver failed.
+  GVEC_RESOURCE_OOM         ///< The resolver ran out of memory: the lowering fails with GVEC_ERR_OOM.
+} GVEC_Resource_Status;
+
+/**
+ * The resource of a GVEC_RESOURCE_OK answer. The library copies the bytes (and the media type) before the resolver returns and
+ * keeps no pointer into the resolver's memory, so a static buffer, a memory map or a buffer reused by the next call is fine: the resolver owns what it points
+ * to and the library never frees it. The library reads `size` bytes at `bytes` and nothing else.
+ */
+typedef struct GVEC_Resource_Reply {
+  const void * bytes;       ///< The data; may be NULL only when `size` is zero.
+  size_t size;              ///< Its length, at most `max_bytes` of the request; an answer longer than that is refused as past the limit without being read.
+  const char * media_type;  ///< The media type, for example "image/svg+xml", NUL-terminated; NULL when the resolver does not know. A hint: the bytes decide (an SVG document begins as markup).
+} GVEC_Resource_Reply;
+
+/**
+ * The resolver: the one door by which an `image`, a `style` and a `use` of this library may reach bytes that the document does not hold.
+ * It is called synchronously from the lowering call, on the thread that made it, and never concurrently with another call of the same
+ * lowering. It may not call back into this library with the same lowering's objects. A reference is asked of it at most once for each
+ * (kind, url) in a lowering: the answer, a refusal and a failure included, is cached for the rest of the call.
+ */
+typedef GVEC_Resource_Status (*GVEC_Resource_Resolver)(void * user, const GVEC_Resource_Request * request, GVEC_Resource_Reply * reply);
+
 /** The name of a reason, for example "gradient"; "unknown" for a value outside the enum. Static. */
 GVEC_API const char * gvec_lower_reason_string(GVEC_Lower_Reason reason);
 
@@ -225,6 +292,39 @@ typedef struct GVEC_Lower_Options {
    * It must lie in `image_root`; one that does not refuses every reference to a file.
    */
   const char * image_base;
+  /**
+   * The resolver (see GVEC_Resource_Resolver): NULL for none, which is the default, and then a reference to something outside the document is
+   * refused with GVEC_LOWER_EXTERNAL_REFERENCE, a `style` with an `@import` is not applied and a `use` of an element of another document is refused,
+   * exactly as when `image_root` is NULL. The library never opens a socket or a file for a reference but through `image_root` (see below):
+   * a URL is a string, and what it names is the resolver's to say.
+   *
+   * With a resolver, an `image` or `feImage` that names a file or a URL is answered by the resolver, not by `image_root`; `image_root` and
+   * `image_base` remain only as a convenience that serves images from a directory when there is no resolver (a resolver that maps its
+   * `url` into a directory is the same thing with the policy in the caller's hands). A `data:` URI is never asked of a resolver.
+   * The three kinds are described at GVEC_Resource_Kind: an `image` that is an SVG document is lowered with its own references resolved against its own
+   * url, a `style`'s `@import` (with `layer`; one with `media`, `supports` or `scope` is refused as a sheet that cannot be applied whole) enters the
+   * cascade where it stands, and a `use` of `other.svg#id` is drawn from that document with that document's styles and ids and the inheritance of the `use`.
+   */
+  GVEC_Resource_Resolver resolver;
+  void * resolver_user;                  ///< Passed to `resolver`.
+  /**
+   * The URI of the document being lowered, which relative references are resolved against: a path or an URL as a string, NULL for none.
+   * It is only a string handed to the resolver as the `base` of a request; it is not opened.
+   */
+  const char * base_uri;
+  /** The most bytes of one resource: 0 for the default (32 MiB, the ceiling is 1 GiB). The limit of its kind (`max_image_bytes`, `max_style_bytes`, `max_input_bytes`) applies as well. */
+  size_t max_resource_bytes;
+  /** The most resources a resolver is asked for in one lowering (distinct (kind, url) pairs, the refused and the failed ones counted): 0 for the default, 64; the ceiling is 4096. The one past it is refused with GVEC_LOWER_LIMIT without being asked. */
+  size_t max_resources;
+  /** The deepest nesting of documents and sheets that name one another (see GVEC_Resource_Request::depth): 0 for the default, 8; the ceiling is 64. A reference past it is refused with GVEC_LOWER_LIMIT. */
+  size_t max_resource_depth;
+  /**
+   * The most `use` references into other documents one lowering instantiates (each `use` of `other.svg#id` is one, however many elements the referent has, and
+   * however many times the document was asked of the resolver: it is asked once): 0 for the default, 1024; the ceiling is 1,048,576. The one past it is refused with
+   * GVEC_LOWER_LIMIT. Each instantiation styles its elements afresh, as an instance of a `use` does within a document, so this bounds the work a set of documents that
+   * name one another can make: with the depth and the cycle check, a hostile set costs at most this many instantiations, not their product.
+   */
+  size_t max_resource_instances;
   uint8_t _reserved[8];                  ///< Zero.
 } GVEC_Lower_Options;
 
