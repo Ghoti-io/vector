@@ -773,6 +773,172 @@ TEST(LowerText, ADecorationOverGlyphsOnDifferentBaselinesOrTurnedIsAPieceForEach
   EXPECT_GT(turned.Items(), flat.Items() + 1);  // a piece for each glyph, and the turned glyph a run of its own
 }
 
+namespace {
+
+/** The font set of tests/data/fonts-color: one face with no outlines whose strike of PNG pictures (CBDT, as Noto Color Emoji is) carries the
+ * glyphs of U+0041 to U+0049, and not U+004A (glyph 10), which is in the face and in no strike. */
+struct ColorFonts {
+  GFNT_FontSet * set = nullptr;
+  GVEC_Fonts * fonts = nullptr;
+  ColorFonts() {
+    const char * dirs[] = {"tests/data/fonts-color"};
+    EXPECT_EQ(gfnt_fontset_scan(dirs, 1, nullptr, 0, nullptr, &set, nullptr), GFNT_OK);
+    EXPECT_EQ(gvec_fonts_new(set, nullptr, &fonts), GVEC_OK);
+  }
+  ~ColorFonts() {
+    gvec_fonts_free(fonts);
+    gfnt_fontset_free(set);
+  }
+};
+
+size_t ImageFillsOf(const Lowered & l) {
+  size_t n = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    n += l.Item(i).kind == GSHSCENE_ITEM_FILL && l.Item(i).paint.kind == GSHSCENE_PAINT_IMAGE;
+  }
+  return n;
+}
+
+void LowerColor(ColorFonts & f, const std::string & content, Lowered & l, const GVEC_Limits * limits = nullptr) {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  LoadSvg(Svg("width=\"400\" height=\"200\" font-size=\"24\" font-family=\"Ghoti Fixture Color Strikes\"", "<text x=\"10\" y=\"50\">" + content + "</text>"),
+      l.loaded, 0, 0, limits);
+  LowerBoth(l.loaded, l, &options);
+}
+
+}  // namespace
+
+TEST(LowerText, AGlyphOfAColourStrikeIsAnImageFillAndAGlyphTheStrikeLacksIsBlankNotMissing) {
+  ColorFonts f;
+  Lowered l;
+  LowerColor(f, "AB", l);
+  EXPECT_EQ(ImageFillsOf(l), (size_t) 2) << "one picture for each glyph";
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  Lowered blank;
+  LowerColor(f, "J", blank);
+  EXPECT_EQ(blank.Items(), (size_t) 0) << "glyph 10 is in no strike: nothing to draw";
+  EXPECT_EQ(blank.Refusals(), (size_t) 0) << "and not a missing glyph";
+  Lowered mixed;
+  LowerColor(f, "AJA", mixed);
+  EXPECT_EQ(ImageFillsOf(mixed), (size_t) 2) << "the blank glyph between is skipped, the pictures around it drawn";
+  EXPECT_EQ(mixed.Refusals(), (size_t) 0);
+}
+
+TEST(LowerText, ThePicturesOfColourGlyphsCountAgainstTheDecodedBytesBudget) {
+  ColorFonts f;
+  Lowered whole;
+  LowerColor(f, "A", whole);
+  ASSERT_EQ(ImageFillsOf(whole), (size_t) 1);
+  GVEC_Limits limits;
+  gvec_limits_default(&limits);
+  limits.max_image_decoded_bytes = 1;
+  Lowered tiny;
+  LowerColor(f, "A", tiny, &limits);
+  EXPECT_NE(tiny.Refusal(GVEC_LOWER_LIMIT), nullptr);
+  EXPECT_EQ(ImageFillsOf(tiny), (size_t) 0);
+}
+
+namespace {
+
+struct ColorPlace {
+  uint32_t width = 0, height = 0;
+  double scale_x = 0, scale_y = 0, tx = 0, ty = 0;
+};
+
+/** The picture of the first glyph of "A" at @p size (the origin is (10, 50)): its pixels and the map of them into the text's space. */
+ColorPlace PlaceOfA(ColorFonts & f, const char * size, const char * family = "Ghoti Fixture Color Strikes") {
+  ColorPlace out;
+  Lowered l;
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  LoadSvg(Svg(std::string("width=\"400\" height=\"200\" font-size=\"") + size + "\" font-family=\"" + family + "\"",
+                "<text x=\"10\" y=\"50\">A</text>"), l.loaded, 0, 0, nullptr);
+  LowerBoth(l.loaded, l, &options);
+  GSHSCENE_Image_Paint ip;
+  GSHSCENE_Image_Info info;
+  if (l.Items() >= 1 && gshscene_resource_image_paint(l.Item(0).paint.resource, &ip) == GSHSCENE_OK &&
+      gshscene_resource_image(ip.image, &info) == GSHSCENE_OK) {
+    out.width = info.width;
+    out.height = info.height;
+    out.scale_x = ip.map.m[0][0];
+    out.scale_y = ip.map.m[1][1];
+    out.tx = ip.map.t[0];
+    out.ty = ip.map.t[1];
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST(LowerText, AColourGlyphsPictureIsScaledByTheSizeOverThePpemOfItsStrikeAndPlacedByItsBearings) {
+  ColorFonts f;
+  // The strikes are 16 and 24 ppem; A's bearings are (1, 11) in the first and (2, 17) in the second.
+  ColorPlace at16 = PlaceOfA(f, "16");
+  EXPECT_EQ(at16.width, 10u);
+  EXPECT_EQ(at16.height, 12u);
+  EXPECT_EQ(at16.scale_x, 1.0);
+  EXPECT_EQ(at16.scale_y, 1.0);
+  EXPECT_EQ(at16.tx, 11.0) << "x plus the bearing";
+  EXPECT_EQ(at16.ty, 39.0) << "y minus the bearing above the baseline";
+  ColorPlace at24 = PlaceOfA(f, "24");
+  EXPECT_EQ(at24.width, 16u) << "the strike nearest the size";
+  EXPECT_EQ(at24.scale_x, 1.0);
+  EXPECT_EQ(at24.tx, 12.0);
+  EXPECT_EQ(at24.ty, 33.0);
+  ColorPlace at32 = PlaceOfA(f, "32");
+  EXPECT_EQ(at32.width, 16u) << "past the largest strike, the largest";
+  EXPECT_NEAR(at32.scale_x, 32.0 / 24.0, 1e-12);
+  EXPECT_NEAR(at32.scale_y, 32.0 / 24.0, 1e-12);
+  EXPECT_NEAR(at32.tx, 10.0 + 2.0 * 32.0 / 24.0, 1e-12);
+  EXPECT_NEAR(at32.ty, 50.0 - 17.0 * 32.0 / 24.0, 1e-12);
+  ColorPlace odd = PlaceOfA(f, "19.9");
+  EXPECT_EQ(odd.width, 16u) << "19.9 rounds to a ppem of 20, nearer the 24 ppem strike (a tie goes to the larger) than 19 is the 16";
+  // A strike whose ppem differs by axis (24 by 12 at a size of 12): each axis is scaled by the size over its own ppem.
+  ColorPlace wide = PlaceOfA(f, "12", "Ghoti Fixture CBDT Sizes");
+  EXPECT_EQ(wide.width, 8u);
+  EXPECT_NEAR(wide.scale_x, 0.5, 1e-12);
+  EXPECT_NEAR(wide.scale_y, 1.0, 1e-12);
+  ColorPlace at12 = PlaceOfA(f, "12");
+  EXPECT_EQ(at12.width, 10u) << "under the smallest strike, the smallest";
+  EXPECT_NEAR(at12.scale_x, 0.75, 1e-12);
+  EXPECT_NEAR(at12.tx, 10.0 + 0.75, 1e-12);
+  EXPECT_NEAR(at12.ty, 50.0 - 11.0 * 0.75, 1e-12);
+}
+
+TEST(LowerText, TheDecodedBytesBudgetIsExactAndEveryColourGlyphDrawnTakesFromIt) {
+  ColorFonts f;
+  // The smallest budget a lone glyph lowers under is the bytes of its RGBA8 picture.
+  size_t one = 0;
+  for (size_t b = 1; b < ((size_t) 1 << 20) && one == 0; b++) {
+    GVEC_Limits limits;
+    gvec_limits_default(&limits);
+    limits.max_image_decoded_bytes = b;
+    Lowered l;
+    LowerColor(f, "A", l, &limits);
+    if (ImageFillsOf(l) == 1u) {
+      one = b;
+    }
+  }
+  ASSERT_NE(one, (size_t) 0);
+  const ColorPlace place = PlaceOfA(f, "24");
+  EXPECT_EQ(one, (size_t) place.width * place.height * 4u) << "a picture of exactly the budget is drawn";
+  GVEC_Limits limits;
+  gvec_limits_default(&limits);
+  limits.max_image_decoded_bytes = one;
+  Lowered twice;
+  LowerColor(f, "AA", twice, &limits);
+  EXPECT_EQ(ImageFillsOf(twice), (size_t) 1) << "the second picture is past the budget the first used";
+  EXPECT_NE(twice.Refusal(GVEC_LOWER_LIMIT), nullptr);
+  limits.max_image_decoded_bytes = 2 * one;
+  Lowered both;
+  LowerColor(f, "AA", both, &limits);
+  EXPECT_EQ(ImageFillsOf(both), (size_t) 2);
+  EXPECT_EQ(both.Refusals(), (size_t) 0);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

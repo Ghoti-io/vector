@@ -746,6 +746,17 @@ PLANTS += [
     ("RC2", "src/codec/svg/lower/lower_walk.c", "  nested->source_hash = image->source_hash;", "  nested->source_hash = 0;", "the context of an image does not know which document it is"),
     # text positions are indexed by UTF-16 code unit.
     ("TU1", "src/codec/svg/lower/lower_text.c", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += t->chars[at].cp > 0xFFFF ? 2u : 1u, at++) {", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += 1u, at++) {", "a character beyond plane 0 takes one position value"),
+    # colour bitmap glyphs (CBDT): the picture of a glyph a strike carries, the blank glyph of a face of pictures only, the placement, the budget.
+    ("CB1", TX, "  if (fr != GFNT_OK) {\n    return GVEC_OK; /* the strike does not carry this glyph", "  if (0) {\n    return GVEC_OK; /* the strike does not carry this glyph", "a glyph the strike lacks is taken for a picture of nothing"),
+    ("CB2", TX, "      if (!is_colour && glyphs[g].face && !gfnt_face_has_outlines(glyphs[g].face)) {", "      if (0 && !is_colour && glyphs[g].face && !gfnt_face_has_outlines(glyphs[g].face)) {", "a glyph of a face of pictures that its strike lacks is not blank"),
+    ("CB3", TX, "      if (!is_colour && glyphs[g].face && !gfnt_face_has_outlines(glyphs[g].face)) {", "      if (glyphs[g].face && !gfnt_face_has_outlines(glyphs[g].face)) {", "a colour glyph of a face of pictures is skipped as blank"),
+    ("CB4", TX, "  ctx->image_decoded += bytes;\n  const double sx", "  const double sx", "a colour glyph's picture does not count against the decoded bytes"),
+    ("CB5", TX, "ctx->image_decoded + bytes > (uint64_t) limits->max_image_decoded_bytes) {\n    result = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, \"the colour glyphs", "ctx->image_decoded + bytes >= (uint64_t) limits->max_image_decoded_bytes) {\n    result = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, \"the colour glyphs", "a picture of exactly the budget is refused"),
+    ("CB6", TX, "const double sx = size / (double) strike.ppem_x, sy = size / (double) strike.ppem_y;", "const double sx = size / (double) strike.ppem_y, sy = size / (double) strike.ppem_x;", "the strike's ppem of each axis scales the other"),
+    ("CB7", TX, "const double t[2] = {x + (double) bitmap.bearing_x * sx, y - (double) bitmap.bearing_y * sy};", "const double t[2] = {x + (double) bitmap.bearing_x * sx, y + (double) bitmap.bearing_y * sy};", "a picture hangs below the baseline by its bearing"),
+    ("CB8", TX, "const double t[2] = {x + (double) bitmap.bearing_x * sx, y - (double) bitmap.bearing_y * sy};", "const double t[2] = {x, y - (double) bitmap.bearing_y * sy};", "a picture's left bearing is dropped"),
+    ("CB9", TX, "  uint32_t ppem = size >= 1 ? (uint32_t) (size + 0.5) : 1;", "  uint32_t ppem = size >= 1 ? (uint32_t) size : 1;", "the size is truncated, not rounded, to the strike's ppem"),
+    ("CB10", TX, "  const uint64_t bytes = (uint64_t) bitmap.width * (uint64_t) bitmap.height * 4u;", "  const uint64_t bytes = (uint64_t) bitmap.width * (uint64_t) bitmap.height * 3u;", "a picture's decoded size is counted at three bytes a pixel"),
 ]
 
 # The root check of L8 is unreachable while the probe is correct (the probe
