@@ -451,25 +451,6 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
   if (r != GVEC_OK) {
     return r;
   }
-  if (st->family_count == 1 && strcmp(st->families[0], "serif") == 0) {
-    /* The initial family may be what the style layer made of a declaration it reads strictly: an unquoted name that holds a word of CSS's
-     * generic families (`Noto Color Emoji`, `Segoe UI Emoji`) is invalid there, and every browser and `resvg` takes it as written.  A family
-     * that the document declares (in an attribute or a `style` attribute, on the element or above it) and the layer gave up on is read as
-     * written. */
-    char declared[256];
-    if (chain_value(inst, "font-family", true, true, declared, sizeof declared) && declared[0] && strcmp(declared, "serif") != 0) {
-      const char ** names = NULL;
-      size_t count = 0;
-      r = families_of(ctx, declared, &names, &count);
-      if (r != GVEC_OK) {
-        return r;
-      }
-      if (count > 0) {
-        st->families = names;
-        st->family_count = count;
-      }
-    }
-  }
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_SIZE, &v, &ok);
   if (r != GVEC_OK || !ok) {
     t->refused = true;
