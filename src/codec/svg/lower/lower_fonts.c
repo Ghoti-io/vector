@@ -29,6 +29,7 @@
 #include <ghoti.io/vector/macros.h>
 
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/cutil/mutex.h>
@@ -147,7 +148,7 @@ GVEC_Result gvec_fonts_face(const GVEC_Fonts * constant, const char * const * fa
       result = GVEC_ERR_OOM;
       break;
     }
-    if (r == GFNT_OK && mapped && record_family_is(gfnt_fontset_at(f->set, index), gfnt_fontset_at(f->set, match.index))) {
+      if (r == GFNT_OK && mapped && record_family_is(gfnt_fontset_at(f->set, index), gfnt_fontset_at(f->set, match.index))) {
       *out = face;
       *found = true;
     }

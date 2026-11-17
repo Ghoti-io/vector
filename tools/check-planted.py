@@ -653,6 +653,8 @@ PLANTS += [
     # an SVG image that is the image of itself (design R3).
     ("RC1", "src/codec/svg/lower/lower_image.c", "    if (up->source_hash == source_hash) {", "    if (up->source_hash == source_hash + 1) {", "a document that is the image of itself nests to the limit"),
     ("RC2", "src/codec/svg/lower/lower_walk.c", "  nested->source_hash = image->source_hash;", "  nested->source_hash = 0;", "the context of an image does not know which document it is"),
+    # text positions are indexed by UTF-16 code unit.
+    ("TU1", "src/codec/svg/lower/lower_text.c", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += t->chars[at].cp > 0xFFFF ? 2u : 1u, at++) {", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += 1u, at++) {", "a character beyond plane 0 takes one position value"),
 ]
 
 # The root check of L8 is unreachable while the probe is correct (the probe

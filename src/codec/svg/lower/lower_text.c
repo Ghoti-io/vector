@@ -38,7 +38,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <ghoti.io/font/bitmap.h>
+#include <ghoti.io/font/glyph.h>
 #include <ghoti.io/font/metrics.h>
+#include <ghoti.io/image/image.h>
+#include <ghoti.io/shape-scene/image.h>
 #include <ghoti.io/shape-geometry/arc.h>
 #include <ghoti.io/shape-geometry/map.h>
 #include <ghoti.io/font/shape.h>
@@ -446,6 +450,25 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
   r = families_of(ctx, v.kind == GVEC_SVG_STYLE_KEYWORD ? v.keyword : NULL, &st->families, &st->family_count);
   if (r != GVEC_OK) {
     return r;
+  }
+  if (st->family_count == 1 && strcmp(st->families[0], "serif") == 0) {
+    /* The initial family may be what the style layer made of a declaration it reads strictly: an unquoted name that holds a word of CSS's
+     * generic families (`Noto Color Emoji`, `Segoe UI Emoji`) is invalid there, and every browser and `resvg` takes it as written.  A family
+     * that the document declares (in an attribute or a `style` attribute, on the element or above it) and the layer gave up on is read as
+     * written. */
+    char declared[256];
+    if (chain_value(inst, "font-family", true, true, declared, sizeof declared) && declared[0] && strcmp(declared, "serif") != 0) {
+      const char ** names = NULL;
+      size_t count = 0;
+      r = families_of(ctx, declared, &names, &count);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      if (count > 0) {
+        st->families = names;
+        st->family_count = count;
+      }
+    }
   }
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_SIZE, &v, &ok);
   if (r != GVEC_OK || !ok) {
@@ -1055,15 +1078,23 @@ static GVEC_Result apply_lists(tctx * t) {
   for (size_t i = 0; i < t->list_count; i++) {
     const tlist * l = &t->lists[i];
     if (l->kind == 4) {
-      /* Every character of the element's content has an angle: the list's values in order, then its last one. */
+      /* Every character of the element's content has an angle: the list's values in order, then its last one.  The list is indexed by the
+       * addressable characters, which are UTF-16 code units (SVG 2, Text): a character beyond the plane 0 is two of them, and the angle is the
+       * one of its first. */
+      size_t unit = 0;
       for (size_t j = l->start; j < l->end && j < t->count; j++) {
         tchar * c = &t->chars[j];
         c->has_rotate = true;
-        c->rotate = l->numbers[j - l->start < l->count ? j - l->start : l->count - 1];
+        c->rotate = l->numbers[unit < l->count ? unit : l->count - 1];
+        unit += t->chars[j].cp > 0xFFFF ? 2u : 1u;
       }
       continue;
     }
-    for (size_t j = 0; j < l->count && l->start + j < l->end && l->start + j < t->count; j++) {
+    /* The values are of the addressable characters, UTF-16 code units: a character beyond the plane 0 takes two, and the value of its second unit
+     * is of no character (the glyph of the cluster is put by the first). */
+    size_t unit = 0;
+    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += t->chars[at].cp > 0xFFFF ? 2u : 1u, at++) {
+      const size_t j = unit;
       double v;
       bool font_relative = l->items && (l->items[j].unit == GVEC_SVG_UNIT_EM || l->items[j].unit == GVEC_SVG_UNIT_EX);
       if (font_relative) {
@@ -1080,7 +1111,7 @@ static GVEC_Result apply_lists(tctx * t) {
       else if (l->items ? !length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v) : (v = l->numbers[j], false)) {
         return gvec_lw_refuse(t->lw, gvec_svg_instance_element(l->inst), GVEC_LOWER_STYLE, "a text position that needs the font or the window is not lowered");
       }
-      tchar * c = &t->chars[l->start + j];
+      tchar * c = &t->chars[at];
       switch (l->kind) {
       case 0: c->has_x = true, c->x = v; break;
       case 1: c->has_y = true, c->y = v; break;
@@ -1420,6 +1451,99 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
 }
 
 /* A copy of `in` under `map`: every segment mapped (an arc as an arc). NULL in `*out` when it could not be made. */
+/*
+ * A glyph of a face whose strike at the size is a colour bitmap (`CBDT` of PNG pictures, the emoji of Noto Color Emoji): the picture, interned as an
+ * image of the waist, and the map of its pixels into the text's space: the strike's pixels are `size / ppem` user units, the bitmap's top left
+ * is its bearings from the glyph's origin on the baseline.  A glyph the strike does not carry has `*found` false and is drawn as the outline
+ * answers (or is missing, as any glyph a font lacks).  The decoded bytes count against the document's image budget.
+ */
+typedef struct tcolor {
+  const GSHSCENE_Resource * image;
+  double width, height;
+  GSHGEOM_Map map;
+} tcolor;
+
+static GVEC_Result color_bitmap_glyph(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GFNT_Face * face, uint32_t id, double size, double x, double y,
+    tcolor * out, bool * found) {
+  *found = false;
+  size_t strikes = 0;
+  if (gfnt_face_strike_count(face, &strikes, NULL) != GFNT_OK || strikes == 0) {
+    return GVEC_OK;
+  }
+  uint32_t ppem = size >= 1 ? (uint32_t) (size + 0.5) : 1;
+  GFNT_Strike strike;
+  bool from_outlines = false;
+  if (gfnt_face_select_strike(face, ppem, GFNT_STRIKE_NEAREST, &strike, &from_outlines, NULL) != GFNT_OK || from_outlines ||
+      strike.kind != GFNT_GLYPH_BITMAP_PNG || strike.ppem_x == 0 || strike.ppem_y == 0) {
+    return GVEC_OK;
+  }
+  GFNT_ColorBitmap bitmap;
+  memset(&bitmap, 0, sizeof bitmap);
+  GFNT_Result fr = gfnt_face_glyph_color_bitmap(face, id, strike.index, &bitmap, NULL);
+  if (fr == GFNT_ERR_OOM) {
+    return GVEC_ERR_OOM;
+  }
+  if (fr != GFNT_OK) {
+    return GVEC_OK; /* the strike does not carry this glyph, or its bytes are not a picture: the glyph is as a font without one */
+  }
+  GVEC_Result result = GVEC_OK;
+  GIMG_Raster * raster = NULL;
+  if (bitmap.bits_per_channel == 16) {
+    gfnt_color_bitmap_to_8bit(&bitmap);
+  }
+  const GVEC_Limits * limits = &ctx->document->limits;
+  const uint64_t bytes = (uint64_t) bitmap.width * (uint64_t) bitmap.height * 4u;
+  if (bitmap.width == 0 || bitmap.height == 0 || bitmap.bits_per_channel != 8 || (uint64_t) bitmap.width * bitmap.height > (uint64_t) limits->max_image_pixels ||
+      ctx->image_decoded + bytes > (uint64_t) limits->max_image_decoded_bytes) {
+    result = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the colour glyphs of the text are more than max_image_pixels or max_image_decoded_bytes allows");
+    goto done;
+  }
+  GIMG_Pixel_Format format = GIMG_PIXEL_RGBA8;
+  format.alpha_form = bitmap.premultiplied ? GIMG_ALPHA_PREMULTIPLIED : GIMG_ALPHA_STRAIGHT;
+  if (gimg_raster_create(bitmap.width, bitmap.height, &format, GIMG_RASTER_OWNED, NULL, 0, &raster) != GIMG_OK) {
+    result = GVEC_ERR_OOM;
+    goto done;
+  }
+  unsigned char * pixels = (unsigned char *) gimg_raster_pixels(raster);
+  const size_t stride = gimg_raster_stride_bytes(raster);
+  for (uint32_t row = 0; row < bitmap.height; row++) {
+    memcpy(pixels + (size_t) row * stride, bitmap.rgba + (size_t) row * bitmap.stride, (size_t) bitmap.width * 4u);
+  }
+  GSHSCENE_Image_Params params;
+  memset(&params, 0, sizeof params);
+  params.space.primaries = GCOL_PRIMARIES_SRGB; /* a font's bitmaps are sRGB */
+  params.space.transfer = GCOL_TRANSFER_SRGB;
+  const GSHSCENE_Resource * resource = NULL;
+  GSHSCENE_Result sr = gshscene_store_intern_image_take(ctx->store, raster, &params, &resource);
+  if (sr == GSHSCENE_OK) {
+    raster = NULL; /* the store has it */
+  }
+  else {
+    result = sr == GSHSCENE_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a colour glyph is past what the waist's image resource carries");
+    goto done;
+  }
+  result = gvec_lw_hold(ctx, resource);
+  if (result != GVEC_OK) {
+    goto done;
+  }
+  ctx->image_decoded += bytes;
+  const double sx = size / (double) strike.ppem_x, sy = size / (double) strike.ppem_y;
+  const double m[4] = {sx, 0, 0, sy};
+  const double t[2] = {x + (double) bitmap.bearing_x * sx, y - (double) bitmap.bearing_y * sy};
+  if (gshgeom_map_from_matrix(2, m, t, &out->map) != GSHGEOM_OK) {
+    result = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a colour glyph is placed past the range the waist can carry");
+    goto done;
+  }
+  out->image = resource;
+  out->width = (double) bitmap.width;
+  out->height = (double) bitmap.height;
+  *found = true;
+done:
+  gimg_raster_destroy(raster);
+  gfnt_color_bitmap_free(&bitmap);
+  return result;
+}
+
 static GSHGEOM_Result map_path(const GSHGEOM_Path * in, const GSHGEOM_Map * map, GSHGEOM_Path ** out) {
   GSHGEOM_Path * path = NULL;
   GSHGEOM_Result g = gshgeom_path_create(NULL, NULL, 2, &path);
@@ -2098,12 +2222,40 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     }
     for (size_t g = 0; r == GVEC_OK && g < glyph_count;) {
       size_t h = g + 1;
-      while (h < glyph_count && !(glyphs[g].on_path && glyphs[g].group) && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group &&
+      /* FL: a glyph of colour pixels is a piece of its own, an image where the others are an outline run (CBDT) */
+      tcolor colour;
+      bool is_colour = false;
+      if (glyphs[g].face && !glyphs[g].hidden && t.styles[glyphs[g].style].visible && !glyphs[g].sideways) {
+        r = color_bitmap_glyph(ctx, e, glyphs[g].face, glyphs[g].id, glyphs[g].size, glyphs[g].x, glyphs[g].y, &colour, &is_colour);
+        if (r != GVEC_OK) {
+          break;
+        }
+      }
+      if (!is_colour && glyphs[g].face && !gfnt_face_has_outlines(glyphs[g].face)) {
+        /* A face of bitmaps only has nothing to draw for a glyph its strike does not carry (the zero-width joiner and the variation selector of
+         * an emoji sequence, a .notdef): the glyph is blank, not missing. */
+        g = h;
+        continue;
+      }
+      while (!is_colour && h < glyph_count && !(glyphs[g].on_path && glyphs[g].group) && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group &&
           glyphs[h].size == glyphs[g].size && glyphs[h].hidden == glyphs[g].hidden && glyphs[h].rotate == glyphs[g].rotate && (glyphs[g].rotate == 0 || glyphs[h].pivot == glyphs[g].pivot)) {
         h++;
       }
       const tstyle * st = &t.styles[glyphs[g].style];
       if (!st->visible || glyphs[g].hidden) {
+        g = h;
+        continue;
+      }
+      if (is_colour) {
+        gvec_lw_text_piece * cp = &out->pieces[out->count];
+        memset(cp, 0, sizeof *cp);
+        cp->image = colour.image;
+        cp->image_width = colour.width;
+        cp->image_height = colour.height;
+        cp->image_map = colour.map;
+        cp->inst = st->inst;
+        gshgeom_map_identity(2, &cp->map);
+        out->count++;
         g = h;
         continue;
       }

@@ -1213,6 +1213,33 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     }
     const GVEC_Svg_Element * se = gvec_svg_instance_element(span);
     GVEC_Svg_Style_Value v;
+    gvec_lw_node * fill_node = NULL;
+    gvec_lw_node * stroke_node = NULL;
+    if (text.pieces[i].image) {
+      /* A glyph of colour pixels is an image fill under the glyph's own map: its paint is its pixels, whatever the span's fill says. */
+      gvec_lw_image im;
+      memset(&im, 0, sizeof im);
+      im.resource = text.pieces[i].image;
+      im.width = text.pieces[i].image_width;
+      im.height = text.pieces[i].image_height;
+      uint32_t magnify, minify;
+      r = gvec_lw_image_filters(ctx, span, &magnify, &minify, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+      GSHSCENE_Paint image_paint;
+      const GSHSCENE_Resource * image_path = NULL;
+      bool placed_ok;
+      r = gvec_lw_image_paint(ctx, e, &im, &text.pieces[i].image_map, magnify, minify, &image_paint, &image_path, &placed_ok);
+      if (r != GVEC_OK || !placed_ok) {
+        return r;
+      }
+      r = shape_node(ctx, e, &piece_map, image_path, &image_paint, GSHGEOM_FILL_NONZERO, NULL, &fill_node);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+    else {
     /* `text-rendering` of the text element (not of a span) says whether the glyphs are antialiased; `shape-rendering` does not affect text. */
     r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_TEXT_RENDERING, GVEC_LOWER_STYLE, &v, &usable);
     if (r != GVEC_OK || !usable) {
@@ -1236,8 +1263,6 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     if (r != GVEC_OK || fill_decision == GVEC_LW_PAINT_REFUSED || stroke.decision == GVEC_LW_PAINT_REFUSED) {
       return r;
     }
-    gvec_lw_node * fill_node = NULL;
-    gvec_lw_node * stroke_node = NULL;
     if (fill_decision == GVEC_LW_PAINT_DRAW) {
       r = shape_node(ctx, e, &piece_map, text.pieces[i].run, &paint, rule, NULL, &fill_node);
       if (r != GVEC_OK) {
@@ -1249,6 +1274,7 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
       if (r != GVEC_OK) {
         return r;
       }
+    }
     }
     if (!fill_node && !stroke_node) {
       continue;

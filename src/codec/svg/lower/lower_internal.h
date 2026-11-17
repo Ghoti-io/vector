@@ -383,6 +383,9 @@ typedef struct gvec_lw_text_piece {
   const GSHSCENE_Resource * run;      ///< A glyph run (held by the context): the glyphs of one span in one face.
   const GVEC_Svg_Instance * inst;     ///< The span it is of: its fill is the run's paint.
   bool decoration;                    ///< A line of a text decoration (a rectangle's path, not a glyph run): `inst` is the element that declared it.
+  const GSHSCENE_Resource * image;    ///< A glyph of colour pixels (a `CBDT` strike), not an outline: the image (held by the context), drawn as an image paint under `image_map`; `run` is NULL.
+  double image_width, image_height;   ///< The image's size in pixels.
+  GSHGEOM_Map image_map;              ///< The image's pixels to the element's space: the strike's scale, and the glyph's place by the bearings of the bitmap.
   GSHGEOM_Map map;                    ///< The map of the run in the element's space: the identity, or the stretch of a textLength that scales the glyphs.
 } gvec_lw_text_piece;
 
