@@ -36,7 +36,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"clip-path group", GVEC_LOWER_CLIP_PATH, "<defs><clipPath id=\"o\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath><clipPath id=\"c\"><rect id=\"r\" width=\"2\" height=\"2\"/><rect width=\"2\" height=\"2\" clip-path=\"url(#o)\"/></clipPath></defs>\n<g clip-path=\"url(#c)\"><path d=\"M0 0H4V4H0Z\"/></g>", "g", 2, 0},
       {"mask", GVEC_LOWER_MASK, "\n<path d=\"M0 0H4V4H0Z\" mask=\"url(other.svg#k)\"/>", "path", 2, 0},
       {"image", GVEC_LOWER_IMAGE, "<defs><filter id=\"f\"><feImage href=\"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%224%22%20height%3D%224%22%2F%3E\"/></filter></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
-      {"filter", GVEC_LOWER_FILTER, "<defs><filter id=\"f\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/></defs>\n<path d=\"M0 0H4V4H0Z\" filter=\"url(#f)\"/>", "path", 2, 0},
+      {"filter", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"url(other.svg#f)\"/>", "path", 2, 0},
       {"text", GVEC_LOWER_TEXT, "\n<text>hello</text>", "text", 2, 0},
       {"context paint", GVEC_LOWER_CONTEXT_PAINT, "<defs><rect id=\"r\" width=\"4\" height=\"4\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs><use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>\n<use id=\"u1\" href=\"#u2\" stroke=\"green\" fill=\"blue\"/>", "rect", 1, 0},
       {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/>", "path", 2, 0},
@@ -85,7 +85,7 @@ TEST(LowerRefusals, TheExpansionLimitIsReportedAtTheUse) {
 TEST(LowerRefusals, ASinkSeenElementIsRefusedOnceHoweverOftenItIsDrawn) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><filter id=\"g\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
+               "<defs><path id=\"a\" d=\"M0 0H4V4H0Z\" filter=\"url(other.svg#g)\"/></defs><use href=\"#a\"/><use href=\"#a\" x=\"5\"/><g><use href=\"#a\" x=\"9\"/></g>"),
       l);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
 }

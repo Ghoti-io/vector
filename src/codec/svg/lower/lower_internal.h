@@ -81,7 +81,8 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_MASK,      ///< The group a `mask` makes around an element's content.
   GVEC_LW_ROLE_MASK_REGION, ///< The clip to a mask's region, in the mask's picture.
   GVEC_LW_ROLE_MASK_CONTAINER, ///< The hidden group that holds a mask's picture.
-  GVEC_LW_ROLE_FILTER ///< The group a `filter` makes around an element's content.
+  GVEC_LW_ROLE_FILTER, ///< The group a `filter` makes around an element's content.
+  GVEC_LW_ROLE_FILTER_IMAGE ///< The hidden group that holds the picture of an element an feImage draws (lower_filter.c).
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;
@@ -134,6 +135,7 @@ typedef struct gvec_lw_table {
 
 /** Masks whose pictures may be inside one another (a mask's children masked, a mask that is masked). */
 #define GVEC_LW_MASK_NESTING 8
+#define GVEC_LW_FILTER_NESTING 4 ///< The most filters one inside another through the elements their feImages draw (lower_filter.c).
 
 /** Patterns whose tiles may be inside one another. */
 #define GVEC_LW_PATTERN_NESTING 8
@@ -201,6 +203,9 @@ typedef struct gvec_lw_ctx {
   size_t mask_depth;
   const GVEC_Svg_Instance * transform_moved; ///< The instance whose `transform` its filter's instance carries (a rotated or skewed element is filtered in a picture of its own: lower_filter.c).
   const GVEC_Svg_Instance * opacity_moved; ///< The instance whose `opacity` its filter group carries (the opacity applies to the filtered result: lower_filter.c).
+  const GVEC_Svg_Element * filter_active[GVEC_LW_FILTER_NESTING]; ///< The filters being built, outermost first: an feImage of an element lowers that element under them (lower_filter.c).
+  size_t filter_active_count;
+  bool filter_cycle;                 ///< A filter on the stack was met again while lowering an feImage's element: the feImage draws nothing.
   const GVEC_Svg_Instance * filter_owner; ///< The instance whose filter group the walk is filling (lw_element): what it draws is what the filter takes as its input.
   bool filter_rendered;              ///< The element of `filter_owner` is rendered, whatever it paints: its filtered group is drawn though nothing is inside (lower_walk.c).
   const GVEC_Svg_Instance * blend_moved; ///< The instance whose `mix-blend-mode` its mask group carries (the blend is the outermost of the stack: lower_walk.c).
@@ -466,6 +471,10 @@ GVEC_INTERNAL_API void gvec_lw_wrap_leave(gvec_lw_ctx * ctx);
 
 /** Link `node` under `parent` if it draws anything. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_attach(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_node * node);
+
+/** Lower the element of `inst` as the walk lowers any element: its wrappers, then what it draws, under `parent`. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_element(
+    gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent);
 
 /** Walk the children of `inst` in `frame`, recording what they draw under `parent`. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_children(

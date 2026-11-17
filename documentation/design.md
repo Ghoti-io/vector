@@ -750,8 +750,12 @@ FL4 reads it: the filter region where none of `x`, `y`, `width` and `height` is 
 or `height` that is not given runs to the region's right or bottom edge). The map that places the image is the element's map composed with that fit,
 and the subregion is passed to the waist as it was written, so that its clip is the clip of a slice. A result with nothing to draw (no `href`, a
 reference to an id that names nothing, an image that cannot be used, a subregion of no area) is transparent black, a flood, and the element is still
-drawn through the filter. An element of the document as the `href` is **refused** (`filter`): the waist's IMAGE primitive takes an image resource
-and not a picture, and an element drawn into a filter is a picture. The rendering the primitive carries is the magnify filter of R9, which the CPU sink
+drawn through the filter. An element of the document as the `href` is lowered as a `use` of it would be, into a
+picture of its own, in the user space of the filtered element moved by the subregion's `x` and `y` (the filter region's where none is given); the
+primitive draws a slot of the filter's picture (`GSHSCENE_Filter.picture`, one instance of each such element's picture under that placement), so
+two such `feImage`s are two slots. The element's own `transform`, opacity, clip, mask and filter apply as anywhere; an element that draws nothing, a
+reference to nothing and a cycle (the element's own filter is one being built) are a transparent result. Filters nest at most `GVEC_LW_FILTER_NESTING`
+deep through their `feImage`s, past which the filter is refused (`limit`). The rendering the primitive carries is the magnify filter of R9, which the CPU sink
 does not yet use: it draws the primitive with the nearest texel only (the corpus rows say so).
 
 ## A filter on an element that paints nothing (X1 to X6)

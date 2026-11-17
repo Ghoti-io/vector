@@ -23,8 +23,8 @@
  * names it around the element's content, inside the clip and the mask (Filter Effects: the filter comes first, then the clip, the mask and
  * the opacity).  The primitives lowered are feOffset, feFlood, feMerge, feBlend, feComposite, feColorMatrix, feComponentTransfer,
  * feGaussianBlur, feDropShadow, feMorphology, feConvolveMatrix, feTile, feDisplacementMap, feTurbulence, the two lightings and feImage of an
- * image (a `data:` URI or a file under the options' image root: lower_image.c); an element that names a filter with any other primitive
- * (feImage of an element of the document) is refused whole.  The waist's filter is in the space of the group's items, the list's, so the filter's lengths and
+ * image (a `data:` URI or a file under the options' image root: lower_image.c) or of an element of the document (a slot of the filter's picture,
+ * FL25); an element that names a filter with any other primitive is refused whole.  The waist's filter is in the space of the group's items, the list's, so the filter's lengths and
  * regions are put into it through the element's own map, which must be axis aligned (a scale, a mirror, a quarter turn and a translation:
  * the filter of a rotated or skewed element needs canonical space, which no sink draws yet).
  */
@@ -239,6 +239,9 @@ typedef struct fbuild {
   long prev;                       /* the last real primitive, or -1 */
   bool invalid;                    /* the filter is in error: the element is not rendered */
   bool refused;
+  const GSHSCENE_Resource * slot_pictures[GSHSCENE_FILTER_MAX_PRIMITIVES]; /* the pictures of the elements the feImages draw, one a slot (FL25), each held here */
+  GSHGEOM_Map slot_maps[GSHSCENE_FILTER_MAX_PRIMITIVES];                   /* and where each is placed: the element's space to the list's */
+  size_t slot_count;
 } fbuild;
 
 #define MERGE_POOL (GSHSCENE_FILTER_MAX_PRIMITIVES * 4u)
@@ -507,12 +510,151 @@ static void transparent_result(GSHSCENE_Filter_Primitive * p) {
  * `preserveAspectRatio` (default xMidYMid meet) and drawn by the waist's IMAGE primitive under a placement map into the list's space.
  * The subregion is the filter region where the element gives none of x, y, width and height, and is what clips a slice (FL4, FL17).
  *
- * An element of the document as the `href` (`#id`) is refused: the waist's IMAGE primitive takes an image resource, not a picture of the
- * document, and an element drawn into a filter is a picture. A reference to nothing, an image that cannot be used and a subregion of no size
- * are an empty result.
+ * An element of the document as the `href` (`#id`) is drawn as a `use` of it would be (element_primitive). A reference to nothing, an image
+ * that cannot be used and a subregion of no size are an empty result.
  *
  * @param sub The subregion's x, y, width and height in the element's space, those the element gives (`p->subregion_mask`).
  */
+/*
+ * feImage of an element (Filter Effects 1, FL25): the element is lowered as a `use` of it would be, into a picture of its own, in the user space of
+ * the filtered element moved by the subregion's `x` and `y` (the filter region's where the element gives none): the primitive draws a slot of the
+ * filter's picture, which is the instance of that picture under that placement.  The element's own `transform`, opacity, clip, mask and filter apply
+ * as they do anywhere.  An element that draws nothing, or whose own filter is one of those being built (a cycle through the filter), is an empty
+ * result; nesting past GVEC_LW_FILTER_NESTING filters or the scene's limits is refused.
+ */
+static GVEC_Result element_primitive(fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Filter_Primitive * p, const GVEC_Svg_Element * target,
+    const double sub[4]) {
+  gvec_lw_ctx * ctx = b->ctx;
+  const double x0 = (p->subregion_mask & 1u) ? sub[0] : b->region[0];
+  const double y0 = (p->subregion_mask & 2u) ? sub[1] : b->region[1];
+  if (x0 - x0 != 0 || y0 - y0 != 0) {
+    transparent_result(p); /* an edge that is not finite */
+    return GVEC_OK;
+  }
+  GSHGEOM_Map shift, placed;
+  if (gshgeom_map_translate(2, x0, y0, 0, &shift) != GSHGEOM_OK || !gvec_lw_compose(&b->local, &shift, &placed)) {
+    return refuse_with(b, "the element of an feImage is placed past the range the waist can carry");
+  }
+  const GVEC_Svg_Instance * inst = NULL;
+  GVEC_Result r = gvec_lw_instance_of(ctx, target, &inst);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (!inst) {
+    transparent_result(p);
+    return GVEC_OK;
+  }
+  if (b->slot_count >= GSHSCENE_FILTER_MAX_PRIMITIVES || ctx->levels + 3 > ctx->caps.node_depth || ctx->picture_depth + 1 > ctx->caps.picture_depth) {
+    return refuse_with(b, "the element of an feImage nests pictures deeper than the scene's limits allow");
+  }
+  gvec_lw_node * holder = gvec_lw_new_node(ctx, GVEC_LW_USE);
+  if (!holder) {
+    return GVEC_ERR_OOM;
+  }
+  holder->key = gvec_lw_key(el->key, ctx->chain, GVEC_LW_ROLE_FILTER_IMAGE);
+  holder->site = gvec_lw_new_site(ctx, el, holder->key);
+  if (holder->site == GVEC_LW_NO_SITE) {
+    return GVEC_ERR_OOM;
+  }
+  uint64_t saved_chain = ctx->chain;
+  size_t saved_open = ctx->open;
+  size_t saved_levels = ctx->levels;
+  bool saved_set = ctx->context_set;
+  const GVEC_Svg_Instance * saved_context_inst = ctx->context_inst;
+  const GVEC_Svg_Instance * saved_owner = ctx->filter_owner;
+  bool saved_rendered = ctx->filter_rendered;
+  bool saved_cycle = ctx->filter_cycle;
+  GSHGEOM_Map saved_item_local = ctx->item_local;
+  bool saved_item_crisp = ctx->item_crisp;
+  uint8_t buf[16];
+  for (int i = 0; i < 8; i++) {
+    buf[i] = (uint8_t) (saved_chain >> (8 * i));
+    buf[8 + i] = (uint8_t) (el->key >> (8 * i));
+  }
+  ctx->levels += 2;
+  ctx->picture_depth++;
+  ctx->open = 0;
+  ctx->use_depth++;
+  ctx->chain = gvec_svg_hash64(buf, sizeof buf);
+  ctx->context_set = false;
+  ctx->context_inst = NULL;
+  ctx->filter_cycle = false;
+  GSHGEOM_Map identity;
+  r = gshgeom_map_identity(2, &identity) == GSHGEOM_OK ? gvec_lw_element(ctx, inst, &identity, holder) : GVEC_ERR_INTERNAL;
+  const bool cycled = ctx->filter_cycle;
+  ctx->filter_cycle = saved_cycle;
+  ctx->filter_rendered = saved_rendered;
+  ctx->filter_owner = saved_owner;
+  ctx->context_set = saved_set;
+  ctx->context_inst = saved_context_inst;
+  ctx->item_local = saved_item_local;
+  ctx->item_crisp = saved_item_crisp;
+  ctx->chain = saved_chain;
+  ctx->use_depth--;
+  ctx->open = saved_open;
+  ctx->picture_depth--;
+  ctx->levels = saved_levels;
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (cycled || !holder->first) {
+    transparent_result(p); /* a cycle through this filter, or an element that draws nothing */
+    return GVEC_OK;
+  }
+  const GSHSCENE_Resource * picture = NULL;
+  r = gvec_lw_emit_picture(ctx, holder, &picture);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (!picture) {
+    return refuse_with(b, "the element of an feImage is past what the waist can carry");
+  }
+  p->kind = GSHSCENE_FILTER_IMAGE;
+  p->use_picture = 1;
+  p->slot = (uint32_t) b->slot_count;
+  b->slot_pictures[b->slot_count] = picture;
+  b->slot_maps[b->slot_count] = placed;
+  b->slot_count++;
+  return GVEC_OK;
+}
+
+/* The filter's picture: an instance of each element's picture under its placement, in the order of the slots (FL25); NULL for none. */
+static GVEC_Result slots_picture(fbuild * b, const GSHSCENE_Resource ** out) {
+  gvec_lw_ctx * ctx = b->ctx;
+  *out = NULL;
+  if (b->slot_count == 0) {
+    return GVEC_OK;
+  }
+  GSHSCENE_List * list = NULL;
+  GSHSCENE_Result g = gshscene_list_create(ctx->scene_allocator, ctx->scene_limits, ctx->store, &list);
+  for (size_t i = 0; g == GSHSCENE_OK && i < b->slot_count; i++) {
+    g = gshscene_list_instance(list, b->slot_pictures[i], &b->slot_maps[i], 0, 0.0);
+  }
+  const GSHSCENE_Resource * picture = NULL;
+  if (g == GSHSCENE_OK) {
+    g = gshscene_list_close(list);
+  }
+  if (g == GSHSCENE_OK) {
+    g = gshscene_store_intern_picture(ctx->store, list, &picture);
+  }
+  gshscene_list_destroy(list);
+  if (g == GSHSCENE_ERR_OOM) {
+    return GVEC_ERR_OOM;
+  }
+  if (g != GSHSCENE_OK) {
+    return refuse_with(b, "the elements of the feImages are past what the waist can carry");
+  }
+  *out = picture;
+  return GVEC_OK;
+}
+
+static void release_slots(fbuild * b) {
+  for (size_t i = 0; i < b->slot_count; i++) {
+    gshscene_resource_release(b->slot_pictures[i]);
+  }
+  b->slot_count = 0;
+}
+
 static GVEC_Result image_primitive(fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Filter_Primitive * p, const double sub[4]) {
   gvec_lw_ctx * ctx = b->ctx;
   const GVEC_Svg_Attribute * href = gvec_svg_element_find_attribute(el, "href");
@@ -521,8 +663,9 @@ static GVEC_Result image_primitive(fbuild * b, const GVEC_Svg_Element * el, GSHS
   }
   GVEC_Svg_Reference ref;
   if (href && gvec_svg_attribute_class(href) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_reference(href, &ref) && ref.kind == GVEC_SVG_REF_INTERNAL) {
-    if (gvec_svg_find_by_id(ctx->document, ref.fragment)) {
-      return refuse_with(b, "an feImage that renders an element is not lowered: the waist's image primitive draws an image, not a picture of the document");
+    const GVEC_Svg_Element * target = gvec_svg_find_by_id(ctx->document, ref.fragment);
+    if (target) {
+      return element_primitive(b, el, p, target, sub);
     }
     transparent_result(p);
     return GVEC_OK;
@@ -1192,6 +1335,17 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   fmap_rect(&b.map, region, list_region);
   memcpy(b.region, region, sizeof b.region);
   b.local = *local;
+  /* an feImage of an element lowers that element, whose own filter may be this one: a filter met again is a cycle (the feImage draws nothing) */
+  for (size_t i = 0; i < ctx->filter_active_count; i++) {
+    if (ctx->filter_active[i] == filter) {
+      ctx->filter_cycle = true;
+      *state = GVEC_LW_FILTER_ALL;
+      return GVEC_OK;
+    }
+  }
+  if (ctx->filter_active_count >= GVEC_LW_FILTER_NESTING) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "filters nest deeper through their feImages than the lowering allows");
+  }
   /* the primitives */
   b.prims = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.prims);
   b.inputs = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.inputs);
@@ -1204,12 +1358,14 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     gvec_free(ctx->allocator, b.values);
     return GVEC_ERR_OOM;
   }
+  ctx->filter_active[ctx->filter_active_count++] = filter;
   for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(primitive_owner(ctx, filter)); c && r == GVEC_OK && !b.invalid && !b.refused;
       c = gvec_svg_element_next_sibling(c)) {
     if (is_filter_primitive(gvec_svg_element_kind(c))) {
       r = primitive(&b, c, filter);
     }
   }
+  ctx->filter_active_count--;
   const GSHSCENE_Resource * resource = NULL;
   if (r == GVEC_OK && !b.refused) {
     if (b.invalid || b.count == 0) {
@@ -1224,8 +1380,15 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       f.color_space = GSHSCENE_FILTER_SPACE_LINEAR_RGB;
       f.primitive_count = b.count;
       f.primitives = b.prims;
-      GSHSCENE_Result sr = gshscene_store_intern_filter(ctx->store, &f, &resource);
-      if (sr == GSHSCENE_ERR_OOM) {
+      const GSHSCENE_Resource * slots = NULL;
+      r = slots_picture(&b, &slots);
+      f.picture = slots;
+      GSHSCENE_Result sr = r == GVEC_OK ? gshscene_store_intern_filter(ctx->store, &f, &resource) : GSHSCENE_OK;
+      gshscene_resource_release(slots);
+      if (r != GVEC_OK) {
+        /* the slots' refusal is already recorded */
+      }
+      else if (sr == GSHSCENE_ERR_OOM) {
         r = GVEC_ERR_OOM;
       }
       else if (sr != GSHSCENE_OK) {
@@ -1240,6 +1403,7 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       }
     }
   }
+  release_slots(&b);
   gvec_free(ctx->allocator, b.prims);
   gvec_free(ctx->allocator, b.inputs);
   gvec_free(ctx->allocator, b.merge_inputs);

@@ -580,6 +580,10 @@ GVEC_Result gvec_lw_attach(gvec_lw_ctx * ctx, gvec_lw_node * parent, gvec_lw_nod
 
 static GVEC_Result lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent);
 
+GVEC_Result gvec_lw_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+  return lw_element(ctx, inst, frame, parent);
+}
+
 GVEC_Result gvec_lw_children(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   for (const GVEC_Svg_Element * child = gvec_svg_element_first_child(e); child; child = gvec_svg_element_next_sibling(child)) {

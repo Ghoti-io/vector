@@ -257,15 +257,10 @@ TEST(LowerFilter, TurbulenceAndTheLightingsAreLowered) {
 }
 
 TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
-  const char * refused[] = {
-      "<filter id=\"f\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"1\" height=\"1\"/>",
-  };
-  for (const char * filter : refused) {
-    Lowered l;
-    LowerSvg(Doc(filter), l);
-    EXPECT_NE(l.Refusal(GVEC_LOWER_FILTER), nullptr) << filter;
-    EXPECT_EQ(l.Items(), (size_t) 0) << filter;
-  }
+  Lowered other;
+  LowerSvg(Doc("", "<rect width=\"10\" height=\"10\" filter=\"url(other.svg#f)\"/>"), other);
+  EXPECT_NE(other.Refusal(GVEC_LOWER_FILTER), nullptr) << "a filter of another document";
+  EXPECT_EQ(other.Items(), (size_t) 0);
   Lowered turned;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter>", "<rect width=\"10\" height=\"10\" transform=\"rotate(30)\" filter=\"url(#f)\""), turned);
   EXPECT_EQ(turned.Refusals(), (size_t) 0) << "a rotated element is filtered in a picture of its own";

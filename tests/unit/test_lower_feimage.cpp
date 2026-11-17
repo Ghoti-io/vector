@@ -288,17 +288,85 @@ TEST(LowerFeImage, NothingToDrawIsAnEmptyResultAndTheElementIsStillDrawnThroughT
   ExpectEmpty(flat, "a subregion of no width");
 }
 
-TEST(LowerFeImage, AnElementOfTheDocumentIsRefusedByNameBecauseTheWaistsPrimitiveTakesAnImageNotAPicture) {
-  for (const char * target : {"<rect id=\"x\" width=\"4\" height=\"4\"/>", "<g id=\"x\"><rect width=\"4\" height=\"4\"/></g>", "<use id=\"x\" href=\"#y\"/><path id=\"y\" d=\"M0 0H1V1Z\"/>"}) {
+namespace {
+
+/** The picture of the first instance in the filter's picture (the one slot's element), and the instance's map. */
+const GSHSCENE_Item * SlotInstance(const GSHSCENE_Filter & f, size_t slot) {
+  const GSHSCENE_List * slots = gshscene_resource_picture(f.picture);
+  const GSHSCENE_Item * it = nullptr;
+  return slots && gshscene_list_item(slots, slot, &it) == GSHSCENE_OK ? it : nullptr;
+}
+
+}  // namespace
+
+TEST(LowerFeImage, AnElementOfTheDocumentIsADrawnSlotOfTheFiltersPicture) {
+  for (const char * target : {"<rect id=\"x\" width=\"4\" height=\"4\"/>", "<g id=\"x\"><rect width=\"4\" height=\"4\"/></g>",
+           "<use id=\"x\" href=\"#y\"/><path id=\"y\" d=\"M0 0H1V1Z\"/>"}) {
     Lowered l;
     LowerSvg(Svg("width=\"40\" height=\"40\"", std::string("<defs><filter id=\"f\"><feImage href=\"#x\"/></filter>") + target +
                   "</defs><rect width=\"10\" height=\"10\" filter=\"url(#f)\"/><rect x=\"20\" width=\"4\" height=\"4\"/>"),
         l);
-    ASSERT_EQ(l.Refusals(), (size_t) 1) << target;
-    const GVEC_Diagnostic * d = l.Refusal(GVEC_LOWER_FILTER);
-    ASSERT_NE(d, nullptr) << target;
-    EXPECT_NE(std::string(d->message).find("renders an element"), std::string::npos) << d->message;
-    EXPECT_EQ(l.Count(GSHSCENE_ITEM_FILL), (size_t) 1) << "the element is refused whole, the rest is drawn";
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << target;
+    GSHSCENE_Filter f;
+    ASSERT_TRUE(PrimitiveOf(l, &f)) << target;
+    ASSERT_EQ(f.primitive_count, (size_t) 1);
+    EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_IMAGE);
+    EXPECT_EQ(f.primitives[0].use_picture, 1u);
+    EXPECT_EQ(f.primitives[0].slot, 0u);
+    EXPECT_EQ(f.primitives[0].image, nullptr);
+    ASSERT_NE(f.picture, nullptr) << target;
+    EXPECT_EQ(gshscene_list_count(gshscene_resource_picture(f.picture)), (size_t) 1);
+    const GSHSCENE_Item * inst = SlotInstance(f, 0);
+    ASSERT_NE(inst, nullptr);
+    EXPECT_EQ(inst->kind, GSHSCENE_ITEM_INSTANCE);
+    // the element is placed at the filter region's origin (the default subregion): the region of a 10 by 10 rect at the origin is -1, -1
+    EXPECT_NEAR(inst->map.t[0], -1.0, 1e-9) << target;
+    EXPECT_NEAR(inst->map.t[1], -1.0, 1e-9) << target;
+    EXPECT_EQ(l.Count(GSHSCENE_ITEM_FILL), (size_t) 2) << "the filtered rect and the rest of the document are drawn";
+  }
+}
+
+TEST(LowerFeImage, TheSubregionsXAndYPlaceTheElementAndTwoElementsAreTwoSlots) {
+  Lowered l;
+  LowerSvg(Svg("width=\"40\" height=\"40\"",
+               "<defs><filter id=\"f\"><feImage href=\"#a\" x=\"5\" y=\"6\" result=\"i\"/><feImage href=\"#b\" x=\"1\"/>"
+               "<feMerge><feMergeNode in=\"i\"/><feMergeNode/></feMerge></filter><rect id=\"a\" width=\"4\" height=\"4\"/>"
+               "<circle id=\"b\" r=\"2\"/></defs><rect width=\"10\" height=\"10\" filter=\"url(#f)\"/>"),
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(PrimitiveOf(l, &f));
+  ASSERT_EQ(f.primitive_count, (size_t) 3);
+  ASSERT_NE(f.picture, nullptr);
+  EXPECT_EQ(gshscene_list_count(gshscene_resource_picture(f.picture)), (size_t) 2);
+  EXPECT_EQ(f.primitives[0].slot, 0u);
+  EXPECT_EQ(f.primitives[1].slot, 1u);
+  const GSHSCENE_Item * a = SlotInstance(f, 0);
+  const GSHSCENE_Item * b = SlotInstance(f, 1);
+  ASSERT_NE(a, nullptr);
+  ASSERT_NE(b, nullptr);
+  EXPECT_NEAR(a->map.t[0], 5.0, 1e-9);
+  EXPECT_NEAR(a->map.t[1], 6.0, 1e-9);
+  EXPECT_NEAR(b->map.t[0], 1.0, 1e-9);
+  EXPECT_NEAR(b->map.t[1], -1.0, 1e-9) << "y is the filter region's where the element gives none";
+}
+
+TEST(LowerFeImage, AnElementThatDrawsNothingOrIsNotThereIsAnEmptyResultAndAFilterOnItselfIsACycle) {
+  const char * empty[] = {
+      "<defs><filter id=\"f\"><feImage href=\"#nothing\"/></filter></defs><rect width=\"10\" height=\"10\" filter=\"url(#f)\"/>",
+      "<defs><filter id=\"f\"><feImage href=\"#x\"/></filter><rect id=\"x\" width=\"4\" height=\"4\" display=\"none\"/></defs>"
+      "<rect width=\"10\" height=\"10\" filter=\"url(#f)\"/>",
+      // the element draws through this very filter: a cycle
+      "<defs><filter id=\"f\"><feImage href=\"#x\"/></filter></defs><rect id=\"x\" width=\"10\" height=\"10\" filter=\"url(#f)\"/>",
+  };
+  for (const char * doc : empty) {
+    Lowered l;
+    LowerSvg(Svg("width=\"40\" height=\"40\"", doc), l);
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << doc;
+    GSHSCENE_Filter f;
+    ASSERT_TRUE(PrimitiveOf(l, &f)) << doc;
+    EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_FLOOD) << doc << ": transparent black";
+    EXPECT_EQ(f.picture, nullptr) << doc;
   }
 }
 
