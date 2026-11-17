@@ -34,14 +34,12 @@ static const struct {
   {"gradient"}, /* GRADIENT */
   {"clip-path"}, /* CLIP_PATH */
   {"mask"}, /* MASK */
-  {"image"}, /* IMAGE */
   {"filter"}, /* FILTER */
   {"text"}, /* TEXT */
   {"context-paint"}, /* CONTEXT_PAINT */
   {"unsupported-color-space"}, /* UNSUPPORTED_COLOR_SPACE */
   {"foreign-object"}, /* FOREIGN_OBJECT */
   {"external-reference"}, /* EXTERNAL_REFERENCE */
-  {"reference-cycle"}, /* REFERENCE_CYCLE */
   {"expansion-limit"}, /* EXPANSION_LIMIT */
   {"limit"}, /* LIMIT */
   {"style"}, /* STYLE */

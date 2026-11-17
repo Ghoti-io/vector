@@ -175,8 +175,10 @@ row is that case. The pair is a first setting and is expected to be refined as t
 
 ## The score today
 
-At the head of the feImage-of-an-element work the score file reads **1,494 of 1,679 (88.98%)** determined correct: 579 `PASS` (34.48%), 27 `ACCEPTED`, 738 `EDGE`,
-150 `ORACLE_AGREES`; 140 `ORACLE_SPLIT` and no `DEFECT` among the 1,028 `FAIL`s, 23 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The paragraph and the
+At the head of the gap-closing work after feImage the score file reads **1,508 of 1,679 (89.82%)** determined correct: 591 `PASS` (35.20%), 27 `ACCEPTED`, 740 `EDGE`,
+150 `ORACLE_AGREES`; 142 `ORACLE_SPLIT` and no `DEFECT` among the 1,032 `FAIL`s, 7 `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. The seven that are refused are four that name
+something outside the document (`url-to-png`, `url-to-svg`, `external-CSS`, `xlink-to-an-external-file`: nothing is fetched, ever) and three of colour emoji, whose font
+(`NotoColorEmoji`) holds bitmap glyphs (`CBDT`) that the glyph provider does not hand to the sink (`glyph-unavailable`). The paragraph and the
 table that follow are an older reading, kept for their account of what each feature moved; `make conformance` writes the current one.
 
 Images (`image` of a raster in a `data:` URI or a file under the caller's image root, `preserveAspectRatio`, `image-rendering`, an Exif orientation) and

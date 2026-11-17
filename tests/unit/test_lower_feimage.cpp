@@ -249,9 +249,12 @@ TEST(LowerFeImage, AFileUnderTheImageRootIsReadAndAFeImageIsOtherwiseLikeAnImage
   EXPECT_NE(network.Refusal(GVEC_LOWER_EXTERNAL_REFERENCE), nullptr);
   EXPECT_EQ(network.Items(), (size_t) 0) << "the element is not drawn";
   Lowered svg;
-  LowerIn(Doc("href=\"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%224%22%20height%3D%224%22%2F%3E\""), svg);
-  EXPECT_NE(svg.Refusal(GVEC_LOWER_IMAGE), nullptr);
-  EXPECT_EQ(svg.Items(), (size_t) 0);
+  LowerIn(Doc("href=\"data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%224%22%20height%3D%224%22%3E%3Crect%20width%3D%224%22%20height%3D%224%22%2F%3E%3C%2Fsvg%3E\""), svg);
+  EXPECT_EQ(svg.Refusals(), (size_t) 0) << "an SVG document is a slot of the filter's picture";
+  GSHSCENE_Filter sf;
+  ASSERT_TRUE(PrimitiveOf(svg, &sf));
+  EXPECT_EQ(sf.primitives[0].use_picture, 1u);
+  EXPECT_NE(sf.picture, nullptr);
   Lowered unrooted;
   LowerSvg(Doc("href=\"red-blue-2x1.png\""), unrooted);
   EXPECT_NE(unrooted.Refusal(GVEC_LOWER_EXTERNAL_REFERENCE), nullptr);

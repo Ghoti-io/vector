@@ -7,6 +7,8 @@
 
 #include "../lower_helpers.h"
 
+#include <functional>
+
 #include <cmath>
 
 using namespace gvec_test;
@@ -361,16 +363,35 @@ TEST(LowerMarker, ContextPaintOutsideAMarkerIsNone) {
   EXPECT_EQ(l.Items(), (size_t) 0);
 }
 
-// A `use` that is itself outside any context has a context paint that names nothing; following it from the referent
-// used to loop for ever.
-TEST(LowerMarker, AUseWhoseOwnPaintIsAContextPaintOutsideAContextIsRefusedNotFollowedForEver) {
+// A `use` that is itself outside any context has a context paint that names nothing, which is none (SVG 2, 13.5): what it gives to its
+// referent is none too, and a `use` inside a context takes its own context paint from that one, so that the paints nest.
+TEST(LowerMarker, AUseWhoseOwnPaintIsAContextPaintOutsideAContextIsNoneAndInsideOneItResolves) {
   Lowered l;
   LowerSvg(Svg("width=\"60\" height=\"60\"",
                "<defs><rect id=\"r\" width=\"10\" height=\"10\" fill=\"context-stroke\" stroke=\"context-fill\"/></defs>"
                "<use id=\"u2\" href=\"#r\" stroke=\"context-stroke\" fill=\"context-fill\"/>"
                "<use href=\"#u2\" stroke=\"green\" fill=\"blue\"/>"),
       l);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_CONTEXT_PAINT), nullptr);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  // the first `use` is outside any context: its referent draws with no paint; the second takes the context of its own paints through it, so
+  // the rect's fill (context-stroke) is green and its stroke (context-fill) is blue
+  std::function<bool(const GSHSCENE_List *)> has_green = [&](const GSHSCENE_List * list) {
+    for (size_t i = 0; i < gshscene_list_count(list); i++) {
+      const GSHSCENE_Item * it = nullptr;
+      if (gshscene_list_item(list, i, &it) != GSHSCENE_OK) {
+        return false;
+      }
+      if (it->kind == GSHSCENE_ITEM_FILL && it->paint.rgba[1] > it->paint.rgba[0] && it->paint.rgba[1] > it->paint.rgba[2]) {
+        return true;
+      }
+      if (it->kind == GSHSCENE_ITEM_INSTANCE && has_green(gshscene_resource_picture(it->resource))) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const bool green = has_green(l.list);
+  EXPECT_TRUE(green);
 }
 
 TEST(LowerMarker, AMissingMarkerAndAnElementThatIsNoMarkerDrawNoneAndTheSecondIsSaid) {

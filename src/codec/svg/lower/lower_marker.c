@@ -475,8 +475,15 @@ GVEC_Result gvec_lw_context_paint(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
     return r;
   }
   *out = v.paint;
-  if (ctx->context_set && (v.paint.kind == GVEC_SVG_PAINT_CONTEXT_FILL || v.paint.kind == GVEC_SVG_PAINT_CONTEXT_STROKE)) {
-    *out = v.paint.kind == GVEC_SVG_PAINT_CONTEXT_FILL ? ctx->context_fill : ctx->context_stroke;
+  if (v.paint.kind == GVEC_SVG_PAINT_CONTEXT_FILL || v.paint.kind == GVEC_SVG_PAINT_CONTEXT_STROKE) {
+    if (ctx->context_set) {
+      *out = v.paint.kind == GVEC_SVG_PAINT_CONTEXT_FILL ? ctx->context_fill : ctx->context_stroke;
+    }
+    else {
+      /* No context element: the paint is none (SVG 2, 13.5), so the context this element gives to what it draws has none for it either. */
+      memset(out, 0, sizeof *out);
+      out->kind = GVEC_SVG_PAINT_NONE;
+    }
   }
   return GVEC_OK;
 }

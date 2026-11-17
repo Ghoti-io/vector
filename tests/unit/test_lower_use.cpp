@@ -216,8 +216,7 @@ TEST(LowerUse, ACycleAndAPyramidAreReportedNotLooped) {
                "<defs><g id=\"a\"><use id=\"ua\" href=\"#b\"/></g><g id=\"b\"><use id=\"ub\" href=\"#a\"/></g></defs><use href=\"#a\"/>"),
       l);
   EXPECT_EQ(l.Items(), (size_t) 0);
-  EXPECT_GE(l.Refusals(), (size_t) 1);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_REFERENCE_CYCLE), nullptr);
+  EXPECT_EQ(l.Refusals(), (size_t) 0) << "a cycle is an error of the document, drawn as nothing, not a refusal";
 }
 
 int main(int argc, char ** argv) {

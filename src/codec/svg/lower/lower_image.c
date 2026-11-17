@@ -542,6 +542,15 @@ static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
     *state = GVEC_LW_IMAGE_REFUSED;
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "SVG images are nested deeper than the lowering allows");
   }
+  /* A document that is an image of itself, directly or through others: the image inside the document that is already being lowered as that
+   * image draws nothing (the outer one is drawn once, as every renderer draws it). */
+  uint64_t source_hash = gvec_svg_hash64(bytes, size);
+  source_hash = source_hash ? source_hash : 1;
+  for (const gvec_lw_ctx * up = ctx; up; up = up->parent) {
+    if (up->source_hash == source_hash) {
+      return unusable(ctx, e, GVEC_IMAGE_UNDECODABLE, "the SVG image is a document that is being drawn as an image already: a recursion draws nothing");
+    }
+  }
   GVEC_Doc * probe = NULL;
   GVEC_Result problem;
   GVEC_Result r = load_document(ctx, bytes, size, 0, 0, &probe, &problem);
@@ -579,6 +588,7 @@ static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   }
   memset(out, 0, sizeof *out);
   out->svg = doc;
+  out->source_hash = source_hash;
   out->width = w;
   out->height = h;
   *state = GVEC_LW_IMAGE_READY;

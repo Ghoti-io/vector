@@ -293,11 +293,7 @@ static GVEC_Result gather_children(chain * c, const GVEC_Svg_Element * clip_path
       }
       const GVEC_Svg_Element * target = gvec_svg_element_href_target(child);
       if (!target) {
-        if (gvec_svg_element_on_cycle(child)) {
-          *refused = true;
-          return gvec_lw_refuse(ctx, e, GVEC_LOWER_REFERENCE_CYCLE, "a use in a clipPath is on a reference cycle");
-        }
-        continue; /* A reference to nothing names no shape. */
+        continue; /* A reference to nothing, or on a cycle (reported when the document was loaded), names no shape. */
       }
       GVEC_Svg_Kind tk = gvec_svg_element_kind(target);
       if (tk == GVEC_SVG_KIND_TEXT) {

@@ -635,7 +635,7 @@ PLANTS += [
     ("R3a", "src/codec/svg/lower/lower_image.c", "        w = box.width;\n        h = box.height;", "        w = 1;\n        h = 1;", "a document that gives no size is one pixel, not the viewBox's size"),
     ("R3b", "src/codec/svg/lower/lower_image.c", "  if (ctx->image_nesting >= GVEC_LW_IMAGE_NESTING_MAX) {", "  if (0) {", "SVG images nest without a bound"),
     ("R3c", W, "  nested->image_nesting = ctx->image_nesting + 1;", "  nested->image_nesting = 0;", "a document that names itself nests without a bound"),
-    ("R3e", "src/codec/svg/lower/lower_filter.c", "  if (image.svg) {\n    /* The waist's image primitive draws a raster", "  if (0) {\n    /* The waist's image primitive draws a raster", "an feImage of an SVG document is drawn as if it had a raster"),
+    ("R3e", "src/codec/svg/lower/lower_filter.c", "  if (image.svg) {\n    return document_primitive(b, el, p, &image, &placed);\n  }\n  if (!gvec_lw_compose", "  if (0) {\n    return document_primitive(b, el, p, &image, &placed);\n  }\n  if (!gvec_lw_compose", "an feImage of an SVG document is drawn as an image of no raster"),
     ("R3f", W, "  clip->resource = rect;\n  clip->rule = GSHGEOM_FILL_NONZERO;\n  gshgeom_map_identity(2, &clip->map);", "  clip->resource = rect;\n  clip->rule = GSHGEOM_FILL_NONZERO;\n  gshgeom_map_identity(2, &clip->map);\n  clip->map.m[0][0] = 2;", "the clip of an SVG image's own box is the wrong size"),
     ("FL4", "src/codec/svg/lower/lower_filter.c", "    g->key = gvec_lw_key(e->key, hash2(ctx->chain, j == 0 ? 0 : 16u + (uint64_t) j), GVEC_LW_ROLE_FILTER);", "    g->key = gvec_lw_key(e->key, hash2(ctx->chain, 0), GVEC_LW_ROLE_FILTER);", "the groups of a list of filters share one key"),
     # feImage of an element (FL25).
@@ -645,6 +645,14 @@ PLANTS += [
     ("FE4", "src/codec/svg/lower/lower_filter.c", "    g = gshscene_list_instance(list, b->slot_pictures[i], &b->slot_maps[i], 0, 0.0);", "    g = gshscene_list_instance(list, b->slot_pictures[i], &b->slot_maps[0], 0, 0.0);", "every slot is placed as the first"),
     ("FE5", "src/codec/svg/lower/lower_filter.c", "  if (cycled || !holder->first) {", "  if (cycled) {", "an element that draws nothing is a slot of an empty picture"),
     ("FE6", "src/codec/svg/lower/lower_filter.c", " y0 = (p->subregion_mask & 2u) ? sub[1] : b->region[1];\n  if (x0 - x0 != 0 || y0 - y0 != 0) {\n    transparent_result(p); /* an edge that is not finite */", " y0 = (p->subregion_mask & 2u) ? sub[1] : 0;\n  if (x0 - x0 != 0 || y0 - y0 != 0) {\n    transparent_result(p); /* an edge that is not finite */", "the filter region's y is not the default"),
+    # context paint outside a context, held magnitudes, currentColor in a filter.
+    ("CX1", "src/codec/svg/lower/lower_marker.c", "      memset(out, 0, sizeof *out);\n      out->kind = GVEC_SVG_PAINT_NONE;", "      *out = v.paint;", "a context paint outside a context is passed on unresolved"),
+    ("HV1", "src/codec/svg/lower/lower_filter.c", "  if (*x > max) {\n    *x = max;", "  if (*x > max + 1.0e300) {\n    *x = max;", "a coefficient past the bound is not held to it"),
+    ("HV2", "src/codec/svg/lower/lower_filter.c", "    hold_all(list_region + 2, 2, &held); /* the size is a length too", "    (void) held; /* the size is a length too", "a region's size past the bound is not held"),
+    ("CC1", "src/codec/svg/lower/lower_filter.c", "    out->rgba[3] = 1;\n  }\n  out->rgba[3] *= c->color.rgba[3];", "    out->rgba[3] = 0;\n  }\n  out->rgba[3] *= c->color.rgba[3];", "currentColor in a flood is transparent when the lowering sets no foreground"),
+    # an SVG image that is the image of itself (design R3).
+    ("RC1", "src/codec/svg/lower/lower_image.c", "    if (up->source_hash == source_hash) {", "    if (up->source_hash == source_hash + 1) {", "a document that is the image of itself nests to the limit"),
+    ("RC2", "src/codec/svg/lower/lower_walk.c", "  nested->source_hash = image->source_hash;", "  nested->source_hash = 0;", "the context of an image does not know which document it is"),
 ]
 
 # The root check of L8 is unreachable while the probe is correct (the probe

@@ -222,6 +222,7 @@ typedef struct gvec_lw_ctx {
   GVEC_Doc ** svg_docs;              ///< The SVG documents the images named, loaded once for each element and held until the lowering ends.
   size_t svg_doc_count, svg_doc_capacity;
   uint32_t image_nesting;            ///< SVG images this document is the image of, one inside another.
+  uint64_t source_hash;              ///< When this document is an image: the hash of its bytes (0 for the document being lowered).
 } gvec_lw_ctx;
 
 /** The key of a node (AD-9): the element's key, the chain of `use` elements above it and the node's role. */
@@ -609,8 +610,17 @@ typedef enum gvec_lw_image_state {
 typedef struct gvec_lw_image {
   const GSHSCENE_Resource * resource; ///< The raster, or NULL for an SVG document.
   GVEC_Doc * svg;                    ///< The SVG document (held by the context), or NULL for a raster.
+  uint64_t source_hash;              ///< An SVG document: the hash of its bytes, which the context that lowers it keeps (an image of the same bytes inside it is a recursion).
   double width, height;              ///< The intrinsic size: a raster's pixels, a document's used size (or, with a viewBox and no size, the viewBox's).
 } gvec_lw_image;
+
+/**
+ * An image that is an SVG document: an instance of a picture holding the document in its own size (clipped to it), under `local` composed with
+ * `placed`, lowered by a context of its own whose nodes and sites are this lowering's.  `*out` is NULL when the document draws nothing.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHGEOM_Map * local,
+    const gvec_lw_image * image, const GSHGEOM_Map * placed, gvec_lw_node ** out);
+
 
 /** The most SVG images one inside another. */
 #define GVEC_LW_IMAGE_NESTING_MAX 4

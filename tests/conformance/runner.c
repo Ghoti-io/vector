@@ -406,19 +406,21 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
   if (unsound > 0) {
     /* The sink left something out or drew it otherwise than defined: the picture cannot be scored as the document's. */
     char where[160] = "unplaced";
+    const char * why = "";
     for (size_t i = 0; i < gshscene_report_count(report); i++) {
       GSHSCENE_Report_Entry entry;
       if (gshscene_report_entry(report, i, &entry) != GSHSCENE_OK ||
           (entry.entry_class != GSHSCENE_ENTRY_REFUSED && entry.entry_class != GSHSCENE_ENTRY_APPROXIMATED)) {
         continue;
       }
+      why = gshscene_reason_string(entry.reason);
       GVEC_Lower_Site site;
       if (gvec_lower_trace_element(trace, NULL, report, i, &site) == GVEC_OK && site.placed) {
         snprintf(where, sizeof where, "%s:%zu", site.element, site.line);
       }
       break;
     }
-    say(v, "REFUSED", "sink-report=%zu first=%s", unsound, where);
+    say(v, "REFUSED", "sink-report=%zu first=%s reason=%s", unsound, where, why);
     goto done;
   }
   if (o->dump) {

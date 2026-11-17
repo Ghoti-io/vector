@@ -704,8 +704,10 @@ loaded twice, once at the default viewport to read that size and once laid out i
 the lowering's store, diagnostics and limits and records its nodes' sites at the `image` element (the trace names the element that drew them, not
 one of the image's own), so refusals inside it are reported and make the case refused, as everywhere. Its identifiers and references are its own: it
 cannot see the outer document and the outer cannot see it. A document that cannot be parsed is a broken image (R10). Images nest at most
-`GVEC_LW_IMAGE_NESTING_MAX` deep, past which the image is refused (`limit`), which also ends a document that names itself. An `feImage` of a
-document is still refused by name (`image`): the waist's image primitive draws a raster, not a picture.
+`GVEC_LW_IMAGE_NESTING_MAX` deep, past which the image is refused (`limit`). A document that is the image of itself, directly or through others
+(the same bytes inside the context that is lowering them), draws nothing where it names itself again: the outer one is drawn once, as every renderer
+draws it, and the notice says the image is unusable. An `feImage` of a document is a slot of the filter's picture (R11): the document is lowered by a
+context of its own into a picture, clipped to its size and placed into the subregion by `preserveAspectRatio` as a raster is.
 
 **R4 Limits.** `max_image_bytes` bounds the encoded bytes of one image (the decoded payload of a URI, the length of a file, read up to one byte
 past it and no further), `max_image_pixels` the pixels of one decoded image, `max_image_decoded_bytes` the bytes of decoded samples of every

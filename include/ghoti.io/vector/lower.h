@@ -93,14 +93,12 @@ typedef enum GVEC_Lower_Reason {
   GVEC_LOWER_GRADIENT = 1,                 ///< A gradient paint.
   GVEC_LOWER_CLIP_PATH,                ///< `clip-path` (G4).
   GVEC_LOWER_MASK,                     ///< `mask` (G5).
-  GVEC_LOWER_IMAGE,                    ///< `image` (G6).
   GVEC_LOWER_FILTER,                   ///< `filter` (G10).
   GVEC_LOWER_TEXT,                     ///< `text` (G11 and the text phase).
   GVEC_LOWER_CONTEXT_PAINT,            ///< `context-fill` or `context-stroke`.
   GVEC_LOWER_UNSUPPORTED_COLOR_SPACE,  ///< A colour the waist cannot carry (G9).
   GVEC_LOWER_FOREIGN_OBJECT,           ///< `foreignObject`.
   GVEC_LOWER_EXTERNAL_REFERENCE,       ///< A reference to something outside the document, which is never fetched.
-  GVEC_LOWER_REFERENCE_CYCLE,          ///< A `use` on a reference cycle.
   GVEC_LOWER_EXPANSION_LIMIT,          ///< A `use` that instantiates more elements than the limit allows.
   GVEC_LOWER_LIMIT,                    ///< A limit of the document, of the lowering or of `shape-scene` was reached.
   GVEC_LOWER_STYLE,                    ///< A property of the element has no usable value (reported where it was read).

@@ -627,6 +627,42 @@ TEST(LowerFilter, AFilteredChildDoesNotMakeItsParentsFilteredGroupRenderedAndThe
   ExpectOnlyTheFilterGroup(down, "the parent alone");
 }
 
+TEST(LowerFilter, AMagnitudePastTheWaistsBoundIsHeldToItAndSaidNotRefused) {
+  Lowered big;
+  LowerSvg(Doc("<filter id=\"f\"><feColorMatrix type=\"saturate\" values=\"99999\"/></filter>"), big);
+  EXPECT_EQ(big.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(big, &f));
+  ASSERT_EQ(f.primitive_count, (size_t) 1);
+  ASSERT_NE(f.primitives[0].values, nullptr);
+  EXPECT_EQ(f.primitives[0].values[0], GSHSCENE_FILTER_VALUE_MAX);
+  EXPECT_GE(gvec_diagnostics_count_code(&big.by_list, GVEC_DIAG_STYLE_INVALID), (size_t) 1) << "a notice says so";
+  Lowered region;
+  LowerSvg(Doc("<filter id=\"f\" filterUnits=\"userSpaceOnUse\" x=\"-10000\" y=\"-10000\" width=\"100000\" height=\"100000\"><feOffset dx=\"1\"/></filter>"), region);
+  EXPECT_EQ(region.Refusals(), (size_t) 0);
+  ASSERT_TRUE(FilterOf(region, &f));
+  EXPECT_EQ(f.region[0], -10000.0);
+  EXPECT_LE(f.region[2], GSHSCENE_FILTER_VALUE_MAX);
+  EXPECT_GT(f.region[0] + f.region[2], 40.0) << "the region still covers the canvas";
+  Lowered fine;
+  LowerSvg(Doc("<filter id=\"f\"><feColorMatrix type=\"saturate\" values=\"3\"/></filter>"), fine);
+  EXPECT_EQ(gvec_diagnostics_count_code(&fine.by_list, GVEC_DIAG_STYLE_INVALID), (size_t) 0) << "nothing is said of a value in range";
+}
+
+TEST(LowerFilter, CurrentColorInAFloodOrALightingIsTheForegroundAtLoweringAndSaidSo) {
+  Lowered black;
+  LowerSvg(Doc("<filter id=\"f\"><feFlood flood-color=\"currentColor\"/></filter>"), black);
+  EXPECT_EQ(black.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(black, &f));
+  EXPECT_EQ(f.primitives[0].color.rgba[0], 0.0);
+  EXPECT_EQ(f.primitives[0].color.rgba[3], 1.0);
+  EXPECT_GE(gvec_diagnostics_count_code(&black.by_list, GVEC_DIAG_STYLE_INVALID), (size_t) 1) << "the notice";
+  Lowered lit;
+  LowerSvg(Doc("<filter id=\"f\"><feDiffuseLighting lighting-color=\"currentColor\"><feDistantLight azimuth=\"45\" elevation=\"45\"/></feDiffuseLighting></filter>"), lit);
+  EXPECT_EQ(lit.Refusals(), (size_t) 0);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

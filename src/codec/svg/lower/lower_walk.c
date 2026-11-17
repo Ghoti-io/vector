@@ -968,11 +968,11 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
  * image's viewport by the same map as a raster. The document is lowered by a context of its own, which keeps the nodes it makes (they are in
  * this lowering's tree, in this lowering's arena of nodes) and records their sites at the `image` element. `*out` stays NULL when the
  * document draws nothing. */
-static GVEC_Result svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const common * c, const gvec_lw_image_geometry * g,
+GVEC_Result gvec_lw_svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHGEOM_Map * local, const gvec_lw_image * image,
     const GSHGEOM_Map * placed, gvec_lw_node ** out) {
   *out = NULL;
   GSHGEOM_Map map;
-  if (!gvec_lw_compose(&c->local, placed, &map)) {
+  if (!gvec_lw_compose(local, placed, &map)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the image is placed past the range the waist can carry");
   }
   if (ctx->levels + 4 > ctx->caps.node_depth || ctx->picture_depth + 1 > ctx->caps.picture_depth || ctx->open + 1 > ctx->caps.open) {
@@ -980,7 +980,7 @@ static GVEC_Result svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   }
   gvec_lw_geometry geometry;
   const GSHSCENE_Resource * rect = NULL;
-  GVEC_Result r = gvec_lw_rect_path(ctx, 0, 0, g->image.width, g->image.height, &geometry, &rect);
+  GVEC_Result r = gvec_lw_rect_path(ctx, 0, 0, image->width, image->height, &geometry, &rect);
   if (r != GVEC_OK) {
     return r;
   }
@@ -1020,7 +1020,7 @@ static GVEC_Result svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
     ctx->nested = fresh;
     ctx->nested_capacity = capacity;
   }
-  r = gvec_lw_begin(nested, g->image.svg, ctx->options, ctx->store, ctx->diagnostics);
+  r = gvec_lw_begin(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics);
   if (r != GVEC_OK) {
     gvec_free(ctx->allocator, nested);
     return r;
@@ -1029,6 +1029,7 @@ static GVEC_Result svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   nested->parent = ctx;
   nested->parent_element = e;
   nested->image_nesting = ctx->image_nesting + 1;
+  nested->source_hash = image->source_hash;
   uint8_t buf[16];
   for (int i = 0; i < 8; i++) {
     buf[i] = (uint8_t) (ctx->chain >> (8 * i));
@@ -1105,7 +1106,7 @@ static GVEC_Result lw_image(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
   }
   gvec_lw_node * fill = NULL;
   if (g.image.svg) {
-    r = svg_image_node(ctx, e, &c, &g, &placed, &fill);
+    r = gvec_lw_svg_image_node(ctx, e, &c.local, &g.image, &placed, &fill);
     if (r != GVEC_OK || !fill) {
       return r;
     }
@@ -1558,11 +1559,9 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   }
   const GVEC_Svg_Element * target = gvec_svg_element_href_target(e);
   if (!target) {
-    /* Why there is no referent: a cycle or an expansion past the limit (both diagnosed when the document was loaded), a
-     * reference to another document (never fetched), or a reference to nothing (diagnosed; the use draws nothing). */
-    if (gvec_svg_element_on_cycle(e)) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_REFERENCE_CYCLE, "the use is on a reference cycle");
-    }
+    /* Why there is no referent: a cycle, which is an error of the document (reported when it was loaded, and the use draws nothing, as
+     * every renderer draws it), an expansion past the limit (diagnosed too, and refused), a reference to another document (never
+     * fetched), or a reference to nothing (diagnosed; the use draws nothing). */
     if (gvec_svg_element_expansion_limited(e)) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_EXPANSION_LIMIT, "the use instantiates more elements than the limit allows");
     }
@@ -1579,7 +1578,7 @@ static GVEC_Result lw_use(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, con
   }
   for (size_t i = 0; i < ctx->use_stack_count; i++) {
     if (ctx->use_stack[i] == e) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_REFERENCE_CYCLE, "the use is on a reference cycle");
+      return GVEC_OK; /* a cycle through the instances: an error of the document, drawn as nothing */
     }
   }
   double x, y;
