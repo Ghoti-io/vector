@@ -32,6 +32,7 @@
 #include <ghoti.io/shape-scene/image.h>
 #include <ghoti.io/shape-scene/image_paint.h>
 
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <string>
@@ -695,9 +696,14 @@ size_t PictureDepth(const GSHSCENE_List * list) {
 
 TEST(LowerImage, ADocumentThatIsTheImageOfItselfIsDrawnOnceAndItsOwnImageDrawsNothing) {
   // the main document names recursive.svg, which names itself: the first is drawn (one picture), the image inside that draws nothing
-  char dir[] = "/tmp/gvec-recursive-XXXXXX";
-  ASSERT_NE(mkdtemp(dir), nullptr);
-  const std::string file = std::string(dir) + "/recursive.svg";
+  // A scratch directory made with the C++ library, not mkdtemp and /tmp, which the Windows targets do not have.
+  std::error_code made;
+  const std::filesystem::path scratch = std::filesystem::temp_directory_path(made) /
+      ("gvec-recursive-" + std::to_string((unsigned long long) std::chrono::steady_clock::now().time_since_epoch().count()));
+  ASSERT_FALSE(made);
+  ASSERT_TRUE(std::filesystem::create_directory(scratch, made)) << made.message();
+  const std::string dir = scratch.generic_string();
+  const std::string file = dir + "/recursive.svg";
   FILE * f = std::fopen(file.c_str(), "wb");
   ASSERT_NE(f, nullptr);
   const char * markup = "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" viewBox=\"0 0 80 80\">"
@@ -706,12 +712,11 @@ TEST(LowerImage, ADocumentThatIsTheImageOfItselfIsDrawnOnceAndItsOwnImageDrawsNo
   std::fwrite(markup, 1, std::strlen(markup), f);
   std::fclose(f);
   Lowered l;
-  LowerIn(markup, l, dir, dir);
+  LowerIn(markup, l, dir.c_str(), dir.c_str());
   EXPECT_EQ(l.Refusals(), (size_t) 0) << "not the nesting limit: the recursion is found";
   EXPECT_EQ(PictureDepth(l.list), (size_t) 1) << "the document once, as a picture; the image inside it draws nothing";
   EXPECT_GE(UnusableCount(l), (size_t) 1);
-  std::remove(file.c_str());
-  rmdir(dir);
+  std::filesystem::remove_all(scratch, made);
 }
 
 //-----------------------------------------------------------------------------
