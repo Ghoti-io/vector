@@ -582,6 +582,104 @@ TEST(LowerText, ThePathATextPathNamesKeepsItsTransformWhosePercentagesAreOfItsOw
   EXPECT_NEAR(run.glyphs[0].x, 60.0, 1e-9);
 }
 
+namespace {
+
+/** The font set of tests/data/fonts-features: a face whose GSUB has the `f i` ligature (`liga`), the `o o` one (`dlig`) and single
+ * substitutions (`ss01`), so that a feature the text asks for changes the glyphs it is shaped to. */
+struct FeatureFonts {
+  GFNT_FontSet * set = nullptr;
+  GVEC_Fonts * fonts = nullptr;
+  FeatureFonts() {
+    const char * dirs[] = {"tests/data/fonts-features"};
+    EXPECT_EQ(gfnt_fontset_scan(dirs, 1, nullptr, 0, nullptr, &set, nullptr), GFNT_OK);
+    EXPECT_EQ(gvec_fonts_new(set, nullptr, &fonts), GVEC_OK);
+  }
+  ~FeatureFonts() {
+    gvec_fonts_free(fonts);
+    gfnt_fontset_free(set);
+  }
+};
+
+/** The glyphs the first run of `content` (set at the font size 100 in the face of tests/data/fonts-features) has; `head` is put before the text. */
+size_t GlyphsOf(FeatureFonts & f, const std::string & head, const std::string & text_attributes, const std::string & content, Lowered * keep = nullptr,
+    const char * family = "Ghoti Fixture Layout GSUB", double * second_x = nullptr) {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  Lowered local;
+  Lowered & l = keep ? *keep : local;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"" + std::string(family) + "\"",
+               head + "<text x=\"10\" y=\"100\" " + text_attributes + ">" + content + "</text>"), l, 0, 0, &options);
+  size_t glyphs = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    GSHSCENE_Glyph_Run run;
+    if (l.Item(i).kind == GSHSCENE_ITEM_FILL && gshscene_resource_glyph_run(l.Item(i).resource, &run) == GSHSCENE_OK) {
+      glyphs += run.glyph_count;
+      if (second_x && run.glyph_count > 1) {
+        *second_x = run.glyphs[1].x;
+      }
+    }
+  }
+  return glyphs;
+}
+
+}  // namespace
+
+TEST(LowerText, TheFontFeaturesOfTheCascadeReachTheShaper) {
+  FeatureFonts f;
+  EXPECT_EQ(GlyphsOf(f, "", "", "fi"), (size_t) 1) << "the face's ligature, as the default";
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant-ligatures: no-common-ligatures\"", "fi"), (size_t) 2);
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant-ligatures: none\"", "fi"), (size_t) 2);
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant: no-common-ligatures\"", "fi"), (size_t) 2) << "the shorthand";
+  EXPECT_EQ(GlyphsOf(f, "<style>.n { font-variant-ligatures: none }</style>", "class=\"n\"", "fi"), (size_t) 2) << "a style sheet";
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-feature-settings: 'liga' 0\"", "fi"), (size_t) 2) << "font-feature-settings";
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-feature-settings: 'liga' off\"", "fi"), (size_t) 2) << "off is a zero";
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant-ligatures: none; font-feature-settings: 'liga'\"", "fi"), (size_t) 1)
+      << "the settings have the last word over the variant, and a tag alone is on";
+  EXPECT_EQ(GlyphsOf(f, "", "", "oo"), (size_t) 2);
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant-ligatures: discretionary-ligatures\"", "oo"), (size_t) 1) << "dlig is off until it is asked for";
+  // the same ligature has a historical form too, which stops at a mark: an acute between the two o's is skipped only by dlig
+  EXPECT_LT(GlyphsOf(f, "", "style=\"font-variant-ligatures: discretionary-ligatures\"", "o&#x301;o"), GlyphsOf(f, "", "style=\"font-variant-ligatures: historical-ligatures\"", "o&#x301;o"))
+      << "discretionary ligatures are not the historical ones";
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-feature-settings: 'dlig'\"", "oo"), (size_t) 1);
+}
+
+TEST(LowerText, FontKerningAndTheKernFeatureMoveTheSecondGlyphOfAPair) {
+  FeatureFonts f;
+  double kerned = 0, plain = 0, settings = 0, again = 0;
+  GlyphsOf(f, "", "", "AV", nullptr, "Ghoti Fixture Layout GPOS", &kerned);
+  GlyphsOf(f, "", "style=\"font-kerning: none\"", "AV", nullptr, "Ghoti Fixture Layout GPOS", &plain);
+  GlyphsOf(f, "", "style=\"font-feature-settings: 'kern' 0\"", "AV", nullptr, "Ghoti Fixture Layout GPOS", &settings);
+  GlyphsOf(f, "", "style=\"font-kerning: none; font-feature-settings: 'kern' 1\"", "AV", nullptr, "Ghoti Fixture Layout GPOS", &again);
+  EXPECT_NE(kerned, plain) << "the pair is kerned unless font-kerning is none";
+  EXPECT_EQ(settings, plain) << "font-feature-settings reaches kern too";
+  EXPECT_EQ(again, kerned) << "and has the last word over font-kerning";
+}
+
+TEST(LowerText, TheFeaturesAreInheritedAndASpanWithOtherFeaturesIsShapedApart) {
+  FeatureFonts f;
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant-ligatures: none\"", "<tspan>f</tspan><tspan>i</tspan>"), (size_t) 2) << "inherited by the spans";
+  EXPECT_EQ(GlyphsOf(f, "", "", "<tspan>f</tspan><tspan>i</tspan>"), (size_t) 1) << "spans of one font are shaped together";
+  EXPECT_EQ(GlyphsOf(f, "", "", "<tspan>f</tspan><tspan style=\"font-variant-ligatures: none\">i</tspan>"), (size_t) 2)
+      << "a span with other features is its own run, and the ligature does not run across";
+  EXPECT_EQ(GlyphsOf(f, "", "", "<tspan style=\"font-variant-ligatures: none\">f</tspan><tspan>i</tspan>"), (size_t) 2) << "in either order";
+  EXPECT_EQ(GlyphsOf(f, "", "style=\"font-variant-ligatures: none\"", "<tspan style=\"font-variant-ligatures: normal\">fi</tspan>"), (size_t) 1)
+      << "normal puts the default back";
+}
+
+TEST(LowerText, LetterSpacingSwitchesLigaturesOffUnlessTheTextAsksForThem) {
+  FeatureFonts f;
+  EXPECT_EQ(GlyphsOf(f, "", "letter-spacing=\"5\"", "fi"), (size_t) 2);
+  EXPECT_EQ(GlyphsOf(f, "", "letter-spacing=\"5\" style=\"font-feature-settings: 'liga' 1, 'clig' 1\"", "fi"), (size_t) 1);
+}
+
+TEST(LowerText, TheAlternatesOfFontVariantAreRefusedNotDrawnWithoutThem) {
+  FeatureFonts f;
+  Lowered l;
+  GlyphsOf(f, "", "style=\"font-variant: styleset(1)\"", "fi", &l);
+  EXPECT_NE(l.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
 TEST(LowerText, ATextLengthAndAStartOffsetInFontRelativeUnitsAreTheSameLengthInPixels) {
   Fonts f;
   GSHSCENE_Glyph_Run px, other;

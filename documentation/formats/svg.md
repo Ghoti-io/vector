@@ -130,6 +130,11 @@ line when the document is built.
   paints of the shape the marker is for (and, in the referent of a `use`, of the `use`), so one marker used with two paints is two pictures. Marker instances are counted over
   the lowering and bounded by `GVEC_Lower_Options.max_marker_instances`; a marker length is read in every unit a length attribute can be given in: the absolute ones, the font-relative
   ones (`em`, `ex`, `ch`, `rem`, of the marker's own cascade) and the window's (`vw`, `vh`, `vmin`, `vmax`), and `%` is of the viewport. A path with an elliptical arc has markers like any other.
+* **Font features.** `font-kerning`, the `font-variant` longhands (`-ligatures`, `-caps`, `-numeric`, `-east-asian`, `-position`, which the
+  `font-variant` shorthand sets) and `font-feature-settings` are read through the cascade, from a style sheet as from a `style` attribute,
+  and are the OpenType features a span is shaped with: `font-kerning: none` is `kern` off, each keyword is the features CSS Fonts 4 names for it
+  (`no-common-ligatures` is `liga` and `clig` off, `small-caps` is `smcp`, `tabular-nums` is `tnum`, and so on), and `font-feature-settings`
+  has the last word. Spans with different features are shaped apart. The alternates of `font-variant` (`styleset()`, `swash()`) are refused.
 * **Length units.** A length attribute (those of a gradient, pattern, mask, filter and its primitives, marker, `symbol`, `line`, `textLength`,
   `startOffset` and the position lists of text) is in user units whatever its unit: the absolute ones; the font-relative ones, where `em` is the
   computed `font-size` of the element that has the attribute (an attribute a gradient takes through its `href` is in the em of the gradient it

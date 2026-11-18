@@ -144,6 +144,28 @@ TEST(SvgStyleCascade, InheritanceAndTheInitialValues) {
   EXPECT_STREQ(rule.keyword, "nonzero");
 }
 
+TEST(SvgStyleCascade, TheFontFeatureLonghandsAreReadThroughTheCascadeFromAStyleSheetAndTheShorthand) {
+  Styled s(Svg("", "<style>.a { font-variant-ligatures: no-common-ligatures; } #b { font-feature-settings: \"smcp\" 1, \"zero\" 1; }</style>"
+                   "<g id=\"g\" style=\"font-variant: small-caps\"><text id=\"t\" class=\"a\" style=\"font-kerning: none\">x</text><text id=\"b\">y</text></g>"
+                   "<text id=\"n\">z</text>"));
+  GVEC_Svg_Style_Value v = s.Get("t", GVEC_SVG_PROP_FONT_VARIANT_LIGATURES);
+  ASSERT_EQ(v.kind, GVEC_SVG_STYLE_KEYWORD);
+  EXPECT_STREQ(v.keyword, "no-common-ligatures") << "from a style sheet";
+  EXPECT_STREQ(s.Get("t", GVEC_SVG_PROP_FONT_VARIANT_CAPS).keyword, "small-caps") << "the shorthand's longhand, inherited";
+  EXPECT_STREQ(s.Get("g", GVEC_SVG_PROP_FONT_VARIANT_CAPS).keyword, "small-caps");
+  EXPECT_STREQ(s.Get("t", GVEC_SVG_PROP_FONT_KERNING).keyword, "none") << "from the style attribute";
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_KERNING).keyword, "auto");
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_VARIANT_CAPS).keyword, "normal");
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_VARIANT_LIGATURES).keyword, "normal");
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_VARIANT_NUMERIC).keyword, "normal");
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_VARIANT_EAST_ASIAN).keyword, "normal");
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_VARIANT_POSITION).keyword, "normal");
+  EXPECT_STREQ(s.Get("n", GVEC_SVG_PROP_FONT_FEATURE_SETTINGS).keyword, "normal");
+  GVEC_Svg_Style_Value features = s.Get("b", GVEC_SVG_PROP_FONT_FEATURE_SETTINGS);
+  ASSERT_EQ(features.kind, GVEC_SVG_STYLE_KEYWORD);
+  EXPECT_STREQ(features.keyword, "\"smcp\" 1, \"zero\" 1") << "the value as CSS writes it";
+}
+
 TEST(SvgStyleCascade, StyleBeatsPresentationAndImportantBeatsBoth) {
   Styled s(Svg("", "<rect id=\"a\" fill=\"red\" style=\"fill:blue\"/><rect id=\"b\" fill=\"red\"/>"
                     "<rect id=\"c\" fill=\"red\" style=\"fill:blue !important\"/>"));

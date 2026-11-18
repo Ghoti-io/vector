@@ -746,6 +746,17 @@ PLANTS += [
     ("RC2", "src/codec/svg/lower/lower_walk.c", "  nested->source_hash = image->source_hash;", "  nested->source_hash = 0;", "the context of an image does not know which document it is"),
     # text positions are indexed by UTF-16 code unit.
     ("TU1", "src/codec/svg/lower/lower_text.c", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += t->chars[at].cp > 0xFFFF ? 2u : 1u, at++) {", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += 1u, at++) {", "a character beyond plane 0 takes one position value"),
+    # the font features of the cascade (read_features and what it applies)
+    ("FV1", TX, "    if (strcmp(v.keyword, \"none\") == 0) {\n      fits = fits && set_feature(st, \"kern\", 0);", "    if (strcmp(v.keyword, \"none\") == 0) {\n      fits = fits && set_feature(st, \"kern\", 1);", "font-kerning none turns kerning on"),
+    ("FV2", TX, "      st->features[i].value = value;\n      return true;", "      return true;", "a feature set again keeps its first value"),
+    ("FV3", TX, "        if (!set_feature(st, ligatures[k], 0)) {", "        if (!set_feature(st, ligatures[k], 1)) {", "none turns the ligatures on"),
+    ("FV4", TX, "{\"no-common-ligatures\", {\"liga\", \"clig\", NULL}, false}", "{\"no-common-ligatures\", {\"liga\", \"clig\", NULL}, true}", "no-common-ligatures asks for them"),
+    ("FV5", TX, "{\"discretionary-ligatures\", {\"dlig\", NULL}, true}", "{\"discretionary-ligatures\", {\"hlig\", NULL}, true}", "discretionary ligatures are the historical ones"),
+    ("FV7", TX, "      const GFNT_Tag off = offs[o];\n      bool asked = false;", "      const GFNT_Tag off = offs[o];\n      bool asked = true;", "letter-spacing keeps a ligature the text asks for off"),
+    ("FV8", TX, "      else if (strncmp(p, \"off\", 3) == 0) {\n        value = 0;", "      else if (strncmp(p, \"off\", 3) == 0) {\n        value = 1;", "off is on"),
+    ("FV9", TX, "if (!close || close - tag != 4) {", "if (!close || close - tag != 3) {", "a feature tag is three letters"),
+    ("FV10", TX, "(chain_value(inst, \"font-variant\", true, true, value, sizeof value) && strchr(value, '('))", "(chain_value(inst, \"font-variant\", true, true, value, sizeof value) && 0)", "the alternates of font-variant are drawn without them"),
+    ("FV11", TX, "  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_FEATURE_SETTINGS, &v, &ok);", "  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_KERNING, &v, &ok);", "font-feature-settings is not read"),
     # the units of a length attribute (gvec_lw_unit_length): font-relative, the root's, the window's, and whose style an em is in
     ("UL1", W, "(length->unit == GVEC_SVG_UNIT_EM ? 1.0 : 0.5)", "(length->unit == GVEC_SVG_UNIT_EM ? 0.5 : 1.0)", "an em is half a font size and an ex a whole one"),
     ("UL2", W, "    r = gvec_lw_instance_of(ctx, owner, &at);\n    if (r != GVEC_OK) {\n      return r;\n    }\n    r = gvec_svg_get(ctx->style, at, GVEC_SVG_PROP_FONT_SIZE, &v);", "    r = gvec_lw_instance_of(ctx, owner, &at);\n    if (r != GVEC_OK) {\n      return r;\n    }\n    r = gvec_svg_get(ctx->style, gvec_svg_instance_root(ctx->style), GVEC_SVG_PROP_FONT_SIZE, &v);", "an em is the root's font size, not the element's"),

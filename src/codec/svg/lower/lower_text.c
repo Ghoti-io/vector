@@ -288,15 +288,17 @@ static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Valu
   return gvec_lw_absolute_length(&l, out);
 }
 
-/* What a later story of the milestone lowers is refused, not drawn without it: the element is refused whole when any of these is not its
- * initial value. `*clear` is false when it was refused. */
+/* What this does not lower is refused, not drawn without it: the element is refused whole when any of these is not its initial value.
+ * `*clear` is false when it was refused.  The alternates of `font-variant` (`styleset()`, `swash()` and the like, which name a set the
+ * `@font-feature-values` rule defines) are the one thing of it that is not read. */
 static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * clear) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   *clear = false;
   {
-    char value[32];
-    if (chain_value(inst, "font-variant", true, true, value, sizeof value) && strcmp(value, "normal") != 0 && strcmp(value, "small-caps") != 0) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "this font-variant on text is not lowered yet");
+    char value[128];
+    if ((chain_value(inst, "font-variant", true, true, value, sizeof value) && strchr(value, '(')) ||
+        (chain_value(inst, "font-variant-alternates", false, true, value, sizeof value) && strcmp(value, "normal") != 0)) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the alternates of font-variant are not lowered");
     }
   }
   *clear = true;
@@ -306,6 +308,8 @@ static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
 //-----------------------------------------------------------------------------
 // The text's content: characters, each with the span it is in and the positions the lists give it
 //-----------------------------------------------------------------------------
+
+#define FEATURE_MAX 40u
 
 /** What a span says about the face and the line: read once for each element of the text. */
 typedef struct tstyle {
@@ -318,14 +322,28 @@ typedef struct tstyle {
   double shift_length;     ///< The baseline-shifts of the span and its ancestors that are lengths, up positive, in user units.
   int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
   int italic;
-  bool visible, small_caps, kerning_off;
+  bool visible;
+  GFNT_ShapeFeature features[FEATURE_MAX]; ///< The OpenType features the span asks for, as the shaper takes them: kerning, ligatures, caps, numerals, settings.
+  size_t feature_count;
   double size_adjust; ///< `font-size-adjust`: the x-height to size ratio the text keeps, or 0 for none.
   bool rtl, bidi_override; ///< `direction: rtl`; `unicode-bidi: bidi-override` (or isolate-override): the order is the direction's, not the algorithm's.
 } tstyle;
 
+static bool same_features(const tstyle * a, const tstyle * b) {
+  if (a->feature_count != b->feature_count) {
+    return false;
+  }
+  for (size_t i = 0; i < a->feature_count; i++) {
+    if (a->features[i].tag != b->features[i].tag || a->features[i].value != b->features[i].value) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || a->small_caps != b->small_caps || a->size_adjust != b->size_adjust || a->kerning_off != b->kerning_off || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
       a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
     return false;
   }
@@ -431,6 +449,167 @@ static int baseline_kind(const GVEC_Svg_Style_Value * v) {
   return -1;
 }
 
+/* Set the feature `tag` of the span to `value`; an earlier setting of it is replaced.  False when the span has more features than it keeps. */
+static bool set_feature(tstyle * st, const char tag[4], uint32_t value) {
+  const GFNT_Tag wanted = GFNT_TAG(tag[0], tag[1], tag[2], tag[3]);
+  for (size_t i = 0; i < st->feature_count; i++) {
+    if (st->features[i].tag == wanted) {
+      st->features[i].value = value;
+      return true;
+    }
+  }
+  if (st->feature_count == FEATURE_MAX) {
+    return false;
+  }
+  st->features[st->feature_count++] = (GFNT_ShapeFeature) {wanted, value, 0, GFNT_SHAPE_END};
+  return true;
+}
+
+/* What each keyword of `font-variant-*` asks the face for (CSS Fonts 4, 6.4 to 6.10): the features it turns on, or off with a `no-`. */
+typedef struct variant_keyword {
+  const char * word;
+  const char * tags[3]; ///< Up to three feature tags, NULL-ended; a `no-` keyword turns them off.
+  bool on;
+} variant_keyword;
+
+static const variant_keyword kVariants[] = {
+  {"common-ligatures", {"liga", "clig", NULL}, true}, {"no-common-ligatures", {"liga", "clig", NULL}, false},
+  {"discretionary-ligatures", {"dlig", NULL}, true}, {"no-discretionary-ligatures", {"dlig", NULL}, false},
+  {"historical-ligatures", {"hlig", NULL}, true}, {"no-historical-ligatures", {"hlig", NULL}, false},
+  {"contextual", {"calt", NULL}, true}, {"no-contextual", {"calt", NULL}, false},
+  {"small-caps", {"smcp", NULL}, true}, {"all-small-caps", {"smcp", "c2sc", NULL}, true},
+  {"petite-caps", {"pcap", NULL}, true}, {"all-petite-caps", {"pcap", "c2pc", NULL}, true},
+  {"unicase", {"unic", NULL}, true}, {"titling-caps", {"titl", NULL}, true},
+  {"lining-nums", {"lnum", NULL}, true}, {"oldstyle-nums", {"onum", NULL}, true},
+  {"proportional-nums", {"pnum", NULL}, true}, {"tabular-nums", {"tnum", NULL}, true},
+  {"diagonal-fractions", {"frac", NULL}, true}, {"stacked-fractions", {"afrc", NULL}, true},
+  {"ordinal", {"ordn", NULL}, true}, {"slashed-zero", {"zero", NULL}, true},
+  {"jis78", {"jp78", NULL}, true}, {"jis83", {"jp83", NULL}, true}, {"jis90", {"jp90", NULL}, true}, {"jis04", {"jp04", NULL}, true},
+  {"simplified", {"smpl", NULL}, true}, {"traditional", {"trad", NULL}, true},
+  {"full-width", {"fwid", NULL}, true}, {"proportional-width", {"pwid", NULL}, true}, {"ruby", {"ruby", NULL}, true},
+  {"sub", {"subs", NULL}, true}, {"super", {"sups", NULL}, true},
+};
+
+/* The words of a computed `font-variant-*` value, each applied. `none` of the ligatures turns off every ligature. */
+static bool apply_variant_words(tstyle * st, const char * text) {
+  const char * p = text;
+  while (*p) {
+    while (*p == ' ') {
+      p++;
+    }
+    const char * end = p;
+    while (*end && *end != ' ') {
+      end++;
+    }
+    const size_t n = (size_t) (end - p);
+    if (n == 4 && strncmp(p, "none", 4) == 0) {
+      static const char * const ligatures[] = {"liga", "clig", "dlig", "hlig", "calt"};
+      for (size_t k = 0; k < sizeof ligatures / sizeof ligatures[0]; k++) {
+        if (!set_feature(st, ligatures[k], 0)) {
+          return false;
+        }
+      }
+    }
+    for (size_t k = 0; n && k < sizeof kVariants / sizeof kVariants[0]; k++) {
+      if (strlen(kVariants[k].word) == n && strncmp(kVariants[k].word, p, n) == 0) {
+        for (size_t j = 0; kVariants[k].tags[j]; j++) {
+          if (!set_feature(st, kVariants[k].tags[j], kVariants[k].on ? 1u : 0u)) {
+            return false;
+          }
+        }
+      }
+    }
+    p = end;
+  }
+  return true;
+}
+
+/* The OpenType features a span asks for, from the cascade: `font-kerning`, the `font-variant-*` longhands (which the `font-variant` shorthand
+ * sets), then `font-feature-settings`, which has the last word. */
+static GVEC_Result read_features(tctx * t, const GVEC_Svg_Instance * inst, tstyle * st) {
+  gvec_lw_ctx * ctx = t->lw;
+  st->feature_count = 0;
+  bool fits = true;
+  static const GVEC_Svg_Property longhands[] = {GVEC_SVG_PROP_FONT_VARIANT_LIGATURES, GVEC_SVG_PROP_FONT_VARIANT_CAPS,
+      GVEC_SVG_PROP_FONT_VARIANT_NUMERIC, GVEC_SVG_PROP_FONT_VARIANT_EAST_ASIAN, GVEC_SVG_PROP_FONT_VARIANT_POSITION};
+  /* the `kerning` attribute of SVG 1.1 comes first: a `font-kerning` of the style beats it */
+  char legacy[32];
+  if (chain_value(inst, "kerning", true, true, legacy, sizeof legacy) && strcmp(legacy, "0") == 0) {
+    fits = fits && set_feature(st, "kern", 0);
+  }
+  GVEC_Svg_Style_Value v;
+  bool ok;
+  GVEC_Result r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_KERNING, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  if (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
+    if (strcmp(v.keyword, "none") == 0) {
+      fits = fits && set_feature(st, "kern", 0);
+    }
+    else if (strcmp(v.keyword, "normal") == 0) {
+      fits = fits && set_feature(st, "kern", 1);
+    }
+  }
+  for (size_t k = 0; k < sizeof longhands / sizeof longhands[0]; k++) {
+    r = read_style(ctx, inst, longhands[k], &v, &ok);
+    if (r != GVEC_OK || !ok) {
+      t->refused = true;
+      return r;
+    }
+    if (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
+      fits = fits && apply_variant_words(st, v.keyword);
+    }
+  }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_FEATURE_SETTINGS, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  if (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword && strcmp(v.keyword, "normal") != 0) {
+    /* `"tag" value, "tag" value`: the value is a number, or absent (on); `on` and `off` are written as 1 and 0 */
+    const char * p = v.keyword;
+    while (*p) {
+      while (*p == ' ' || *p == ',') {
+        p++;
+      }
+      if (*p != '"') {
+        break;
+      }
+      const char * tag = p + 1;
+      const char * close = strchr(tag, '"');
+      if (!close || close - tag != 4) {
+        break;
+      }
+      p = close + 1;
+      while (*p == ' ') {
+        p++;
+      }
+      uint32_t value = 1;
+      if (*p >= '0' && *p <= '9') {
+        value = 0;
+        while (*p >= '0' && *p <= '9') {
+          value = value * 10u + (uint32_t) (*p++ - '0');
+        }
+      }
+      else if (strncmp(p, "off", 3) == 0) {
+        value = 0;
+        p += 3;
+      }
+      else if (strncmp(p, "on", 2) == 0) {
+        p += 2;
+      }
+      fits = fits && set_feature(st, tag, value);
+    }
+  }
+  if (!fits) {
+    t->refused = true;
+    return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_LIMIT, "the text asks for more font features than the lowering keeps");
+  }
+  return GVEC_OK;
+}
+
 static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const tstyle * parent, uint32_t * index) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -505,13 +684,11 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     t->refused = true;
     return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_TEXT, "a letter-spacing or word-spacing in a unit this does not read");
   }
-  char value[32];
   {
     char dv[32];
     st->rtl = chain_value(inst, "direction", true, true, dv, sizeof dv) && strcmp(dv, "rtl") == 0;
     st->bidi_override = chain_value(inst, "unicode-bidi", true, true, dv, sizeof dv) && strstr(dv, "override") != NULL;
   }
-  st->small_caps = chain_value(inst, "font-variant", true, true, value, sizeof value) && strcmp(value, "small-caps") == 0;
   st->size_adjust = 0;
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_SIZE_ADJUST, &v, &ok);
   if (r != GVEC_OK || !ok) {
@@ -529,9 +706,12 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
       st->size_adjust = ratio;
     }
   }
-  /* `font-kerning` counts only in a style (a presentation attribute of it is ignored, as the references do), and `kerning` of 0 is the same. */
-  st->kerning_off = (chain_value(inst, "font-kerning", false, true, value, sizeof value) && strcmp(value, "none") == 0) ||
-      (chain_value(inst, "kerning", true, true, value, sizeof value) && strcmp(value, "0") == 0);
+  /* The features: `font-kerning` (a presentation attribute of it is ignored, as the references do, and `kerning` of 0 is the same), the
+   * `font-variant-*` longhands and `font-feature-settings`, through the cascade. */
+  r = read_features(t, inst, st);
+  if (r != GVEC_OK || t->refused) {
+    return r;
+  }
   r = read_style(ctx, inst, GVEC_SVG_PROP_DOMINANT_BASELINE, &v, &ok);
   if (r != GVEC_OK || !ok) {
     t->refused = true;
@@ -1254,14 +1434,10 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   }
   GFNT_ShapeOptions shape;
   memset(&shape, 0, sizeof shape);
-  GFNT_ShapeFeature features[4];
+  GFNT_ShapeFeature features[FEATURE_MAX + 2];
   size_t feature_count = 0;
-  if (st->kerning_off) {
-    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('k', 'e', 'r', 'n'), 0, 0, GFNT_SHAPE_END};
-  }
-  if (st->small_caps) {
-    /* Small capitals are the face's own (`smcp`), as the references draw them. */
-    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('s', 'm', 'c', 'p'), 1, 0, GFNT_SHAPE_END};
+  for (size_t i = 0; i < st->feature_count; i++) {
+    features[feature_count++] = st->features[i];
   }
   bool spaced = false;
   for (size_t i = from; i < to; i++) {
@@ -1269,8 +1445,17 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   }
   if (spaced) {
     /* Letters that are spaced apart are not joined into ligatures (CSS Text 3, 7.2). */
-    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('l', 'i', 'g', 'a'), 0, 0, GFNT_SHAPE_END};
-    features[feature_count++] = (GFNT_ShapeFeature) {GFNT_TAG('c', 'l', 'i', 'g'), 0, 0, GFNT_SHAPE_END};
+    const GFNT_Tag offs[2] = {GFNT_TAG('l', 'i', 'g', 'a'), GFNT_TAG('c', 'l', 'i', 'g')};
+    for (size_t o = 0; o < 2; o++) {
+      const GFNT_Tag off = offs[o];
+      bool asked = false;
+      for (size_t k = 0; k < feature_count; k++) {
+        asked = asked || features[k].tag == off;
+      }
+      if (!asked) {
+        features[feature_count++] = (GFNT_ShapeFeature) {off, 0, 0, GFNT_SHAPE_END};
+      }
+    }
   }
   shape.features = feature_count ? features : NULL;
   shape.feature_count = feature_count;

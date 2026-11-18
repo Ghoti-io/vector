@@ -43,11 +43,18 @@ flood-color	COLOR	-		G
 flood-opacity	NUMBER	-		G				
 font	SHORTHAND	-		G				
 font-family	KEYWORD	-		G				
+font-feature-settings	KEYWORD	-		G				
+font-kerning	KEYWORD	-		G				
 font-size	LENGTH	-		G				
 font-size-adjust	KEYWORD	-		G				
 font-stretch	KEYWORD	-	font-width	G				
 font-style	KEYWORD	-		G				
 font-variant	KEYWORD	-		G				
+font-variant-caps	KEYWORD	-		G				
+font-variant-east-asian	KEYWORD	-		G				
+font-variant-ligatures	KEYWORD	-		G				
+font-variant-numeric	KEYWORD	-		G				
+font-variant-position	KEYWORD	-		G				
 font-weight	NUMBER	-		G				
 glyph-orientation-horizontal	KEYWORD	-		R	yes	0deg	<angle> | <number>	SVG 1.1 section 10.7.3 (deprecated in SVG 2, still a presentation attribute of the CR's list): `<angle>`, initial 0deg, inherited.
 glyph-orientation-vertical	KEYWORD	-		O	yes	auto	auto | <angle> | <number>	The pin's text is not a definition (the property has no grammar); SVG 2 CR Appendix H: `auto | <angle> | <number>`, initial `auto`, inherited.
