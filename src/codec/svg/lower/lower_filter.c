@@ -193,7 +193,8 @@ static bool pair_attr(const GVEC_Svg_Element * e, const char * name, double fall
 }
 
 /** A length of the region or a subregion: the fraction of the box (`percent / 100` for a percentage) in the box's units, else user units. */
-static bool length_attr(const GVEC_Svg_Element * e, const char * name, bool box_units, double basis, bool * present, double * out) {
+static bool length_attr(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * name, bool box_units, double basis, bool * present, double * out,
+    GVEC_Result * error) {
   const char * s;
   size_t n;
   *present = raw(e, name, &s, &n);
@@ -213,7 +214,9 @@ static bool length_attr(const GVEC_Svg_Element * e, const char * name, bool box_
     *out = len.value;
     return true;
   }
-  return gvec_lw_absolute_length(&len, out);
+  bool usable;
+  *error = gvec_lw_unit_length(ctx, e, &len, out, &usable);
+  return *error == GVEC_OK && usable;
 }
 
 /* --- the filter ------------------------------------------------------------------------------------------------------- */
@@ -944,7 +947,11 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
     static const char * const names[4] = {"x", "y", "width", "height"};
     for (int k = 0; k < 4; k++) {
       bool present;
-      if (!length_attr(el, names[k], b->prim_box, (k & 1) ? b->vh : b->vw, &present, &sub[k])) {
+      GVEC_Result unit_error = GVEC_OK;
+      if (!length_attr(b->ctx, el, names[k], b->prim_box, (k & 1) ? b->vh : b->vw, &present, &sub[k], &unit_error)) {
+        if (unit_error != GVEC_OK) {
+          return unit_error;
+        }
         b->invalid = true;
         return GVEC_OK;
       }
@@ -1461,7 +1468,11 @@ static GVEC_Result make_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     for (int k = 0; k < 4; k++) {
       bool present;
       double v;
-      if (!length_attr(attr_owner(ctx, filter, names[k]), names[k], region_box, (k & 1) ? vh : vw, &present, &v)) {
+      GVEC_Result unit_error = GVEC_OK;
+      if (!length_attr(ctx, attr_owner(ctx, filter, names[k]), names[k], region_box, (k & 1) ? vh : vw, &present, &v, &unit_error)) {
+        if (unit_error != GVEC_OK) {
+          return unit_error;
+        }
         *state = GVEC_LW_FILTER_ALL;
         return GVEC_OK;
       }
@@ -2061,12 +2072,17 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     *state = GVEC_LW_FILTER_REFUSED;
     return r;
   }
+  GSHGEOM_Map own_map = v.transform.map;
   if (v.transform.depends_on_box) {
-    *state = GVEC_LW_FILTER_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box is not lowered yet");
+    bool known;
+    r = gvec_lw_box_transform(ctx, inst, &v.transform, &own_map, &known);
+    if (r != GVEC_OK || !known) {
+      *state = GVEC_LW_FILTER_REFUSED;
+      return r != GVEC_OK ? r : gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box of an element that holds what the lowering does not box");
+    }
   }
   GSHGEOM_Map local;
-  if (!gvec_lw_compose(frame, &v.transform.map, &local)) {
+  if (!gvec_lw_compose(frame, &own_map, &local)) {
     *state = GVEC_LW_FILTER_REFUSED;
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }

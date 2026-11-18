@@ -499,8 +499,16 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   if (r != GVEC_OK || !usable) {
     return r;
   }
-  if (v.transform.depends_on_box) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box is not lowered yet");
+  GSHGEOM_Map own_map = v.transform.map;
+  if (v.transform.depends_on_box && ctx->transform_moved != inst && gvec_svg_element_kind(e) != GVEC_SVG_KIND_SYMBOL) {
+    bool known;
+    r = gvec_lw_box_transform(ctx, inst, &v.transform, &own_map, &known);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (!known) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box of an element that holds what the lowering does not box");
+    }
   }
   if (ctx->transform_moved == inst) {
     c->local = *frame; /* the element's transform is the filter instance's map */
@@ -509,7 +517,7 @@ static GVEC_Result prepare(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
   else if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_SYMBOL) {
     c->local = *frame; /* A symbol has no transform in SVG 1.1, and the reference corpus follows that. */
   }
-  else if (!gvec_lw_compose(frame, &v.transform.map, &c->local)) {
+  else if (!gvec_lw_compose(frame, &own_map, &c->local)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);
@@ -738,6 +746,54 @@ bool gvec_lw_absolute_length(const GVEC_Svg_Length * length, double * out) {
   }
 }
 
+GVEC_Result gvec_lw_unit_length(gvec_lw_ctx * ctx, const GVEC_Svg_Element * owner, const GVEC_Svg_Length * length, double * out,
+    bool * usable) {
+  *usable = true;
+  if (gvec_lw_absolute_length(length, out)) {
+    return GVEC_OK;
+  }
+  const GVEC_Svg_Instance * at = NULL;
+  GVEC_Svg_Style_Value v;
+  GVEC_Result r;
+  switch (length->unit) {
+  case GVEC_SVG_UNIT_EM:
+  case GVEC_SVG_UNIT_EX:
+  case GVEC_SVG_UNIT_CH:
+    r = gvec_lw_instance_of(ctx, owner, &at);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    r = gvec_svg_get(ctx->style, at, GVEC_SVG_PROP_FONT_SIZE, &v);
+    if (r != GVEC_OK) {
+      *usable = false;
+      return r == GVEC_ERR_OOM ? r : GVEC_OK;
+    }
+    *out = length->value * v.number * (length->unit == GVEC_SVG_UNIT_EM ? 1.0 : 0.5);
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_REM:
+    r = gvec_svg_get(ctx->style, gvec_svg_instance_root(ctx->style), GVEC_SVG_PROP_FONT_SIZE, &v);
+    if (r != GVEC_OK) {
+      *usable = false;
+      return r == GVEC_ERR_OOM ? r : GVEC_OK;
+    }
+    *out = length->value * v.number;
+    return GVEC_OK;
+  case GVEC_SVG_UNIT_VW:
+  case GVEC_SVG_UNIT_VH:
+  case GVEC_SVG_UNIT_VMIN:
+  case GVEC_SVG_UNIT_VMAX: {
+    double w, h;
+    gvec_svg_instance_viewport(gvec_svg_instance_root(ctx->style), &w, &h);
+    const double side = length->unit == GVEC_SVG_UNIT_VW ? w : length->unit == GVEC_SVG_UNIT_VH ? h : length->unit == GVEC_SVG_UNIT_VMIN ? (w < h ? w : h) : (w > h ? w : h);
+    *out = length->value * side / 100.0;
+    return GVEC_OK;
+  }
+  default:
+    *usable = false;
+    return GVEC_OK;
+  }
+}
+
 /* The length of an attribute of a `line` in user units; `usable` is false when the unit needs the cascade (the element is refused). */
 static GVEC_Result line_coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const char * name, bool horizontal, double * out,
     bool * usable) {
@@ -755,11 +811,11 @@ static GVEC_Result line_coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
     *out = length.value * (horizontal ? w : h) / 100.0;
     return GVEC_OK;
   }
-  if (gvec_lw_absolute_length(&length, out)) {
-    return GVEC_OK;
+  GVEC_Result r = gvec_lw_unit_length(ctx, e, &length, out, usable);
+  if (r != GVEC_OK || *usable) {
+    return r;
   }
-  *usable = false;
-  return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a length of the line needs the font or the window, which the lowering does not read");
+  return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a length of the line is in a unit the lowering does not know");
 }
 
 GVEC_Result gvec_lw_centerline_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_geometry * geometry,
@@ -1483,8 +1539,15 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         double extent = has_box ? (axis ? box.height : box.width) : (axis ? h : w);
         v = origin + extent * length.value / 100.0;
       }
-      else if (!gvec_lw_absolute_length(&length, &v)) {
-        return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a symbol reference point in a unit that needs the cascade is not lowered");
+      else {
+        bool usable;
+        GVEC_Result ur = gvec_lw_unit_length(ctx, e, &length, &v, &usable);
+        if (ur != GVEC_OK) {
+          return ur;
+        }
+        if (!usable) {
+          return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a symbol reference point is in a unit the lowering does not know");
+        }
       }
       GSHGEOM_Point at, ref;
       memset(&ref, 0, sizeof ref);

@@ -45,7 +45,7 @@ static bool is_shape(GVEC_Svg_Kind kind) {
       kind == GVEC_SVG_KIND_RECT || kind == GVEC_SVG_KIND_CIRCLE || kind == GVEC_SVG_KIND_ELLIPSE;
 }
 
-/* The map of an element's own `transform`; false (the element refused) when it depends on a box this lowering does not have. */
+/* The map of an element's own `transform`; false (the element refused) when it depends on a box this lowering cannot make. */
 static GVEC_Result own_transform(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Element * refused, GSHGEOM_Map * out,
     bool * usable) {
   GVEC_Svg_Style_Value v;
@@ -54,8 +54,13 @@ static GVEC_Result own_transform(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     return r;
   }
   if (v.transform.depends_on_box) {
-    *usable = false;
-    return gvec_lw_refuse(ctx, refused, GVEC_LOWER_TRANSFORM_BOX, "a transform of a bounding box in a clip is not lowered yet");
+    bool known;
+    r = gvec_lw_box_transform(ctx, inst, &v.transform, out, &known);
+    if (r != GVEC_OK || !known) {
+      *usable = false;
+      return r != GVEC_OK ? r : gvec_lw_refuse(ctx, refused, GVEC_LOWER_TRANSFORM_BOX, "a transform of a bounding box of an element that holds what the lowering does not box");
+    }
+    return GVEC_OK;
   }
   *out = v.transform.map;
   return GVEC_OK;
@@ -1081,6 +1086,28 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
   return GVEC_OK;
 }
 
+GVEC_Result gvec_lw_box_transform(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Transform * transform, GSHGEOM_Map * out,
+    bool * known) {
+  GSHGEOM_Bounds box;
+  memset(&box, 0, sizeof box);
+  box.empty = 1;
+  const bool stroke = transform->box == GVEC_SVG_BOX_STROKE || transform->box == GVEC_SVG_BOX_BORDER;
+  const bool saved = ctx->box_stroke;
+  ctx->box_stroke = stroke;
+  GVEC_Result r = gvec_lw_inner_box(ctx, inst, &box, known);
+  ctx->box_stroke = saved;
+  if (r != GVEC_OK || !*known) {
+    return r;
+  }
+  /* An element that draws nothing has a box of no size at the origin: the percentages are of nothing. */
+  const double x = box.empty ? 0 : box.min.x, y = box.empty ? 0 : box.min.y;
+  const double w = box.empty ? 0 : box.max.x - box.min.x, h = box.empty ? 0 : box.max.y - box.min.y;
+  if (gvec_svg_transform_resolve(transform, x, y, w, h, out) != GVEC_OK) {
+    *known = false;
+  }
+  return GVEC_OK;
+}
+
 GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known) {
   return element_box_in(ctx, inst, NULL, box, known);
 }
@@ -1179,6 +1206,22 @@ GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   }
   if (geometry != GVEC_LW_GEOMETRY_PATH || gshgeom_path_bounds(gshscene_resource_path(path), box) != GSHGEOM_OK) {
     box->empty = 1;
+  }
+  if (ctx->box_stroke && !box->empty) {
+    /* The stroke box: the fill box grown by what the stroke reaches past the path. */
+    GSHGEOM_Map identity;
+    double pad = 0;
+    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+      return GVEC_ERR_INTERNAL;
+    }
+    r = stroke_pad(ctx, inst, &identity, &pad);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    box->min.x -= pad;
+    box->min.y -= pad;
+    box->max.x += pad;
+    box->max.y += pad;
   }
   return GVEC_OK;
 }

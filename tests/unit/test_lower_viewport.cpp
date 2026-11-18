@@ -178,6 +178,8 @@ TEST(LowerViewport, ADocumentWithNoSizeAndNoViewBoxIsAsLargeAsItsDrawingReachesW
       {"", "<rect width=\"10\" height=\"20\"/>", 10, 20},                                  // no stroke, none counted
       {"", "<rect width=\"10\" height=\"20\" stroke=\"red\" stroke-width=\"4\"/>", 12, 22},   // half the width on each side
       {"", "<g transform=\"translate(5 5)\"><rect width=\"10\" height=\"10\"/></g>", 15, 15},
+      // an element whose transform is in its own box does not take the strokes out of the size of its later siblings
+      {"", "<rect width=\"10\" height=\"20\" style=\"transform-box:fill-box;transform:translate(100%, 0)\"/><rect x=\"30\" width=\"10\" height=\"20\" stroke=\"red\" stroke-width=\"4\"/>", 42, 22},
       {"", "<rect width=\"10\" height=\"20\" display=\"none\"/>", 400, 300},                  // nothing to size it: the viewport
       {"width=\"50\"", "<rect width=\"10\" height=\"20\"/>", 50, 20},                         // a size that is given is kept
       {"viewBox=\"0 0 8 8\"", "<rect width=\"10\" height=\"20\"/>", 400, 300},                // a viewBox gives the size by the viewport

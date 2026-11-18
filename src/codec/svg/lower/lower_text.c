@@ -942,11 +942,19 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
           t->refused = true;
           return r;
         }
-        if (tv.transform.depends_on_box) {
-          t->refused = true;
-          return gvec_lw_refuse(ctx, child, GVEC_LOWER_TRANSFORM_BOX, "a textPath on a path whose transform has percentages of a bounding box is not lowered yet");
-        }
         path_map = tv.transform.map;
+        if (tv.transform.depends_on_box) {
+          bool known;
+          r = gvec_lw_box_transform(ctx, target_inst, &tv.transform, &path_map, &known);
+          if (r != GVEC_OK) {
+            t->refused = true;
+            return r;
+          }
+          if (!known) {
+            t->refused = true;
+            return gvec_lw_refuse(ctx, child, GVEC_LOWER_TRANSFORM_BOX, "a textPath on a path whose transform has percentages of a bounding box that the lowering cannot make");
+          }
+        }
         path_mapped = true;
       }
       if (t->tpath_count == TPATH_MAX) {
@@ -968,9 +976,17 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
           tp->percent = true;
           tp->offset = sl.value / 100.0;
         }
-        else if (!gvec_lw_absolute_length(&sl, &tp->offset)) {
-          t->refused = true;
-          return gvec_lw_refuse(ctx, child, GVEC_LOWER_STYLE, "a startOffset in a unit that needs the font or the window is not lowered");
+        else {
+          bool usable;
+          GVEC_Result ur = gvec_lw_unit_length(ctx, child, &sl, &tp->offset, &usable);
+          if (ur != GVEC_OK) {
+            t->refused = true;
+            return ur;
+          }
+          if (!usable) {
+            t->refused = true;
+            return gvec_lw_refuse(ctx, child, GVEC_LOWER_STYLE, "a startOffset is in a unit the lowering does not know");
+          }
         }
       }
       t->current_tpath = (uint32_t) t->tpath_count;
@@ -1037,8 +1053,16 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
   if (tl && t->count > start && gvec_svg_attribute_class(tl) == GVEC_SVG_ATTR_TYPED && gvec_svg_attribute_length(tl, &length)) {
     double value;
     if (!length_of(inst, &length, true, &value)) {
-      t->refused = true;
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a textLength in a unit that needs the font or the window is not lowered");
+      bool usable;
+      GVEC_Result ur = gvec_lw_unit_length(ctx, e, &length, &value, &usable);
+      if (ur != GVEC_OK) {
+        t->refused = true;
+        return ur;
+      }
+      if (!usable) {
+        t->refused = true;
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a textLength is in a unit the lowering does not know");
+      }
     }
     if (value > 0 && t->length_count < t->length_capacity) {
       tlength * entry = &t->lengths[t->length_count++];
@@ -1090,7 +1114,14 @@ static GVEC_Result apply_lists(tctx * t) {
         v = l->items[j].value * (fv.kind == GVEC_SVG_STYLE_LENGTH ? fv.number : 16.0) * (l->items[j].unit == GVEC_SVG_UNIT_EX ? 0.5 : 1.0);
       }
       else if (l->items ? !length_of(l->inst, &l->items[j], l->kind == 0 || l->kind == 2, &v) : (v = l->numbers[j], false)) {
-        return gvec_lw_refuse(t->lw, gvec_svg_instance_element(l->inst), GVEC_LOWER_STYLE, "a text position that needs the font or the window is not lowered");
+        bool usable;
+        GVEC_Result ur = gvec_lw_unit_length(t->lw, gvec_svg_instance_element(l->inst), &l->items[j], &v, &usable);
+        if (ur != GVEC_OK) {
+          return ur;
+        }
+        if (!usable) {
+          return gvec_lw_refuse(t->lw, gvec_svg_instance_element(l->inst), GVEC_LOWER_STYLE, "a text position is in a unit the lowering does not know");
+        }
       }
       tchar * c = &t->chars[at];
       switch (l->kind) {

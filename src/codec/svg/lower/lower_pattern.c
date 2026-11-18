@@ -52,6 +52,18 @@ static bool is_pattern(const GVEC_Svg_Element * e) {
 }
 
 /* The first attribute `name` that a pattern of the chain has, or NULL. */
+/* The pattern of the chain that has the attribute `chain_attribute` finds: the element a length of it is in the style of. */
+static const GVEC_Svg_Element * chain_owner(const GVEC_Svg_Element * start, const char * name) {
+  const GVEC_Svg_Element * e = start;
+  for (int hops = 0; e && hops < CHAIN_LIMIT && is_pattern(e); hops++, e = gvec_svg_element_href_target_uncut(e)) {
+    const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, name);
+    if (attribute && gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_RAW) {
+      return e;
+    }
+  }
+  return start;
+}
+
 static const GVEC_Svg_Attribute * chain_attribute(const GVEC_Svg_Element * start, const char * name) {
   const GVEC_Svg_Element * e = start;
   for (int hops = 0; e && hops < CHAIN_LIMIT && is_pattern(e); hops++, e = gvec_svg_element_href_target_uncut(e)) {
@@ -84,7 +96,8 @@ static bool keyword_is_box(const GVEC_Svg_Attribute * attribute, bool fallback) 
 }
 
 /* A coordinate of the cell: a fraction of the box (a percentage is that over 100), or user units, a percentage being of `basis`. */
-static bool coordinate(const GVEC_Svg_Attribute * attribute, bool bounding_box, double basis, double * out) {
+static bool coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Element * owner, const GVEC_Svg_Attribute * attribute, bool bounding_box, double basis, double * out,
+    GVEC_Result * error) {
   GVEC_Svg_Length length = {0, GVEC_SVG_UNIT_NONE};
   *out = 0;
   if (attribute && gvec_svg_attribute_class(attribute) == GVEC_SVG_ATTR_TYPED) {
@@ -94,7 +107,9 @@ static bool coordinate(const GVEC_Svg_Attribute * attribute, bool bounding_box, 
     *out = bounding_box ? length.value / 100.0 : length.value * basis / 100.0;
     return true;
   }
-  return gvec_lw_absolute_length(&length, out);
+  bool usable;
+  *error = gvec_lw_unit_length(ctx, owner, &length, out, &usable);
+  return *error == GVEC_OK && usable;
 }
 
 static GVEC_Result not_rendered(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * message, gvec_lw_paint_decision * decision) {
@@ -211,9 +226,12 @@ GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
   double vw, vh;
   gvec_svg_instance_viewport(inst, &vw, &vh);
   double x, y, w, h;
-  if (!coordinate(chain_attribute(server, "x"), units_box, vw, &x) || !coordinate(chain_attribute(server, "y"), units_box, vh, &y) ||
-      !coordinate(chain_attribute(server, "width"), units_box, vw, &w) || !coordinate(chain_attribute(server, "height"), units_box, vh, &h)) {
-    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a pattern length that needs the font or the window is not lowered");
+  GVEC_Result unit_error = GVEC_OK;
+  if (!coordinate(ctx, chain_owner(server, "x"), chain_attribute(server, "x"), units_box, vw, &x, &unit_error) ||
+      !coordinate(ctx, chain_owner(server, "y"), chain_attribute(server, "y"), units_box, vh, &y, &unit_error) ||
+      !coordinate(ctx, chain_owner(server, "width"), chain_attribute(server, "width"), units_box, vw, &w, &unit_error) ||
+      !coordinate(ctx, chain_owner(server, "height"), chain_attribute(server, "height"), units_box, vh, &h, &unit_error)) {
+    return unit_error != GVEC_OK ? unit_error : gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a pattern length is in a unit the lowering does not know");
   }
   if (units_box) {
     x = box.min.x + x * bw;

@@ -103,7 +103,8 @@ static GVEC_Result place_instance(gvec_lw_ctx * ctx, const GVEC_Svg_Element * el
 }
 
 /* A length attribute of the marker as user units; `*refuse` when its unit needs a basis the lowering does not read. */
-static bool length_attribute(const GVEC_Svg_Element * e, const char * name, double fallback, double * out, bool * percent, bool * refuse) {
+static bool length_attribute(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * name, double fallback, double * out, bool * percent, bool * refuse,
+    GVEC_Result * error) {
   const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, name);
   GVEC_Svg_Length length;
   *out = fallback;
@@ -116,7 +117,9 @@ static bool length_attribute(const GVEC_Svg_Element * e, const char * name, doub
     *out = length.value;
     return true;
   }
-  if (!gvec_lw_absolute_length(&length, out)) {
+  bool usable;
+  *error = gvec_lw_unit_length(ctx, e, &length, out, &usable);
+  if (*error != GVEC_OK || !usable) {
     *refuse = true;
     return false;
   }
@@ -134,6 +137,7 @@ static GVEC_Result prepare_marker(
   memset(m, 0, sizeof *m);
   m->element = element;
   bool refuse = false, percent;
+  GVEC_Result unit_error = GVEC_OK;
   double w, h;
   /* A percentage of the marker's size is of the viewport of the element it is drawn for (SVG 2, 11.6.2). */
   double vw = 0, vh = 0;
@@ -145,14 +149,18 @@ static GVEC_Result prepare_marker(
     }
     gvec_svg_instance_viewport(at, &vw, &vh);
   }
-  if (!length_attribute(element, "markerWidth", 3, &w, &percent, &refuse) || !length_attribute(element, "markerHeight", 3, &h, &percent, &refuse)) {
-    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a marker size in a unit that needs the cascade is not lowered");
+  if (!length_attribute(ctx, element, "markerWidth", 3, &w, &percent, &refuse, &unit_error) ||
+      !length_attribute(ctx, element, "markerHeight", 3, &h, &percent, &refuse, &unit_error)) {
+    if (unit_error != GVEC_OK) {
+      return unit_error;
+    }
+    return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a marker size is in a unit the lowering does not know");
   }
   {
     bool pw, ph;
     double ignored;
-    (void) length_attribute(element, "markerWidth", 3, &ignored, &pw, &refuse);
-    (void) length_attribute(element, "markerHeight", 3, &ignored, &ph, &refuse);
+    (void) length_attribute(ctx, element, "markerWidth", 3, &ignored, &pw, &refuse, &unit_error);
+    (void) length_attribute(ctx, element, "markerHeight", 3, &ignored, &ph, &refuse, &unit_error);
     if (pw) {
       w = w * vw / 100.0;
     }
@@ -190,8 +198,11 @@ static GVEC_Result prepare_marker(
   double ref[2];
   for (int axis = 0; axis < 2; axis++) {
     double v;
-    if (!length_attribute(element, axis ? "refY" : "refX", 0, &v, &percent, &refuse)) {
-      return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a marker reference point in a unit that needs the cascade is not lowered");
+    if (!length_attribute(ctx, element, axis ? "refY" : "refX", 0, &v, &percent, &refuse, &unit_error)) {
+      if (unit_error != GVEC_OK) {
+        return unit_error;
+      }
+      return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a marker reference point is in a unit the lowering does not know");
     }
     if (percent) {
       double origin = has_box ? (axis ? box.y : box.x) : 0;

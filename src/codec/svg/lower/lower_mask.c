@@ -47,7 +47,8 @@ static bool keyword_is_box(const GVEC_Svg_Attribute * attribute, bool fallback) 
 
 /* One side of the region: the attribute when it is a length, else `fallback` percent. In the units of the box a length is a fraction
  * of the box (a percentage is that over 100); in user units a percentage is of `basis`. */
-static bool region_value(const GVEC_Svg_Element * mask, const char * name, bool bounding_box, double basis, double fallback, double * out) {
+static bool region_value(gvec_lw_ctx * ctx, const GVEC_Svg_Element * mask, const char * name, bool bounding_box, double basis, double fallback, double * out,
+    GVEC_Result * error) {
   GVEC_Svg_Length length = {fallback, GVEC_SVG_UNIT_PERCENT};
   const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(mask, name);
   if (attribute && gvec_svg_attribute_class(attribute) == GVEC_SVG_ATTR_TYPED) {
@@ -60,7 +61,9 @@ static bool region_value(const GVEC_Svg_Element * mask, const char * name, bool 
     *out = bounding_box ? length.value / 100.0 : length.value * basis / 100.0;
     return true;
   }
-  return gvec_lw_absolute_length(&length, out);
+  bool usable;
+  *error = gvec_lw_unit_length(ctx, mask, &length, out, &usable);
+  return *error == GVEC_OK && usable;
 }
 
 static uint64_t hash2(uint64_t a, uint64_t b) {
@@ -199,9 +202,13 @@ static GVEC_Result make_mask(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
   double vw, vh;
   gvec_svg_instance_viewport(masked, &vw, &vh);
   double x, y, w, h;
-  if (!region_value(mask, "x", units_box, vw, -10, &x) || !region_value(mask, "y", units_box, vh, -10, &y) ||
-      !region_value(mask, "width", units_box, vw, 120, &w) || !region_value(mask, "height", units_box, vh, 120, &h)) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a mask length that needs the font or the window is not lowered");
+  GVEC_Result unit_error = GVEC_OK;
+  if (!region_value(ctx, mask, "x", units_box, vw, -10, &x, &unit_error) || !region_value(ctx, mask, "y", units_box, vh, -10, &y, &unit_error) ||
+      !region_value(ctx, mask, "width", units_box, vw, 120, &w, &unit_error) || !region_value(ctx, mask, "height", units_box, vh, 120, &h, &unit_error)) {
+    if (unit_error != GVEC_OK) {
+      return unit_error;
+    }
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a mask length is in a unit the lowering does not know");
   }
   if (units_box) {
     x = box.min.x + x * bw;
@@ -408,11 +415,16 @@ GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   if (r != GVEC_OK || !usable) {
     return r;
   }
+  GSHGEOM_Map own_map = v.transform.map;
   if (v.transform.depends_on_box) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box is not lowered yet");
+    bool known;
+    r = gvec_lw_box_transform(ctx, inst, &v.transform, &own_map, &known);
+    if (r != GVEC_OK || !known) {
+      return r != GVEC_OK ? r : gvec_lw_refuse(ctx, e, GVEC_LOWER_TRANSFORM_BOX, "a transform with percentages of a bounding box of an element that holds what the lowering does not box");
+    }
   }
   GSHGEOM_Map local;
-  if (!gvec_lw_compose(frame, &v.transform.map, &local)) {
+  if (!gvec_lw_compose(frame, &own_map, &local)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
   const GSHSCENE_Resource * resource = NULL;

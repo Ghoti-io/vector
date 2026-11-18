@@ -59,9 +59,9 @@ static bool is_gradient(const GVEC_Svg_Element * e) {
   return kind == GVEC_SVG_KIND_LINEAR_GRADIENT || kind == GVEC_SVG_KIND_RADIAL_GRADIENT;
 }
 
-/* The first attribute `name` that a gradient of the chain has, or NULL. A name only one kind has is read from gradients of that
- * kind (SVG 2, 13.2.2: the geometry of a `linearGradient` is not that of a `radialGradient` that names it). */
-static const GVEC_Svg_Attribute * chain_attribute(const GVEC_Svg_Element * start, const char * name, bool same_kind) {
+/* The gradient of the chain that has the attribute `name`, or NULL: the first one, the start included. A name only one kind has is read
+ * from gradients of that kind (SVG 2, 13.2.2: the geometry of a `linearGradient` is not that of a `radialGradient` that names it). */
+static const GVEC_Svg_Element * chain_element(const GVEC_Svg_Element * start, const char * name, bool same_kind) {
   GVEC_Svg_Kind kind = gvec_svg_element_kind(start);
   const GVEC_Svg_Element * e = start;
   for (int hops = 0; e && hops < CHAIN_LIMIT && is_gradient(e); hops++, e = gvec_svg_element_href_target_uncut(e)) {
@@ -70,10 +70,22 @@ static const GVEC_Svg_Attribute * chain_attribute(const GVEC_Svg_Element * start
     }
     const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, name);
     if (attribute && gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_RAW) {
-      return attribute;
+      return e;
     }
   }
   return NULL;
+}
+
+/* The first attribute `name` that a gradient of the chain has, or NULL. */
+static const GVEC_Svg_Attribute * chain_attribute(const GVEC_Svg_Element * start, const char * name, bool same_kind) {
+  const GVEC_Svg_Element * e = chain_element(start, name, same_kind);
+  return e ? gvec_svg_element_find_attribute(e, name) : NULL;
+}
+
+/* The element a length of the chain's attribute is in the style of: the one that has it (the start when none does). */
+static const GVEC_Svg_Element * chain_owner(const GVEC_Svg_Element * start, const char * name, bool same_kind) {
+  const GVEC_Svg_Element * e = chain_element(start, name, same_kind);
+  return e ? e : start;
 }
 
 /* The instance of an element of the document: the chain from the root, so that a property inherits as it does in the tree. */
@@ -276,7 +288,8 @@ static gradient_cache * cache_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * ser
 }
 
 /* A coordinate of the gradient: a fraction of the box, or user units. `fallback` is the default, in percent. */
-static bool coordinate(const GVEC_Svg_Attribute * attribute, double fallback, bool bounding_box, double basis, double * out) {
+static bool coordinate(gvec_lw_ctx * ctx, const GVEC_Svg_Element * owner, const GVEC_Svg_Attribute * attribute, double fallback, bool bounding_box,
+    double basis, double * out, GVEC_Result * error) {
   GVEC_Svg_Length length = {fallback, GVEC_SVG_UNIT_PERCENT};
   if (attribute && gvec_svg_attribute_class(attribute) == GVEC_SVG_ATTR_TYPED) {
     gvec_svg_attribute_length(attribute, &length);
@@ -285,7 +298,9 @@ static bool coordinate(const GVEC_Svg_Attribute * attribute, double fallback, bo
     *out = bounding_box ? length.value / 100.0 : length.value * basis / 100.0;
     return true;
   }
-  return gvec_lw_absolute_length(&length, out);
+  bool usable;
+  *error = gvec_lw_unit_length(ctx, owner, &length, out, &usable);
+  return *error == GVEC_OK && usable;
 }
 
 static GVEC_Result not_rendered(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * message, gvec_lw_paint_decision * decision) {
@@ -394,11 +409,12 @@ GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance
     g.space.primaries = GCOL_PRIMARIES_SRGB;
     g.space.transfer = GCOL_TRANSFER_LINEAR;
   }
+  GVEC_Result unit_error = GVEC_OK;
   if (gvec_svg_element_kind(server) == GVEC_SVG_KIND_LINEAR_GRADIENT) {
     double x1, y1, x2, y2;
-    if (!coordinate(chain_attribute(server, "x1", true), 0, bb, vw, &x1) || !coordinate(chain_attribute(server, "y1", true), 0, bb, vh, &y1) ||
-        !coordinate(chain_attribute(server, "x2", true), 100, bb, vw, &x2) || !coordinate(chain_attribute(server, "y2", true), 0, bb, vh, &y2)) {
-      return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length that needs the font or the window is not lowered");
+    if (!coordinate(ctx, chain_owner(server, "x1", true), chain_attribute(server, "x1", true), 0, bb, vw, &x1, &unit_error) || !coordinate(ctx, chain_owner(server, "y1", true), chain_attribute(server, "y1", true), 0, bb, vh, &y1, &unit_error) ||
+        !coordinate(ctx, chain_owner(server, "x2", true), chain_attribute(server, "x2", true), 100, bb, vw, &x2, &unit_error) || !coordinate(ctx, chain_owner(server, "y2", true), chain_attribute(server, "y2", true), 0, bb, vh, &y2, &unit_error)) {
+      return unit_error != GVEC_OK ? unit_error : gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length is in a unit the lowering does not know");
     }
     if (x1 == x2 && y1 == y2) {
       solid_of(&cache->stops[cache->stop_count - 1], opacity, out, decision); /* One color: the last stop's (SVG 2, 13.2.2). */
@@ -413,23 +429,23 @@ GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance
   else {
     double cx, cy, rr, fx, fy, fr;
     double diagonal = gmath_sqrt((vw * vw + vh * vh) / 2.0);
-    if (!coordinate(chain_attribute(server, "cx", true), 50, bb, vw, &cx) || !coordinate(chain_attribute(server, "cy", true), 50, bb, vh, &cy) ||
-        !coordinate(chain_attribute(server, "r", true), 50, bb, diagonal, &rr) || !coordinate(chain_attribute(server, "fr", true), 0, bb, diagonal, &fr)) {
-      return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length that needs the font or the window is not lowered");
+    if (!coordinate(ctx, chain_owner(server, "cx", true), chain_attribute(server, "cx", true), 50, bb, vw, &cx, &unit_error) || !coordinate(ctx, chain_owner(server, "cy", true), chain_attribute(server, "cy", true), 50, bb, vh, &cy, &unit_error) ||
+        !coordinate(ctx, chain_owner(server, "r", true), chain_attribute(server, "r", true), 50, bb, diagonal, &rr, &unit_error) || !coordinate(ctx, chain_owner(server, "fr", true), chain_attribute(server, "fr", true), 0, bb, diagonal, &fr, &unit_error)) {
+      return unit_error != GVEC_OK ? unit_error : gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length is in a unit the lowering does not know");
     }
     const GVEC_Svg_Attribute * afx = chain_attribute(server, "fx", true);
     const GVEC_Svg_Attribute * afy = chain_attribute(server, "fy", true);
     if (afx) {
-      if (!coordinate(afx, 50, bb, vw, &fx)) {
-        return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length that needs the font or the window is not lowered");
+      if (!coordinate(ctx, chain_owner(server, "fx", true), afx, 50, bb, vw, &fx, &unit_error)) {
+        return unit_error != GVEC_OK ? unit_error : gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length is in a unit the lowering does not know");
       }
     }
     else {
       fx = cx;
     }
     if (afy) {
-      if (!coordinate(afy, 50, bb, vh, &fy)) {
-        return gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length that needs the font or the window is not lowered");
+      if (!coordinate(ctx, chain_owner(server, "fy", true), afy, 50, bb, vh, &fy, &unit_error)) {
+        return unit_error != GVEC_OK ? unit_error : gvec_lw_refuse(ctx, shape, GVEC_LOWER_STYLE, "a gradient length is in a unit the lowering does not know");
       }
     }
     else {

@@ -42,7 +42,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"external reference", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<use href=\"other.svg#x\"/>", "use", 2, 0},
       {"external image", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<image width=\"4\" height=\"4\" href=\"https://example.com/a.png\"/>", "image", 2, 0},
       {"data reference", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<use href=\"data:image/svg+xml;utf8,&lt;svg/&gt;\"/>", "use", 2, 0},
-      {"transform box", GVEC_LOWER_TRANSFORM_BOX, "\n<path d=\"M0 0H4V4H0Z\" style=\"transform: translate(5%, 0); transform-box: fill-box\"/>", "path", 2, 0},
+      {"transform box", GVEC_LOWER_TRANSFORM_BOX, "\n<g style=\"transform: translate(5%, 0); transform-box: fill-box\"><path d=\"M0 0L1e300 1e300\"/></g>", "g", 2, 0},
       {"style sheet", GVEC_LOWER_STYLESHEET, "\n<style>@import \"a.css\";</style>", "style", 2, 0},
       {"video", GVEC_LOWER_EMBEDDED_CONTENT, "\n<video width=\"4\" height=\"4\"/>", "video", 2, 0},
   };

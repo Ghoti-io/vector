@@ -354,6 +354,13 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const
 GVEC_INTERNAL_API GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, GSHGEOM_Bounds * box, bool * known);
 /** The bounding box of the element of `inst` in its own user space (inside its `transform`), as a clip or a mask in the units of the box takes it. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
+/**
+ * The map of a `transform` whose percentages are of a bounding box (`transform-box` other than `view-box`): the box is that of what the element
+ * of `inst` draws, in its own space (the fill box, or the stroke box for `stroke-box` and `border-box`), and the percentages and the origin are
+ * resolved against it.  `*known` is false when the element holds what this does not box (text and the like) or the map is past the waist's range.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_box_transform(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Transform * transform,
+    GSHGEOM_Map * out, bool * known);
 GVEC_INTERNAL_API GVEC_Result gvec_lw_element_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
 
 /** The inverse of a 2D map; false when it has none (or the result is not finite). */
@@ -500,6 +507,16 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_children(
 
 /** A length in user units when its unit is absolute (none, px, in, cm, mm, Q, pt, pc); false for a unit that needs the cascade or a basis. */
 GVEC_INTERNAL_API bool gvec_lw_absolute_length(const GVEC_Svg_Length * length, double * out);
+
+/**
+ * A length attribute of `owner` in user units, for every unit but a percentage (whose basis is the caller's): the absolute ones, the
+ * font-relative ones (`em` is the computed `font-size` of the owner, `ex` and `ch` half of it as the style layer's environment has them,
+ * `rem` the root's) and the window's (`vw`, `vh`, `vmin`, `vmax` of the viewport of the load options, as the cascade has them for a property).
+ *
+ * @param usable Receives false, and `*out` is unset, for a percentage and for a unit the lowering does not know.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_unit_length(gvec_lw_ctx * ctx, const GVEC_Svg_Element * owner, const GVEC_Svg_Length * length,
+    double * out, bool * usable);
 
 //-----------------------------------------------------------------------------
 // Viewports (lower_viewport.c)

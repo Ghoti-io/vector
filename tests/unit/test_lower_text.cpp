@@ -571,6 +571,52 @@ TEST(LowerText, StartOffsetMovesTheTextAlongThePathAndAGlyphPastTheEndIsNotDrawn
   EXPECT_EQ(past.Items(), (size_t) 1);  // only the path
 }
 
+TEST(LowerText, ThePathATextPathNamesKeepsItsTransformWhosePercentagesAreOfItsOwnBox) {
+  Fonts f;
+  Lowered moved;
+  GSHSCENE_Glyph_Run run;
+  // The path is 100 wide, so half its width is 50: the text starts at 10 + 50 along the moved path.
+  ASSERT_TRUE(LowerOnPath(f, "style=\"transform-box:fill-box;transform:translate(50%, 0)\"", "", "A", moved));
+  EXPECT_EQ(moved.Refusals(), (size_t) 0);
+  ASSERT_TRUE(ReadRun(moved, 1, run));
+  EXPECT_NEAR(run.glyphs[0].x, 60.0, 1e-9);
+}
+
+TEST(LowerText, ATextLengthAndAStartOffsetInFontRelativeUnitsAreTheSameLengthInPixels) {
+  Fonts f;
+  GSHSCENE_Glyph_Run px, other;
+  // The font size is 100: an em is 100 pixels, an ex and a ch fifty, and a rem the root's.
+  Lowered base;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" textLength=\"300\"", "AAA", base));
+  ASSERT_TRUE(ReadRun(base, 0, px));
+  for (const char * length : {"3em", "6ex", "6ch", "3rem"}) {
+    Lowered l;
+    ASSERT_TRUE(LowerText(f, std::string("x=\"0\" textLength=\"") + length + "\"", "AAA", l)) << length;
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << length;
+    ASSERT_TRUE(ReadRun(l, 0, other)) << length;
+    ASSERT_EQ(other.glyph_count, px.glyph_count);
+    for (size_t i = 0; i < px.glyph_count; i++) {
+      EXPECT_EQ(other.glyphs[i].x, px.glyphs[i].x) << length << " glyph " << i;
+    }
+  }
+  for (const char * position : {"1ch", "0.5rem"}) {
+    Lowered l;
+    ASSERT_TRUE(LowerText(f, std::string("x=\"") + position + "\" y=\"100\"", "A", l)) << position;
+    EXPECT_EQ(l.Refusals(), (size_t) 0) << position;
+    ASSERT_TRUE(ReadRun(l, 0, other)) << position;
+    EXPECT_EQ(other.glyphs[0].x, 50.0) << position << ": the position of a character in a unit that is not an em or an ex";
+  }
+  Lowered own;
+  ASSERT_TRUE(LowerOnPath(f, "", "font-size=\"50\" startOffset=\"0.2em\"", "A", own));
+  ASSERT_TRUE(ReadRun(own, 1, px));
+  EXPECT_NEAR(px.glyphs[0].x, 20.0, 1e-9) << "an em of the textPath's own font size (50), not the text's (100)";
+  Lowered shifted;
+  ASSERT_TRUE(LowerOnPath(f, "", "startOffset=\"0.2em\"", "A", shifted));
+  EXPECT_EQ(shifted.Refusals(), (size_t) 0);
+  ASSERT_TRUE(ReadRun(shifted, 1, px));
+  EXPECT_NEAR(px.glyphs[0].x, 30.0, 1e-9) << "a fifth of an em of 100 pixels along the path";
+}
+
 TEST(LowerText, TextOnAPathWithAMethodASideOrATransformIsLowered) {
   Fonts f;
   Lowered stretch, right, moved;

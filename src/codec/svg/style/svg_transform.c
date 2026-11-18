@@ -445,7 +445,9 @@ GVEC_Result gvec_svg_used_transform(GVEC_Svg_Style_Context * context, const GVEC
   out->origin[1] = ox[1];
   out->origin_fraction[0] = frac[0];
   out->origin_fraction[1] = frac[1];
-  if (percent && out->box != GVEC_SVG_BOX_VIEW) {
+  /* With any box but the viewport the origin is an offset from the box's own corner, so a transform of any list depends on the box, a
+   * percentage or not (CSS Transforms 1, transform-origin: an origin of `0 0` in a `fill-box` is the corner of the box, not of the user space). */
+  if ((percent || count > 0) && out->box != GVEC_SVG_BOX_VIEW) {
     out->depends_on_box = true;
     gshgeom_map_identity(2, &out->map);
     return GVEC_OK;

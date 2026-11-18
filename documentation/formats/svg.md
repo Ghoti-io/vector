@@ -128,8 +128,13 @@ line when the document is built.
   `viewBox`, `preserveAspectRatio`, `refX` and `refY` (with `left`, `center`, `right`, `top`, `bottom`) and `overflow` are as
   SVG 2 has them. The content inherits from the marker's place in the document, and `context-fill` and `context-stroke` are the
   paints of the shape the marker is for (and, in the referent of a `use`, of the `use`), so one marker used with two paints is two pictures. Marker instances are counted over
-  the lowering and bounded by `GVEC_Lower_Options.max_marker_instances`; a marker length in a unit that needs the cascade (`em`,
-  `%`) is refused. A path with an elliptical arc has markers like any other.
+  the lowering and bounded by `GVEC_Lower_Options.max_marker_instances`; a marker length is read in every unit a length attribute can be given in: the absolute ones, the font-relative
+  ones (`em`, `ex`, `ch`, `rem`, of the marker's own cascade) and the window's (`vw`, `vh`, `vmin`, `vmax`), and `%` is of the viewport. A path with an elliptical arc has markers like any other.
+* **Length units.** A length attribute (those of a gradient, pattern, mask, filter and its primitives, marker, `symbol`, `line`, `textLength`,
+  `startOffset` and the position lists of text) is in user units whatever its unit: the absolute ones; the font-relative ones, where `em` is the
+  computed `font-size` of the element that has the attribute (an attribute a gradient takes through its `href` is in the em of the gradient it
+  was taken from), `ex` and `ch` are half of it, as the cascade has them with no font, and `rem` is the root's; and the window's, `vw`, `vh`,
+  `vmin` and `vmax`, a hundredth of the viewport of the load options. A percentage is of the basis its attribute names.
 * **Arcs and the named shapes**: an elliptical arc is the geometry library's exact arc, built in endpoint form from the segment as
   written (SVG 2, 9.5.1 owns the radius correction). `rect`, `circle` and `ellipse` are its named primitives: SVG 2's rules for
   `auto`, negative and over-large `rx` and `ry`, and for a size of zero, are applied here and the resolved numbers are handed on.

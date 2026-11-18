@@ -201,9 +201,11 @@ TEST(LowerStroke, ALineIsAStrokeOfTwoPointsAndHasNoFill) {
   LowerSvg(Svg("width=\"40\" height=\"20\"", "<line x2=\"50%\" y2=\"1in\" stroke=\"red\"/>"), units);
   ASSERT_EQ(units.Items(), (size_t) 1);
   EXPECT_EQ(Describe(units.Item(0).resource), "M0,0 L20,96");
-  Lowered em;  // a unit that needs the cascade is refused, not guessed
+  Lowered em;  // a font-relative unit is the font size of the line's own cascade (the initial 16 here)
   LowerSvg(Svg("width=\"40\" height=\"20\"", "<line x2=\"2em\" stroke=\"red\"/>"), em);
-  EXPECT_NE(em.Refusal(GVEC_LOWER_STYLE), nullptr);
+  ASSERT_EQ(em.Items(), (size_t) 1);
+  EXPECT_EQ(em.Refusal(GVEC_LOWER_STYLE), nullptr);
+  EXPECT_EQ(Describe(em.Item(0).resource), "M0,0 L32,0");
 }
 
 TEST(LowerStroke, ASubpathOfNoLengthIsKeptForItsCaps) {

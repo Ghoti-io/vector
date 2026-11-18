@@ -171,15 +171,18 @@ TEST(LowerWalk, WhatIsNeverRenderedIsNotARefusal) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerWalk, ATransformOfABoundingBoxIsRefused) {
-  Lowered l;
+TEST(LowerWalk, ATransformOfABoundingBoxIsLoweredAgainstTheBoxOfTheElement) {
+  // The path's fill box is 4 by 4 at the origin: a tenth of its width is 0.4, and in a box other than the viewport a length origin is an
+  // offset from the box's corner (here the origin, so the same list as the transform written with its numbers).
+  Lowered l, same;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
                "<path d=\"M0 0H4V4H0Z\" style=\"transform: translate(10%, 0); transform-box: fill-box\"/>"
                "<path d=\"M0 0H4V4H0Z\" style=\"transform: translate(10px, 0); transform-box: fill-box\"/>"),
       l);
-  ASSERT_NE(l.Refusal(GVEC_LOWER_TRANSFORM_BOX), nullptr);
-  EXPECT_EQ(l.Refusals(), (size_t) 1);
-  EXPECT_EQ(l.Items(), (size_t) 1);
+  LowerSvg(Svg("width=\"20\" height=\"20\"", "<path d=\"M0 0H4V4H0Z\" transform=\"translate(0.4 0)\"/><path d=\"M0 0H4V4H0Z\" transform=\"translate(10 0)\"/>"), same);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(l.Items(), (size_t) 2);
+  EXPECT_EQ(gshscene_list_hash(l.list), gshscene_list_hash(same.list));
 }
 
 TEST(LowerWalk, ATransformPastTheWaistsRangeRefusesTheElement) {
