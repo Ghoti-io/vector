@@ -609,7 +609,7 @@ PLANTS = [
      'an feImage is lowered as a flood'),
     ('IM23', 'src/codec/svg/lower/lower_filter.c', ': b->region[0] + b->region[2];\n', ': b->region[2];\n',
      'a viewport with no width given runs to the width of the region, not to its right edge'),
-    ('IM24', 'src/codec/svg/lower/lower_filter.c', '    if (gvec_svg_find_by_id(ctx->document, ref.fragment)) {\n', '    if (0 && gvec_svg_find_by_id(ctx->document, ref.fragment)) {\n',
+    ('IM24', 'src/codec/svg/lower/lower_filter.c', '    if (target) {\n      return element_primitive(b, el, p, target, sub);', '    if (0 && target) {\n      return element_primitive(b, el, p, target, sub);',
      'an feImage of an element of the document is an empty result'),
     ('IM25', 'src/codec/svg/lower/lower_filter.c', '!gvec_lw_compose(&b->local, &placed, &p->placement)) {\n', '(p->placement = placed, 0)) {\n',
      "the image's placement is not put through the element's map"),
