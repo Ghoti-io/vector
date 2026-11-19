@@ -441,7 +441,13 @@ static bool light_of(const fbuild * b, const GVEC_Svg_Element * el, GSHSCENE_Fil
       lt->position[2] = pos[2] * zs;
       if (k == GVEC_SVG_KIND_FE_SPOT_LIGHT) {
         if (!number_attr(c, "pointsAtX", 0, &at[0]) || !number_attr(c, "pointsAtY", 0, &at[1]) || !number_attr(c, "pointsAtZ", 0, &at[2]) ||
-            !number_attr(c, "specularExponent", 1, &lt->spot_exponent) || lt->spot_exponent <= 0) {
+            !number_attr(c, "specularExponent", 1, &lt->spot_exponent)) {
+          return false;
+        }
+        if (lt->spot_exponent < 0) {
+          lt->spot_exponent = 1; /* a negative exponent is the default, as resvg, Chromium and Firefox draw it */
+        }
+        if (lt->spot_exponent == 0) {
           return false;
         }
         fmap_vector(&b->map, at[0], at[1], &lx, &ly);
@@ -839,8 +845,8 @@ static GVEC_Result image_primitive(fbuild * b, const GVEC_Svg_Element * el, GSHS
   /* the viewport: the subregion as the waist reads it (FL4), the filter region where a value is not given */
   const double x0 = (p->subregion_mask & 1u) ? sub[0] : b->region[0];
   const double y0 = (p->subregion_mask & 2u) ? sub[1] : b->region[1];
-  const double x1 = (p->subregion_mask & 4u) ? x0 + sub[2] : b->region[0] + b->region[2];
-  const double y1 = (p->subregion_mask & 8u) ? y0 + sub[3] : b->region[1] + b->region[3];
+  const double x1 = (p->subregion_mask & 4u) ? x0 + sub[2] : x0 + b->region[2]; /* a size not given is the region's, wherever x puts it */
+  const double y1 = (p->subregion_mask & 8u) ? y0 + sub[3] : y0 + b->region[3];
   if (!(x1 - x0 > 0) || !(y1 - y0 > 0) || x1 - x1 != 0 || y1 - y1 != 0) { /* no area, or an edge that is not finite */
     transparent_result(p);
     return GVEC_OK;
@@ -909,11 +915,6 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       }
       b->merge_used++;
       merge_count++;
-    }
-    if (merge_count == 0) {
-      GSHSCENE_Filter_Input none_in = {GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC, 0};
-      b->merge_inputs[b->merge_used++] = none_in;
-      merge_count = 1;
     }
   }
   else if (!none) {
@@ -1010,6 +1011,10 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       }
       break;
     case GVEC_SVG_KIND_FE_MERGE:
+      if (merge_count == 0) { /* no feMergeNode: nothing to merge is transparent black, which the next primitive then takes as its input */
+        transparent_result(p);
+        break;
+      }
       p->kind = GSHSCENE_FILTER_MERGE;
       p->input_count = merge_count;
       p->inputs = &b->merge_inputs[merge_first];
@@ -1114,8 +1119,7 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
           const double * vals;
           size_t count;
           if (!values_attr(b, c, "tableValues", &vals, &count)) {
-            b->invalid = true;
-            return GVEC_OK;
+            continue; /* a list that does not parse is no list: the function is the identity, as in every engine we probed */
           }
           if (count > 0) { /* an empty table is the identity */
             t->type = word_is(s, n, "table") ? GSHSCENE_FILTER_TRANSFER_TABLE : GSHSCENE_FILTER_TRANSFER_DISCRETE;
@@ -2114,7 +2118,10 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
       target = gvec_svg_find_by_id(ctx->document, ref->id);
     }
     if (!target || gvec_svg_element_kind(target) != GVEC_SVG_KIND_FILTER) {
-      *state = GVEC_LW_FILTER_ALL; /* A reference to what is no filter: the element is not rendered, whatever else the list holds. */
+      /* Filter Effects 1, `filter`: "If the filter references a non-existent object or the referenced object is not a filter element, then
+         the whole filter chain is ignored."  The element is drawn as it is, whatever else the list holds (Firefox and Chromium draw a lone
+         reference so; SVG 1.1 and resvg do not render it, and the reference of the corpus is resvg's). */
+      *state = GVEC_LW_FILTER_NONE;
       return GVEC_OK;
     }
     targets[k] = target;

@@ -103,13 +103,13 @@ TEST(LowerRefusals, ARectThatPaintsNothingIsNotARefusal) {
   EXPECT_EQ(l.Refusals(), (size_t) 0);
 }
 
-TEST(LowerRefusals, ADanglingClipPathOrMaskIsIgnoredAndADanglingFilterDrawsNothing) {
+TEST(LowerRefusals, ADanglingClipPathMaskOrFilterIsIgnoredAndTheElementDrawnAsItIs) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
                "<path d=\"M0 0H4V4H0Z\" clip-path=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" mask=\"url(#nothing)\"/><path d=\"M0 0H4V4H0Z\" filter=\"url(#nothing)\"/>"),
       l);
-  // a filter that is not there (or is no filter) makes the element not rendered, which is no refusal
-  EXPECT_EQ(l.Items(), (size_t) 2);
+  // a filter that is not there (or is no filter) is ignored with its whole chain (Filter Effects 1), and a mask that is not there too
+  EXPECT_EQ(l.Items(), (size_t) 3);
   EXPECT_EQ(l.Refusal(GVEC_LOWER_FILTER), nullptr);
   EXPECT_EQ(l.Refusal(GVEC_LOWER_MASK), nullptr);
   EXPECT_EQ(l.Refusals(), (size_t) 0);

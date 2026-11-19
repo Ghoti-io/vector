@@ -195,13 +195,13 @@ TEST(LowerFeImage, TheSubregionIsTheViewportAndIsPassedToTheWaistToClipTheResult
   EXPECT_EQ(p.placement.m[0][0], 2.0);
   EXPECT_EQ(p.placement.t[0], 2.0);
   EXPECT_EQ(p.placement.t[1], 3.0);
-  // A given x with no width: the viewport runs to the right of the region, as the waist reads the subregion.
+  // A given x with no width: the width is the region's, wherever x puts the left edge (as the waist reads the subregion).
   Lowered partial;
   LowerIn(Doc("x=\"4\" href=\"" + Data("red-blue-2x1.png") + "\""), partial);
   ASSERT_TRUE(PrimitiveOf(partial, &f));
   EXPECT_EQ(f.primitives[0].subregion_mask, 1u);
   EXPECT_EQ(f.primitives[0].placement.t[0], 4.0);
-  EXPECT_EQ(f.primitives[0].placement.m[0][0], 4.5) << "9 wide (4 to 13) and 12 high: the scale is 4.5";
+  EXPECT_EQ(f.primitives[0].placement.m[0][0], 6.0) << "12 wide (the region's width, from 4) and 12 high: the scale is 6";
 }
 
 TEST(LowerFeImage, PrimitiveUnitsOfTheBoxAreFractionsOfTheBox) {

@@ -167,7 +167,7 @@ TEST(LowerFilter, ColorMatrixTransferShadowMorphologyAndConvolutionCarryTheirAtt
   EXPECT_EQ(f.primitives[5].y_channel, (uint32_t) GSHSCENE_FILTER_CHANNEL_G);
 }
 
-TEST(LowerFilter, AnInvalidOrDanglingFilterDrawsTheElementAsNothingAndIsNoRefusal) {
+TEST(LowerFilter, AnInvalidFilterDrawsTheElementAsNothingAndADanglingOneAsItIs) {
   const char * bad[] = {
       "<filter id=\"f\"/>",                                                          // no primitives
       "<filter id=\"f\" width=\"0\"><feOffset dx=\"1\"/></filter>",                  // no region
@@ -179,10 +179,13 @@ TEST(LowerFilter, AnInvalidOrDanglingFilterDrawsTheElementAsNothingAndIsNoRefusa
     EXPECT_EQ(l.Refusals(), (size_t) 0) << filter;
     EXPECT_EQ(l.Items(), (size_t) 0) << filter;
   }
+  // Filter Effects 1: a reference to a non-existent object "ignores the whole filter chain", so the element is drawn as it is.
   Lowered dangling;
   LowerSvg(Doc("", "<rect width=\"4\" height=\"4\" filter=\"url(#nothing)\""), dangling);
   EXPECT_EQ(dangling.Refusals(), (size_t) 0);
-  EXPECT_EQ(dangling.Items(), (size_t) 0);
+  EXPECT_EQ(dangling.Items(), (size_t) 1);
+  GSHSCENE_Filter none;
+  EXPECT_FALSE(FilterOf(dangling, &none)) << "and it carries no filter";
 }
 
 TEST(LowerFilter, AnInvalidValueDisablesTheEffectAndTheElementIsDrawnThroughIt) {
@@ -362,13 +365,51 @@ TEST(LowerFilter, AListMixingFunctionsAndUrlsKeepsRunsOfFunctionsInOneFilter) {
   EXPECT_EQ(filters[2].primitive_count, 2u) << "grayscale() and sepia() are one filter";
 }
 
-TEST(LowerFilter, AnInvalidReferenceInAListLeavesTheElementUnrendered) {
+TEST(LowerFilter, AnInvalidReferenceInAListIgnoresTheWholeListAndTheElementIsDrawnAsItIs) {
   Lowered l;
   LowerSvg(Doc("<filter id=\"a\"><feGaussianBlur stdDeviation=\"1\"/></filter>",
                "<rect width=\"10\" height=\"10\" filter=\"url(#a) url(#missing)\""),
            l);
   EXPECT_EQ(l.Refusals(), (size_t) 0);
-  EXPECT_EQ(l.Items(), (size_t) 0);
+  EXPECT_EQ(l.Items(), (size_t) 1);
+  GSHSCENE_Filter f;
+  EXPECT_FALSE(FilterOf(l, &f)) << "the good filter of the list is ignored with the bad one";
+}
+
+TEST(LowerFilter, AnFeMergeWithNoNodesIsTransparentBlackWhichThePrimitiveAfterItTakes) {
+  // Filter Effects 1: the merge of nothing is transparent black; the blur after it blurs that, so Chromium, Firefox and resvg draw nothing.
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"f\"><feMerge/><feGaussianBlur stdDeviation=\"4\"/></filter>"), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  ASSERT_EQ(f.primitive_count, 2u);
+  EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_FLOOD);
+  EXPECT_EQ(f.primitives[0].opacity, 0.0);
+  EXPECT_EQ(f.primitives[0].color.rgba[3], 0.0);
+  EXPECT_EQ(f.primitives[1].kind, (uint32_t) GSHSCENE_FILTER_GAUSSIAN_BLUR);
+  EXPECT_EQ(f.primitives[1].inputs[0].kind, (uint32_t) GSHSCENE_FILTER_INPUT_RESULT) << "the blur's input is the empty merge, not the source graphic";
+  EXPECT_EQ(f.primitives[1].inputs[0].index, 0u);
+}
+
+TEST(LowerFilter, ATableValuesThatDoesNotParseIsTheIdentityNotAnErrorOfTheFilter) {
+  // "1px" is no number list: Chromium, Firefox, resvg and the corpus's reference draw the element as the identity transfer does.
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"f\"><feComponentTransfer><feFuncB type=\"table\" tableValues=\"1px\"/></feComponentTransfer></filter>"), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  ASSERT_EQ(f.primitive_count, 1u);
+  EXPECT_EQ(f.primitives[0].transfer[2].type, (uint32_t) GSHSCENE_FILTER_TRANSFER_IDENTITY);
+}
+
+TEST(LowerFilter, ASpotLightsNegativeSpecularExponentIsOne) {
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"f\"><feDiffuseLighting><feSpotLight x=\"5\" y=\"5\" z=\"5\" specularExponent=\"-10\"/></feDiffuseLighting></filter>"), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f)) << "the light is valid, as in resvg, Chromium and Firefox";
+  EXPECT_EQ(f.primitives[0].light.spot_exponent, 1.0);
 }
 
 TEST(LowerFilter, AListOnATurnedElementNestsInsideThePictureOfItsOwn) {
