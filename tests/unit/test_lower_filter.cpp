@@ -395,6 +395,17 @@ TEST(LowerFilter, EachCssFilterFunctionIsLowered) {
   }
 }
 
+TEST(LowerFilter, ABareNumberInAPresentationAttributeIsALengthInsideAFilterFunction) {
+  // SVG attribute mode reads a bare number as px (resvg's blur-function); a bare non-zero angle stays invalid in every engine we probed.
+  Lowered l;
+  LowerSvg(Svg("width=\"40\" height=\"40\"", "<rect width=\"10\" height=\"10\" filter=\"blur(4)\"/>"), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  ASSERT_EQ(f.primitive_count, 1u);
+  EXPECT_EQ(f.primitives[0].sx, 4.0);
+}
+
 TEST(LowerFilter, CssFilterFunctionsAreAChainOfPrimitivesInSrgbOverAnAutoRegion) {
   Lowered l;
   LowerSvg(Svg("width=\"40\" height=\"40\"",
