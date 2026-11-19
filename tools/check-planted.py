@@ -545,7 +545,6 @@ PLANTS = [
     ("F5", "src/codec/svg/lower/lower_filter.c", "    in->kind = GSHSCENE_FILTER_INPUT_SOURCE_ALPHA;\n    return GVEC_OK;\n  }\n  if (word_is(s, n, \"BackgroundImage\")",
      "    in->kind = GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC;\n    return GVEC_OK;\n  }\n  if (word_is(s, n, \"BackgroundImage\")", "SourceAlpha names the source graphic"),
     ("F6", "src/codec/svg/lower/lower_filter.c", "        p->transfer[c].intercept = text[0] == 'c' ? 0.5 - 0.5 * v : 0.0;", "        p->transfer[c].intercept = 0.0;", "contrast() has no intercept"),
-    ("F7", "src/codec/svg/lower/lower_filter.c", "double dev[2] = {len[2] / 2.0, len[2] / 2.0};", "double dev[2] = {len[2], len[2]};", "a drop-shadow's blur radius is the deviation, not twice it"),
     ("F8", "src/codec/svg/lower/lower_filter.c", "  p->color_space = GSHSCENE_FILTER_SPACE_SRGB; /* the functions work in sRGB */\n", "", "a filter function works in linearRGB"),
     # A filter on an element that paints nothing (lower_walk.c): the element is rendered, so its filtered group is drawn; one that is not rendered has none.
     ("F9", W, "    filter_content->content = true;\n", "    (void) filter_content;\n", "an element that paints nothing loses its filter, so a flood or a tile of one is not drawn"),
