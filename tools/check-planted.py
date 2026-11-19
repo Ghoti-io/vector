@@ -562,6 +562,8 @@ PLANTS = [
      "a group is not rendered when nothing is inside it, so an empty group has no filtered result"),
     ("F15", W, "  if (r == GVEC_OK) {\n    mark_rendered(ctx, inst);\n    r = gvec_lw_attach(ctx, TARGET(group, parent), use);", "  if (r == GVEC_OK) {\n    r = gvec_lw_attach(ctx, TARGET(group, parent), use);",
      "a use of an unpainted shape is not rendered, so its filter draws nothing"),
+    ("FD1", "src/codec/svg/lower/lower_filter.c", "    double dev[2] = {len[2], len[2]};", "    double dev[2] = {len[2] / 2.0, len[2] / 2.0};",
+     "the blur of a drop-shadow() is halved as if it were box-shadow's radius"),
     ("FT1", "src/codec/svg/lower/lower_filter.c", "      p->sx = freq[0] / b->map.a;\n      p->sy = freq[1] / b->map.d;\n",
      "      p->sx = freq[0];\n      p->sy = freq[1] / b->map.d;\n", "a turbulence's x frequency is not divided by the map's scale"),
     ("FT2", "src/codec/svg/lower/lower_filter.c", "      p->sx = freq[0] / b->map.a;\n      p->sy = freq[1] / b->map.d;\n",

@@ -1929,7 +1929,7 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
     }
     p->kind = GSHSCENE_FILTER_DROP_SHADOW;
     fmap_vector(&b->map, len[0], len[1], &p->dx, &p->dy);
-    double dev[2] = {len[2] / 2.0, len[2] / 2.0}; /* the blur radius of CSS is twice the deviation */
+    double dev[2] = {len[2], len[2]}; /* the third length is the standard deviation itself, not box-shadow's blur radius (Filter Effects 1, drop-shadow()) */
     lengths_to_list(b, dev);
     p->sx = dev[0];
     p->sy = dev[1];

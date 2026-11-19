@@ -428,7 +428,8 @@ TEST(LowerFilter, CssFilterFunctionsAreAChainOfPrimitivesInSrgbOverAnAutoRegion)
   EXPECT_EQ(f.primitives[9].kind, (uint32_t) GSHSCENE_FILTER_DROP_SHADOW);
   EXPECT_EQ(f.primitives[9].dx, 2.0);
   EXPECT_EQ(f.primitives[9].dy, 4.0);
-  EXPECT_EQ(f.primitives[9].sx, 4.0) << "a blur radius of 4px is a deviation of 2, doubled by the scale";
+  EXPECT_EQ(f.primitives[9].sx, 8.0) << "the third length is the deviation itself (4px), doubled by the scale";
+  EXPECT_EQ(f.primitives[9].sy, 8.0);
   EXPECT_EQ(f.primitives[9].color.rgba[0], 1.0);
 }
 
