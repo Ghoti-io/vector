@@ -1182,6 +1182,22 @@ GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     *known = ok;
     return image_result;
   }
+  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_TEXT) {
+    /* The box of the text is the cells of its glyphs, the font's ascent and descent high (the references measure it so): a filter, a mask or a
+       clip in the units of the box of a `text` places itself in it, where it used to find no box and draw nothing. */
+    GSHGEOM_Map identity;
+    bool ok;
+    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+      return GVEC_ERR_INTERNAL;
+    }
+    GVEC_Result text_result = text_leaf_box(ctx, inst, &identity, box, &ok);
+    /* A text whose layout cannot be made (no face to set it in) is refused where it is drawn; its box stays the empty one it always was. */
+    *known = true;
+    if (!ok) {
+      box->empty = 1;
+    }
+    return text_result;
+  }
   if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_USE) {
     GSHGEOM_Map identity;
     if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {

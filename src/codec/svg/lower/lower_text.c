@@ -1340,6 +1340,7 @@ typedef struct tglyph {
   double frame[5];  ///< On a path: the point (x, y) and the tangent (x, y) the glyph is put at, and the distance of its middle along the line.
   bool hidden;      ///< On a path: the glyph's middle is off the path's end, and it is not drawn.
   double advance;   ///< The advance of the glyph alone, without the spacing after it.
+  double trail;     ///< The spacing after the glyph's cluster (letter-spacing, word-spacing), which its cell holds and the text's box does not (CSS Text: no space at the end).
   bool sideways;    ///< Vertical text: a glyph of a script that lies on its side.
   size_t ch;        ///< The character the glyph is of (its cluster's first).
   double base;      ///< The baseline the glyph sits on.
@@ -1603,6 +1604,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       out->style = t->chars[ch].style; /* The paint of a glyph is that of the span its character is in. */
       out->cell_x0 = *pen_x;
       out->advance = advance;
+      out->trail = 0;
       out->hidden = false;
       out->cell_x1 = *pen_x + advance;
       out->cell_y0 = is_upright ? *pen_y - size / 2 : *pen_y + down - (double) line.ascent * s;
@@ -1638,6 +1640,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
         if (t->chars[ch].cp == ' ' || t->chars[ch].cp == 0xA0) {
           *pen_x += cs->word_spacing;
         }
+        out->trail = *pen_x - (out->cell_x0 + advance);
         out->cell_x1 = *pen_x;
       }
     }
@@ -2360,16 +2363,20 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     if (glyphs[g].hidden) {
       continue;
     }
+    /* A glyph's cell holds the spacing after it; the box stops where the glyph does, so a letter-spacing never adds space after the last one. */
+    const bool along_y = t.vertical && !glyphs[g].on_path;
+    const double x1 = glyphs[g].cell_x1 - (along_y ? 0 : glyphs[g].trail);
+    const double y1 = glyphs[g].cell_y1 - (along_y ? glyphs[g].trail : 0);
     if (out->box.empty) {
-      out->box.min.x = glyphs[g].cell_x0, out->box.max.x = glyphs[g].cell_x1;
-      out->box.min.y = glyphs[g].cell_y0, out->box.max.y = glyphs[g].cell_y1;
+      out->box.min.x = glyphs[g].cell_x0, out->box.max.x = x1;
+      out->box.min.y = glyphs[g].cell_y0, out->box.max.y = y1;
       out->box.empty = 0;
       continue;
     }
     if (glyphs[g].cell_x0 < out->box.min.x) out->box.min.x = glyphs[g].cell_x0;
-    if (glyphs[g].cell_x1 > out->box.max.x) out->box.max.x = glyphs[g].cell_x1;
+    if (x1 > out->box.max.x) out->box.max.x = x1;
     if (glyphs[g].cell_y0 < out->box.min.y) out->box.min.y = glyphs[g].cell_y0;
-    if (glyphs[g].cell_y1 > out->box.max.y) out->box.max.y = glyphs[g].cell_y1;
+    if (y1 > out->box.max.y) out->box.max.y = y1;
   }
   /* One run for each stretch of glyphs of one span and one face (a rotated glyph is a run of its own), between the lines that go under the
    * text and the lines that go over it. */

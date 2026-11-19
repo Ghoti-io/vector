@@ -1087,3 +1087,69 @@ int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+namespace {
+
+/** The region of the filter of the first filtered group of the list. */
+bool RegionOf(const Lowered & l, double region[4]) {
+  for (size_t i = 0; i < l.Items(); i++) {
+    const GSHSCENE_Item & it = l.Item(i);
+    GSHSCENE_Filter f;
+    if (it.kind == GSHSCENE_ITEM_GROUP_PUSH && it.group.filter && gshscene_resource_filter(it.group.filter, &f) == GSHSCENE_OK) {
+      for (int k = 0; k < 4; k++) {
+        region[k] = f.region[k];
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+bool LowerFiltered(Fonts & f, const std::string & text_attributes, Lowered & l) {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"",
+               "<defs><filter id=\"f\" x=\"0\" y=\"0\" width=\"1\" height=\"1\"><feFlood flood-color=\"green\"/></filter></defs>"
+               "<text x=\"10\" y=\"150\" filter=\"url(#f)\" " + text_attributes + ">AB</text>"),
+           l, 0, 0, &options);
+  return l.Refusals() == 0;
+}
+
+}  // namespace
+
+TEST(LowerText, AFilterInTheUnitsOfTheBoxIsPlacedInTheBoxOfTheTextsGlyphs) {
+  // The box of a `text` is its glyphs' cells; a filter at x=0 y=0 width=1 height=1 of it is that box. The text used to have no inner box, so
+  // the region had no size and the text, filter and all, was not rendered (text/text/filter-bbox: every engine draws the flood over the text).
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerFiltered(f, "", l));
+  double region[4];
+  ASSERT_TRUE(RegionOf(l, region)) << "the text is drawn through its filter";
+  EXPECT_EQ(region[0], 10.0);
+  EXPECT_EQ(region[2], 120.0) << "two glyphs of 60";
+}
+
+TEST(LowerText, TheBoxOfTextHoldsTheSpacingBetweenGlyphsAndNotAfterTheLastOne) {
+  // CSS Text: letter-spacing adds no space before or after the text, only between (text/letter-spacing/filter-bbox).
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerFiltered(f, "letter-spacing=\"20\"", l));
+  double region[4];
+  ASSERT_TRUE(RegionOf(l, region));
+  EXPECT_EQ(region[0], 10.0);
+  EXPECT_EQ(region[2], 140.0) << "120 of glyphs and 20 between them, not 160";
+}
+
+TEST(LowerText, TheBoxOfVerticalTextHoldsTheSpacingBetweenGlyphsAndNotAfterTheLastOne) {
+  Fonts f;
+  Lowered plain, spaced;
+  ASSERT_TRUE(LowerFiltered(f, "writing-mode=\"tb\"", plain));
+  ASSERT_TRUE(LowerFiltered(f, "writing-mode=\"tb\" letter-spacing=\"20\"", spaced));
+  double a[4], b[4];
+  ASSERT_TRUE(RegionOf(plain, a));
+  ASSERT_TRUE(RegionOf(spaced, b));
+  EXPECT_EQ(b[3] - a[3], 20.0) << "one gap between two glyphs, not two";
+  EXPECT_EQ(b[2], a[2]);
+}
+

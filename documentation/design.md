@@ -842,7 +842,9 @@ The flag belongs to one element: a child's walk saves and restores it.
 
 **X2 Not rendered, no filtered result.** `display: none`, a false condition, an `opacity` of zero (the filter group carries the opacity, so
 zero draws nothing whatever the filter makes), a shape with no geometry (a `rect` of no width, a radius of zero, an empty path or a lone move:
-the format disables its rendering, SVG 2, 11.4), a `use` of nothing, and a filter reference that names no filter. These are as before.
+the format disables its rendering, SVG 2, 11.4) and a `use` of nothing. These are as before. A filter reference that names no filter is not among them:
+Filter Effects 1 says "the whole filter chain is ignored" for one, so the element is drawn as it is, with the other filters of its list ignored too (Firefox
+does so for a lone reference and a list; SVG 1.1, and the resvg corpus that follows it, do not render the element).
 
 **X3 `visibility`.** A shape or a leaf with `visibility: hidden` or `collapse` is not drawn, and has no filtered result (it never reaches the
 point where its group is marked). A container with `visibility: hidden` is not a leaf: its filter is applied and its children, which inherit the
