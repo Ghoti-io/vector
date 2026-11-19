@@ -31,6 +31,7 @@
 #include <ghoti.io/shape-scene/filter.h>
 
 #include <cmath>
+#include <cstring>
 #include <string>
 
 #include <vector>
@@ -215,6 +216,52 @@ TEST(LowerFilter, AFilterTakesItsPrimitivesAndAttributesFromTheOneItsHrefNames) 
   EXPECT_DOUBLE_EQ(f.region[1], 3.0);   // the referring filter's own y
   EXPECT_DOUBLE_EQ(f.region[2], 8.0);
   EXPECT_DOUBLE_EQ(f.region[3], 10.0);
+}
+
+TEST(LowerFilter, ATurbulencesFrequencyIsPerUnitOfTheListAndItsOriginIsWhereTheUserSpacesLies) {
+  // The noise is a function of the point in the element's user space: under a scale of (2, 4) and a translation of (5, 6) a frequency of
+  // 0.2 by 0.4 per user unit is 0.1 by 0.1 per unit of the list, and the user space's origin lies at (5, 6) of it.
+  Lowered l;
+  LowerSvg(Doc("<filter id=\"f\"><feTurbulence baseFrequency=\"0.2 0.4\" numOctaves=\"2\"/></filter>",
+               "<rect width=\"10\" height=\"10\" transform=\"translate(5 6) scale(2 4)\" filter=\"url(#f)\""), l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  ASSERT_EQ(f.primitive_count, 1u);
+  EXPECT_DOUBLE_EQ(f.primitives[0].sx, 0.1);
+  EXPECT_DOUBLE_EQ(f.primitives[0].sy, 0.1);
+  EXPECT_DOUBLE_EQ(f.primitives[0].dx, 5.0);
+  EXPECT_DOUBLE_EQ(f.primitives[0].dy, 6.0);
+}
+
+TEST(LowerFilter, ATurbulenceUnderAViewBoxScaleIsTheNoiseAtTheDocumentsOwnSize) {
+  // A 200 unit document drawn at 500 pixels: the base frequency of 0.01 per unit is 0.004 per pixel, not 0.01.
+  Lowered l;
+  LowerSvg(Svg("width=\"500\" height=\"500\" viewBox=\"0 0 200 200\"",
+               "<defs><filter id=\"f\"><feTurbulence baseFrequency=\"0.01\"/></filter></defs><rect x=\"50\" y=\"50\" width=\"100\" height=\"100\" filter=\"url(#f)\"/>"),
+           l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  EXPECT_DOUBLE_EQ(f.primitives[0].sx, 0.004);
+  EXPECT_DOUBLE_EQ(f.primitives[0].sy, 0.004);
+  EXPECT_DOUBLE_EQ(f.primitives[0].dx, 0.0);
+}
+
+TEST(LowerFilter, ATurbulenceUnderAMapThatTurnsOrMirrorsItsElementIsRefused) {
+  // A turn or a mirror turns the noise lattice with the element, which the waist's axis-aligned lattice cannot say.
+  for (const char * transform : {"rotate(90)", "rotate(-90)", "scale(-1 1)", "scale(1 -1)"}) {
+    Lowered l;
+    LowerSvg(Doc("<filter id=\"f\"><feTurbulence baseFrequency=\"0.1\"/></filter>",
+                 std::string("<rect width=\"10\" height=\"10\" transform=\"") + transform + "\" filter=\"url(#f)\""),
+             l);
+    ASSERT_GE(l.Refusals(), (size_t) 1) << transform;
+    bool named = false;
+    for (size_t i = 0; i < l.by_list.count; i++) {
+      named = named || (l.by_list.items[i].code == GVEC_DIAG_LOWER_REFUSED && std::strstr(l.by_list.items[i].message, "turns or mirrors") != nullptr);
+    }
+    EXPECT_TRUE(named) << transform << ": the refusal says why, and not that a number was out of range";
+  }
 }
 
 TEST(LowerFilter, TurbulenceAndTheLightingsAreLowered) {

@@ -1289,8 +1289,16 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
         b->invalid = true; /* a negative frequency is an error: the element is not rendered */
         return GVEC_OK;
       }
-      p->sx = freq[0];
-      p->sy = freq[1];
+      /* The noise is a function of the point in the element's user space.  The waist's primitive is in the list's space, so its frequency is
+       * per unit of that space (the user one divided by the map's scale) and its origin is where the user space's origin lies in it.  Only a
+       * positive scale and a translation keep the noise lattice the lattice of the list's axes: a turn or a mirror would turn it. */
+      if (b->map.a <= 0 || b->map.d <= 0) { /* a quarter turn has a == 0 */
+        return refuse_with(b, "a turbulence under a map that turns or mirrors its element is not lowered: its noise lattice would turn with it");
+      }
+      p->sx = freq[0] / b->map.a;
+      p->sy = freq[1] / b->map.d;
+      p->dx = b->map.e;
+      p->dy = b->map.f;
       p->octaves = octaves < 0 ? 0 : (octaves > GSHSCENE_FILTER_MAX_OCTAVES ? GSHSCENE_FILTER_MAX_OCTAVES : (uint32_t) octaves);
       p->seed = seed;
       p->mode = raw(el, "type", &s, &n) && word_is(s, n, "fractalNoise") ? GSHSCENE_FILTER_NOISE_FRACTAL : GSHSCENE_FILTER_NOISE_TURBULENCE;

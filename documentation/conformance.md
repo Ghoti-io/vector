@@ -185,7 +185,13 @@ the tolerance) and the antialiased rounded edges of the logo (414 pixels past it
 `resources/simple-text.svg`, with `fill`, `font-family` and `font-size` on the `use`, which the element inherits as a `use` of its own document's would) is an `ORACLE_AGREES` row: drawn through the
 other document's context it is the text a fresh `resvg` draws for the same text written inline with the corpus's fonts only (21 pixels past the tolerance's level), and is as far from the reference
 (1,579 pixels past it, the reference's glyph edges having been rasterized by another engine) as that render is (1,566); the oracle wrapper of `make oracle-tolerance` renders without the corpus's fonts, so
-the row's evidence is that render, made once with `--skip-system-fonts --use-fonts-dir`, and not the wrapper's. At the head of the resolver work the score file reads **1,512 of 1,679 (90.05%)**
+the row's evidence is that render, made once with `--skip-system-fonts --use-fonts-dir`, and not the wrapper's. After the turbulence work the score file reads **1,524 of 1,679 (90.77%)** determined correct: 592 `PASS` (35.26%), 27 `ACCEPTED`, 754 `EDGE`, 151 `ORACLE_AGREES`; 133 `ORACLE_SPLIT`
+and no `DEFECT` among the 1,038 `FAIL`s, no `REFUSED`, 1 `NOT_LOADED`, 21 `EXCLUDED`. Twelve `feTurbulence` cases moved from `ORACLE_SPLIT` to `EDGE`. They had been mistaken for a split of the
+oracles: the lowering passed `baseFrequency`, a frequency per unit of length, into the list's space unchanged, so a document drawn at 2.5 times its size had noise 2.5 times too fine, and the
+noise lattice was not anchored at the user space's origin (the primitive now carries the frequency per unit of the list and that origin), and a seed of 1.5 was rounded to 2 where the standard
+truncates it toward zero. The case that stays is `stitchTiles=stitch`, whose reference is a placeholder reading `UB`: the standard leaves it undefined.
+
+At the head of the resolver work the score file reads **1,512 of 1,679 (90.05%)**
 determined correct: 592 `PASS` (35.26%), 27 `ACCEPTED`, 742 `EDGE`, 151 `ORACLE_AGREES`; 145 `ORACLE_SPLIT` and no `DEFECT` among the 1,038 `FAIL`s, no `REFUSED` (it was 4), 1 `NOT_LOADED`,
 21 `EXCLUDED`. What the resolver does not reach stays what it was: `text/tref/link-to-an-external-file-element` still names an element of another file through a `tref`, which is not resolved.
 
