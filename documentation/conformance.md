@@ -185,7 +185,11 @@ the tolerance) and the antialiased rounded edges of the logo (414 pixels past it
 `resources/simple-text.svg`, with `fill`, `font-family` and `font-size` on the `use`, which the element inherits as a `use` of its own document's would) is an `ORACLE_AGREES` row: drawn through the
 other document's context it is the text a fresh `resvg` draws for the same text written inline with the corpus's fonts only (21 pixels past the tolerance's level), and is as far from the reference
 (1,579 pixels past it, the reference's glyph edges having been rasterized by another engine) as that render is (1,566); the oracle wrapper of `make oracle-tolerance` renders without the corpus's fonts, so
-the row's evidence is that render, made once with `--skip-system-fonts --use-fonts-dir`, and not the wrapper's. With `text` reading the document's declared encoding (Windows-1251, Shift_JIS and the other encodings its decoder has) the score file reads **1,527 of 1,679 (90.95%)**, no `NOT_LOADED`:
+the row's evidence is that render, made once with `--skip-system-fonts --use-fonts-dir`, and not the wrapper's. With `text` reading a bare number as a length in `drop-shadow()` of a presentation attribute, and the lowering giving a `drop-shadow()` with no color, or with `currentcolor`, the element's `color`
+(Filter Effects 1: "the missing used color is taken from the color property"), the score file reads **1,531 of 1,679 (91.19%)**: the unitless cases are within the tolerance or `EDGE`, and
+three (`color-as-attribute`, `currentColor`, `only-offset`) are `ORACLE_SPLIT` rows whose distance from the reference is the distance of a fresh `resvg` render from it.
+
+With `text` reading the document's declared encoding (Windows-1251, Shift_JIS and the other encodings its decoder has) the score file reads **1,527 of 1,679 (90.95%)**, no `NOT_LOADED`:
 `structure/svg/not-UTF-8-encoding.svg` loads, reads as the same text as its UTF-8 form (the two renders are bit-identical) and is an `ORACLE_AGREES` row, because its reference was drawn with
 another face for the Cyrillic text than the corpus's NotoSans, and a fresh `resvg` render with the corpus's fonts is within 53 pixels of this library's.
 

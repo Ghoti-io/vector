@@ -1757,6 +1757,43 @@ static bool css_color(const char * s, size_t n, double rgba[4]) {
   return true;
 }
 
+/** Whether a drop-shadow() color argument is the keyword `currentcolor`: the computed value writes it so, in lower case, first. */
+static bool is_current_color(const char * s, size_t n) {
+  return word_is(s, n, "currentcolor");
+}
+
+/** The `color` property of the filtered element, which a drop-shadow() with no color, or with `currentcolor`, takes (Filter Effects 1: "the missing used color is taken from the color property"). */
+static GVEC_Result element_color(fbuild * b, double rgba[4]) {
+  const GVEC_Svg_Instance * inst;
+  GVEC_Result r = gvec_lw_instance_of(b->ctx, b->target, &inst);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  GVEC_Svg_Style_Value v;
+  bool usable;
+  r = gvec_lw_read_property(b->ctx, inst, GVEC_SVG_PROP_COLOR, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    b->refused = true;
+    return r;
+  }
+  const GVEC_Svg_Color * c = v.kind == GVEC_SVG_STYLE_COLOR ? &v.color : v.kind == GVEC_SVG_STYLE_PAINT ? &v.paint.color : NULL;
+  if (!c) {
+    return GVEC_OK; /* not a color: black stays */
+  }
+  if (c->kind == GVEC_SVG_COLOR_FOREGROUND) {
+    GSHSCENE_Color fg;
+    r = foreground_color(b, b->target, c, &fg);
+    for (int k = 0; k < 4; k++) {
+      rgba[k] = fg.rgba[k];
+    }
+    return r;
+  }
+  for (int k = 0; k < 4; k++) {
+    rgba[k] = c->color.rgba[k];
+  }
+  return GVEC_OK;
+}
+
 /** One function of a `filter` list as primitives of the build; false when it is not one the waist's primitives can say. */
 static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
   *ok = false;
@@ -1896,6 +1933,7 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
     size_t got = 0;
     double rgba[4] = {0, 0, 0, 1};
     bool color_given = false;
+    bool current = false; /* the color is `currentcolor` (the computed value always writes one, first): the element's `color` */
     /* the color may come first, as a style engine writes the computed value */
     while (pos < arg_len && is_wsp(args[pos])) {
       pos++;
@@ -1910,6 +1948,7 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
       if (!css_color(args + pos, end - pos, rgba)) {
         return GVEC_OK;
       }
+      current = is_current_color(args + pos, end - pos);
       color_given = true;
       pos = end;
     }
@@ -1926,6 +1965,12 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
     }
     if (!color_given && pos < arg_len && !css_color(args + pos, arg_len - pos, rgba)) {
       return GVEC_OK; /* a color this subset does not read: the list is refused whole */
+    }
+    if (current) {
+      GVEC_Result cr = element_color(b, rgba);
+      if (cr != GVEC_OK || b->refused) {
+        return cr;
+      }
     }
     p->kind = GSHSCENE_FILTER_DROP_SHADOW;
     fmap_vector(&b->map, len[0], len[1], &p->dx, &p->dy);

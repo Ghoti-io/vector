@@ -433,6 +433,38 @@ TEST(LowerFilter, CssFilterFunctionsAreAChainOfPrimitivesInSrgbOverAnAutoRegion)
   EXPECT_EQ(f.primitives[9].color.rgba[0], 1.0);
 }
 
+TEST(LowerFilter, ADropShadowWithNoColorOrWithCurrentColorTakesTheElementsColorProperty) {
+  // Filter Effects 1: "the missing used color is taken from the color property"; currentcolor is the same.  The lengths are bare numbers,
+  // which a presentation attribute reads as user units.
+  struct Case {
+    const char * attributes;
+    double rgb[3];
+  };
+  const Case cases[] = {
+      {"color=\"#0000ff\" filter=\"drop-shadow(4 5 6)\"", {0, 0, 1}},
+      {"color=\"#0000ff\" filter=\"drop-shadow(currentColor 4 5 6)\"", {0, 0, 1}},
+      {"color=\"#0000ff\" filter=\"drop-shadow(4 5 6 CURRENTCOLOR)\"", {0, 0, 1}},
+      {"color=\"#0000ff\" filter=\"drop-shadow(#ff0000 4 5 6)\"", {1, 0, 0}},
+      {"filter=\"drop-shadow(4 5 6)\"", {0, 0, 0}},
+  };
+  for (const Case & c : cases) {
+    Lowered l;
+    LowerSvg(Doc("", std::string("<rect width=\"10\" height=\"10\" ") + c.attributes), l);
+    ASSERT_EQ(l.Refusals(), (size_t) 0) << c.attributes;
+    GSHSCENE_Filter f;
+    ASSERT_TRUE(FilterOf(l, &f)) << c.attributes;
+    ASSERT_EQ(f.primitive_count, 1u) << c.attributes;
+    EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_DROP_SHADOW) << c.attributes;
+    EXPECT_EQ(f.primitives[0].dx, 4.0) << c.attributes;
+    EXPECT_EQ(f.primitives[0].dy, 5.0) << c.attributes;
+    EXPECT_EQ(f.primitives[0].sx, 6.0) << c.attributes << ": the third length is the deviation";
+    for (int k = 0; k < 3; k++) {
+      EXPECT_NEAR(f.primitives[0].color.rgba[k], c.rgb[k], 1e-9) << c.attributes << " channel " << k;
+    }
+    EXPECT_EQ(f.primitives[0].color.rgba[3], 1.0) << c.attributes;
+  }
+}
+
 TEST(LowerFilter, TheFilterIsInsideTheClipTheMaskAndTheOpacity) {
   Lowered l;
   LowerSvg(Doc("<filter id=\"f\"><feOffset dx=\"1\"/></filter><clipPath id=\"c\"><rect width=\"20\" height=\"20\"/></clipPath>",
