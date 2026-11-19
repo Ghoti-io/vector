@@ -1153,3 +1153,41 @@ TEST(LowerText, TheBoxOfVerticalTextHoldsTheSpacingBetweenGlyphsAndNotAfterTheLa
   EXPECT_EQ(b[2], a[2]);
 }
 
+TEST(LowerText, AMarkShapedAsAGlyphOfItsOwnTurnsAboutTheOriginOfItsBase) {
+  // The face shapes "A" and U+0301 as two glyphs of one cluster; the rotate list gives the cluster one angle, and both turn about the base's
+  // origin, so they are one run under one map (text/text/rotate-with-multiple-values-and-complex-text: the mark used to turn about its own origin).
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"50\" rotate=\"30\"", "A\xCC\x81", l));
+  size_t fills = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    fills += l.Item(i).kind == GSHSCENE_ITEM_FILL ? 1 : 0;
+  }
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(ReadRun(l, 0, run));
+  ASSERT_EQ(run.glyph_count, (size_t) 2) << "the face has a glyph for the mark";
+  EXPECT_EQ(fills, (size_t) 1) << "the base and its mark are one run, turned about one origin";
+}
+
+TEST(LowerText, TheSpacingATextLengthSpreadsIsTakenByTheLastGlyphOfTheSpanToo) {
+  // "BB" is 120 wide; textLength 300 spreads 180 between the two (the second B starts 180 on) and the last B's advance takes it too, so the C after
+  // the span starts 180 further than the span's own end, as Chromium, resvg and the corpus's reference place it (textLength/on-a-single-tspan).
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\"", "A<tspan textLength=\"300\">BB</tspan>C", l));
+  std::vector<double> xs;
+  for (size_t i = 0; i < l.Items(); i++) {
+    GSHSCENE_Glyph_Run run;
+    if (ReadRun(l, i, run)) {
+      for (size_t g = 0; g < run.glyph_count; g++) {
+        xs.push_back(run.glyphs[g].x);
+      }
+    }
+  }
+  ASSERT_EQ(xs.size(), (size_t) 4);
+  EXPECT_EQ(xs[0], 0.0);
+  EXPECT_EQ(xs[1], 60.0);
+  EXPECT_EQ(xs[2], 300.0);
+  EXPECT_EQ(xs[3], 540.0) << "60 + 120 of glyphs + 180 between + 180 after the last";
+}
+

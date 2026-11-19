@@ -1617,10 +1617,16 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
       out->rotate = (t->chars[head].has_rotate ? t->chars[head].rotate : 0) + (out->sideways ? 90.0 : 0.0);
       size_t own_index = (size_t) (out - glyphs);
-      if (head == ch || out->sideways) {
+      /* A mark the face shapes as a glyph of its own (a combining mark with no precomposed form) is in the cluster of its base: the same character
+       * index, not a character of its own, so it turns with the glyph before it in that cluster. */
+      const bool of_cluster_before = g > 0 && fr->run.glyphs[g - 1].cluster == sg->cluster && last_base_ch == ch && !out->sideways;
+      if ((head == ch || out->sideways) && !of_cluster_before) {
         last_base_ch = ch;
         last_base_index = own_index;
         out->pivot = own_index;
+      }
+      else if (of_cluster_before) {
+        out->pivot = last_base_index;
       }
       else {
         out->pivot = last_base_ch == head ? last_base_index : own_index;
@@ -2105,6 +2111,9 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         grow = tl->length - width;
         factor = tl->length / width;
         extra = gb - ga > 1 ? grow / (double) (gb - ga - 1) : 0;
+        if (!tl->glyphs) {
+          grow += extra; /* each glyph's advance takes the spacing, the last's too: the text after the span starts that much further on */
+        }
       }
       if (tl->glyphs) {
         /* The stretch is along the line: about the first glyph's start in the frame the text is laid out in, turned back when that is the
