@@ -1,6 +1,6 @@
 fixture images-filter
 list-hash 318d081b4c8554ba
-raster-hash a8eb30f3034aa3b9
+raster-hash edccb3469ea3a8a6
 diagnostics 0
 list
 gshscene.list 1 items=13 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=318d081b4c8554ba

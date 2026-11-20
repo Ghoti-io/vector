@@ -68,22 +68,27 @@ TEST(LowerText, ACharacterIsAGlyphOfTheFaceThatMapsItAtTheFontSize) {
   EXPECT_EQ(l.Item(0).paint.rgba[3], 1.0);
 }
 
-TEST(LowerText, APositionListIsIndexedByUtf16CodeUnitsSoACharacterBeyondPlaneZeroTakesTwoValues) {
+TEST(LowerText, APositionListIsIndexedByCodePointsSoACharacterBeyondPlaneZeroTakesOneValue) {
   Fonts f;
   Lowered l;
-  // U+1F601 is two code units: `A` is the third, whose x is 30; with one value for each code point it would be 20
+  // SVG 2 counts the characters of the positioning attributes in Unicode code points: U+1F601 is one, so `A` is the second, whose x is 20
+  // (a count of UTF-16 code units would make it the third, 30)
   ASSERT_TRUE(LowerText(f, "x=\"10 20 30\" y=\"50\"", "\xF0\x9F\x98\x81" "A", l));
   GSHSCENE_Glyph_Run run;
   ASSERT_TRUE(ReadRun(l, 0, run));
   ASSERT_GE(run.glyph_count, (size_t) 1);
-  EXPECT_EQ(run.glyphs[run.glyph_count - 1].x, 30.0);
+  EXPECT_EQ(run.glyphs[run.glyph_count - 1].x, 20.0);
   Lowered rotated;
   ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\" rotate=\"0 0 45\"", "\xF0\x9F\x98\x81" "A", rotated));
   bool turned = false;
   for (size_t i = 0; i < rotated.Items(); i++) {
     turned = turned || rotated.Item(i).map.m[0][1] != 0.0;
   }
-  EXPECT_TRUE(turned) << "the angle of the third code unit is the A's";
+  EXPECT_FALSE(turned) << "the angle of the second character is the A's, and it is 0; the 45 is of a third";
+  Lowered ys;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50 70\"", "\xF0\x9F\x98\x81" "A", ys));
+  ASSERT_TRUE(ReadRun(ys, 0, run));
+  EXPECT_EQ(run.glyphs[run.glyph_count - 1].y, 70.0);
 }
 
 TEST(LowerText, TextAnchorMovesTheLineByItsWholeAdvance) {

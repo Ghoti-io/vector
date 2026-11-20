@@ -1264,22 +1264,20 @@ static GVEC_Result apply_lists(tctx * t) {
     const tlist * l = &t->lists[i];
     if (l->kind == 4) {
       /* Every character of the element's content has an angle: the list's values in order, then its last one.  The list is indexed by the
-       * addressable characters, which are UTF-16 code units (SVG 2, Text): a character beyond the plane 0 is two of them, and the angle is the
-       * one of its first. */
-      size_t unit = 0;
+       * addressable characters, which for the positioning attributes are Unicode code points (SVG 2, Text, "addressable character"): a
+       * character beyond the plane 0 is one of them, and an emoji sequence is several. */
       for (size_t j = l->start; j < l->end && j < t->count; j++) {
         tchar * c = &t->chars[j];
         c->has_rotate = true;
-        c->rotate = l->numbers[unit < l->count ? unit : l->count - 1];
-        unit += t->chars[j].cp > 0xFFFF ? 2u : 1u;
+        c->rotate = l->numbers[j - l->start < l->count ? j - l->start : l->count - 1];
       }
       continue;
     }
-    /* The values are of the addressable characters, UTF-16 code units: a character beyond the plane 0 takes two, and the value of its second unit
-     * is of no character (the glyph of the cluster is put by the first). */
-    size_t unit = 0;
-    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += t->chars[at].cp > 0xFFFF ? 2u : 1u, at++) {
-      const size_t j = unit;
+    /* The values are of the addressable characters, Unicode code points (SVG 2, Text): one value to each character, whether or not the
+     * character is the first of its cluster; the glyph of a cluster is put by its first character, and the values of the others are of no use
+     * to x and y. */
+    for (size_t at = l->start; at < l->end && at < t->count && at - l->start < l->count; at++) {
+      const size_t j = at - l->start;
       double v;
       bool font_relative = l->items && (l->items[j].unit == GVEC_SVG_UNIT_EM || l->items[j].unit == GVEC_SVG_UNIT_EX);
       if (font_relative) {

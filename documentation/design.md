@@ -571,7 +571,7 @@ would not), so the isolated group names the space it blends in, sRGB-encoded as 
 environment, so a drawing of text is a function of the document and the fonts). The content of a `text` element is read in tree order into
 characters: a text node's, with the white space of `xml:space` (stripped at the ends, newlines removed, runs collapsed, the collapse running on
 across spans and after a preserved space), and each `tspan` and `a` (a span that is not displayed, or whose conditions fail, adds nothing). Each
-character knows the span it is in, and the `x`, `y`, `dx` and `dy` lists of the elements apply to the characters of their own content in order,
+character knows the span it is in, and the `x`, `y`, `dx` and `dy` lists of the elements apply to the characters of their own content in order (a character is a Unicode code point, as SVG 2 section 11.1.1 says: one beyond plane 0 takes one value, not two; the references index by UTF-16 unit and so differ on such text),
 an inner list after an outer one so that it wins. A character with an absolute `x` or `y` begins a **text chunk** (as does the start of the text),
 at that position, the other coordinate continuing from the pen. A chunk is shaped in stretches of consecutive characters that ask for one font,
 whatever their fill, so that kerning and joining run across a span boundary that changes only the paint; the shaper is `gfnt_faces_shape_bidi`

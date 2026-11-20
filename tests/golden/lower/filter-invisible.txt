@@ -1,6 +1,6 @@
 fixture filter-invisible
 list-hash 4b330eabe659b5f4
-raster-hash 19e2adba5c21014c
+raster-hash a06637dbf9371ffd
 diagnostics 0
 list
 gshscene.list 1 items=12 ties=0 fg=0000000000000000 0000000000000000 0000000000000000 3ff0000000000000 0:0:0000000000000000 palette=0000000000000000 hash=4b330eabe659b5f4

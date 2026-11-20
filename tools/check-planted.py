@@ -593,9 +593,9 @@ PLANTS = [
      "no descendant is found, so the spacing of an ancestor's textLength spreads a descendant's glyphs too"),
     ("TL2", "src/codec/svg/lower/lower_text.c", "        hi = glyphs[g].cell_x1 > hi ? glyphs[g].cell_x1 : hi;", "        hi = glyphs[g].cell_x1;",
      "the extent of a textLength is to the last glyph's end, not the greatest"),
-    ("FN1", "src/codec/svg/lower/lower_fonts.c", "      if (advance_em(face, cp, &a)) {", "      if (advance_em(face, cp, &a) && 0) {",
+    ("FN1", "src/codec/svg/style/svg_fonthooks.c", "      if (advance_em(face, cp, &a)) {", "      if (advance_em(face, cp, &a) && 0) {",
      "the advance of \"0\" is half an em whatever the face's is"),
-    ("FN2", "src/codec/svg/lower/lower_fonts.c", "(double) (line.ascent - line.descent + line.line_gap)", "(double) (line.ascent + line.line_gap)",
+    ("FN2", "src/codec/svg/style/svg_fonthooks.c", "(double) (line.ascent - line.descent + line.line_gap)", "(double) (line.ascent + line.line_gap)",
      "the normal line height leaves out the face's descent"),
     ("FN3", "src/codec/svg/lower/lower_walk.c", "fonted ? &hooks : NULL", "NULL",
      "the style's font units never ask the fonts"),
@@ -670,7 +670,7 @@ PLANTS = [
      'a network-path reference is a path'),
     ('IM22', 'src/codec/svg/lower/lower_filter.c', '  p->kind = GSHSCENE_FILTER_IMAGE;\n  p->image = image.resource;\n', '  p->kind = GSHSCENE_FILTER_FLOOD;\n  p->image = image.resource;\n',
      'an feImage is lowered as a flood'),
-    ('IM23', 'src/codec/svg/lower/lower_filter.c', ': b->region[0] + b->region[2];\n', ': b->region[2];\n',
+    ('IM23', 'src/codec/svg/lower/lower_filter.c', ': x0 + b->region[2]; /* a size not given', ': b->region[2]; /* a size not given',
      'a viewport with no width given runs to the width of the region, not to its right edge'),
     ('IM24', 'src/codec/svg/lower/lower_filter.c', '    if (target) {\n      return element_primitive(b, el, p, target, sub);', '    if (0 && target) {\n      return element_primitive(b, el, p, target, sub);',
      'an feImage of an element of the document is an empty result'),
@@ -807,8 +807,8 @@ PLANTS += [
     # an SVG image that is the image of itself (design R3).
     ("RC1", "src/codec/svg/lower/lower_image.c", "    if (up->source_hash == source_hash) {", "    if (up->source_hash == source_hash + 1) {", "a document that is the image of itself nests to the limit"),
     ("RC2", "src/codec/svg/lower/lower_walk.c", "  nested->source_hash = image->source_hash;", "  nested->source_hash = 0;", "the context of an image does not know which document it is"),
-    # text positions are indexed by UTF-16 code unit.
-    ("TU1", "src/codec/svg/lower/lower_text.c", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += t->chars[at].cp > 0xFFFF ? 2u : 1u, at++) {", "    for (size_t at = l->start; at < l->end && at < t->count && unit < l->count; unit += 1u, at++) {", "a character beyond plane 0 takes one position value"),
+    # text positions are indexed by Unicode code point (SVG 2, addressable character).
+    ("TU1", "src/codec/svg/lower/lower_text.c", "for (size_t at = l->start; at < l->end && at < t->count && at - l->start < l->count; at++) {", "for (size_t at = l->start; at < l->end && at < t->count && at - l->start < l->count; at += t->chars[at].cp > 0xFFFF ? 2u : 1u) {", "a character beyond plane 0 takes two position values"),
     # the font features of the cascade (read_features and what it applies)
     ("FV1", TX, "    if (strcmp(v.keyword, \"none\") == 0) {\n      fits = fits && set_feature(st, \"kern\", 0);", "    if (strcmp(v.keyword, \"none\") == 0) {\n      fits = fits && set_feature(st, \"kern\", 1);", "font-kerning none turns kerning on"),
     ("FV2", TX, "      st->features[i].value = value;\n      return true;", "      return true;", "a feature set again keeps its first value"),
@@ -994,6 +994,13 @@ def main():
     only = os.environ.get("PLANT_ONLY")  # a rule prefix, to rerun the plants of one rule while writing them
     if only:
         cases = [c for c in cases if c[0].startswith(only)]
+    # Resume a run that stopped (a stale anchor, a lost session): the rule to start from, in the order the plants are written.
+    start = os.environ.get("PLANT_FROM")
+    if start:
+        names = [c[0] for c in cases]
+        if start not in names:
+            sys.exit("check-planted: PLANT_FROM names no rule: %s" % start)
+        cases = cases[names.index(start):]
     # A change to some files is held to the plants in those files: a comma-separated list of source paths, as the plants name them.
     files = os.environ.get("PLANT_FILES")
     if files:
