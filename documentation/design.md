@@ -874,6 +874,12 @@ advance of the glyph, and ascent, descent and gap of `hhea`; a face that has the
 (an external `use`, an `image`) share their parent's engine, since their instances are read through it. The reference corpus is `resvg`'s, which
 takes half the font size for `ex`, so the cases that use it are `ACCEPTED` on the specification and on Chromium, which sizes by the face.
 
+**X5c A textLength inside a textLength.** An element with a `textLength` inside another with one is a unit of the outer spacing (SVG 2, 11.5 step 5:
+"a single typographic character"; 11.2.1: its own `textLength` controls its characters): the outer length is shared out over the units, the glyphs
+of the inner one move together by what its unit is given, and the outer's extent is the least start and greatest end of its glyphs' cells, as the
+specification's `a` and `b` are. The specification's suggested loop is not followed to the letter: it moves the inner element's first glyph apart from
+the rest and does not give the shift it requires, and Chromium alone draws that. The case is `ACCEPTED` as `UNDEFINED`.
+
 **X6 A `use` has the box of what it draws.** A filter in the units of the box (and the default region) on a `use`, and on a group that holds one,
 takes the box of the referent's instance, moved by the `use`'s `x` and `y` and the referent's own transform, in the `use`'s own space. A `use` of
 nothing or of an element `display` removes adds nothing. The box of a `use` of a viewport (a `symbol` or a nested `svg`) is still not known,

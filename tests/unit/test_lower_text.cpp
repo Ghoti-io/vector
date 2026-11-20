@@ -1292,6 +1292,29 @@ TEST(LowerText, AMarkShapedAsAGlyphOfItsOwnTurnsAboutTheOriginOfItsBase) {
   EXPECT_EQ(fills, (size_t) 1) << "the base and its mark are one run, turned about one origin";
 }
 
+TEST(LowerText, ADescendantWithATextLengthOfItsOwnIsOneUnitOfTheSpacingOfItsAncestorsAndKeepsItsOwnGlyphsTogether) {
+  // SVG 2, 11.5 step 5: a resolved descendant "is treated as if it were a single typographic character", and 11.2.1: its own textLength controls its
+  // characters. "BC" is 120 wide and takes 30, so C starts 90 before where it would; "A" and the span are two units, and the 300 asked of the text
+  // is the 120 of the glyphs' extent and 180 between the two units, which moves both glyphs of the span together (text/textLength/on-text-and-tspan:
+  // this used to spread the span's glyphs too and so undo its length).
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "x=\"0\" y=\"50\" textLength=\"300\"", "A<tspan textLength=\"30\">BC</tspan>", l));
+  std::vector<double> xs;
+  for (size_t i = 0; i < l.Items(); i++) {
+    GSHSCENE_Glyph_Run run;
+    if (ReadRun(l, i, run)) {
+      for (size_t g = 0; g < run.glyph_count; g++) {
+        xs.push_back(run.glyphs[g].x);
+      }
+    }
+  }
+  ASSERT_EQ(xs.size(), (size_t) 3);
+  EXPECT_EQ(xs[0], 0.0);
+  EXPECT_EQ(xs[1], 240.0) << "B: 60 on, and the 180 of the one gap";
+  EXPECT_EQ(xs[2], 210.0) << "C: 30 behind B, as the span's own textLength made it";
+}
+
 TEST(LowerText, TheSpacingATextLengthSpreadsIsTakenByTheLastGlyphOfTheSpanToo) {
   // "BB" is 120 wide; textLength 300 spreads 180 between the two (the second B starts 180 on) and the last B's advance takes it too, so the C after
   // the span starts 180 further than the span's own end, as Chromium, resvg and the corpus's reference place it (textLength/on-a-single-tspan).

@@ -2121,9 +2121,46 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         continue;
       }
       double x0 = glyphs[ga].cell_x0;
-      double width = glyphs[gb - 1].cell_x1 - x0;
+      /* The extent is the least start and the greatest end of the glyphs' cells (SVG 2: a = min(...), b = max(...)): a descendant's own textLength
+       * can put a later glyph before an earlier one's end. */
+      double lo = glyphs[ga].cell_x0, hi = glyphs[ga].cell_x1;
+      for (size_t g = ga + 1; g < gb; g++) {
+        lo = glyphs[g].cell_x0 < lo ? glyphs[g].cell_x0 : lo;
+        hi = glyphs[g].cell_x1 > hi ? glyphs[g].cell_x1 : hi;
+      }
+      double width = hi - lo;
       if (!(width > 0)) {
         continue;
+      }
+      /* The glyphs of a descendant that has a textLength of its own are one unit of this one's spacing (SVG 2, 11.5 step 5: "treated as if it
+       * were a single typographic character"; 11.2.1: the descendant's own textLength controls its characters), so the spacing is shared out
+       * over units and the descendant's glyphs move together. */
+      size_t * unit = gvec_arena_array(&ctx->arena, gb - ga, sizeof *unit, sizeof(size_t));
+      if (!unit) {
+        return GVEC_ERR_OOM;
+      }
+      size_t units = 0;
+      {
+        const tlength * open = NULL;
+        for (size_t g = ga; g < gb; g++) {
+          const tlength * inside = NULL;
+          for (size_t q = 0; q < t.length_count; q++) {
+            const tlength * d = &t.lengths[q];
+            if (q == k || d->start < tl->start || d->end > tl->end || (d->start == tl->start && d->end == tl->end) || glyphs[g].ch < d->start ||
+                glyphs[g].ch >= d->end) {
+              continue;
+            }
+            if (!inside || d->end - d->start > inside->end - inside->start) {
+              inside = d;
+            }
+          }
+          if (inside && inside == open) {
+            unit[g - ga] = units - 1;
+            continue;
+          }
+          open = inside;
+          unit[g - ga] = units++;
+        }
       }
       double grow, extra = 0, factor = 1;
       if (crosses) {
@@ -2131,26 +2168,26 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         if (pass == 0) {
           tl->multi = true;
           tl->natural += width;
-          tl->total += gb - ga;
+          tl->total += units;
           continue;
         }
         if (!(tl->natural > 0) || tl->total == 0) {
           continue;
         }
-        tl->seen += gb - ga;
+        tl->seen += units;
         if (tl->glyphs) {
           factor = tl->length / tl->natural;
           grow = width * (factor - 1);
         }
         else {
           extra = tl->total > 1 ? (tl->length - tl->natural) / (double) (tl->total - 1) : 0;
-          grow = extra * (double) (gb - ga) - (tl->seen == tl->total ? extra : 0);
+          grow = extra * (double) units - (tl->seen == tl->total ? extra : 0);
         }
       }
       else {
         grow = tl->length - width;
         factor = tl->length / width;
-        extra = gb - ga > 1 ? grow / (double) (gb - ga - 1) : 0;
+        extra = units > 1 ? grow / (double) (units - 1) : 0;
         if (!tl->glyphs) {
           grow += extra; /* each glyph's advance takes the spacing, the last's too: the text after the span starts that much further on */
         }
@@ -2186,9 +2223,9 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
           }
         }
       }
-      else if (gb - ga > 1) {
+      else if (units > 1) {
         for (size_t g = ga; g < gb; g++) {
-          double shift = extra * (double) (g - ga);
+          double shift = extra * (double) unit[g - ga];
           glyphs[g].x += shift;
           glyphs[g].cell_x0 += shift;
           glyphs[g].cell_x1 += shift;
