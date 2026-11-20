@@ -860,6 +860,12 @@ result: whether such an element is rendered is the element's own rule (R10 for a
 renderer settles it. That is a decision, not a gap: an element that renders no content has no box for the filter's units and is not rendered in
 the sense of SVG 2, 11.4, as a shape with no geometry is not.
 
+**X5a A span has a filter of its own.** A `filter` on a `tspan` or a `textPath` is applied to that span's glyphs and the spans inside it (SVG 2
+applies `filter` to every element; Chromium and the corpus's reference blur the span, `resvg` ignores it). The runs of the span become one filter
+group inside the text's own: the filter's region and the units of the box are the union of the cells of those glyphs, and a glyph put on a path has
+its cell turned to the path's direction there, not left along the line. The span's `opacity` is on the filter's group (the result is what is
+faded), and its fill and stroke stay each glyph's. A filter on a span inside a span that has one is refused, not drawn with only one of them.
+
 **X6 A `use` has the box of what it draws.** A filter in the units of the box (and the default region) on a `use`, and on a group that holds one,
 takes the box of the referent's instance, moved by the `use`'s `x` and `y` and the referent's own transform, in the `use`'s own space. A `use` of
 nothing or of an element `display` removes adds nothing. The box of a `use` of a viewport (a `symbol` or a nested `svg`) is still not known,

@@ -1259,33 +1259,20 @@ static GVEC_Result lw_image(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
 // `text`
 //-----------------------------------------------------------------------------
 
-/* `text`: its content as glyph runs, each filled and stroked with the paint of the span it is of, in the span's paint order, under the
- * span's opacity; a gradient or a pattern is placed in the box of the whole text. */
-static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+/* The pieces i0..i1 of a laid-out text as nodes, appended to `sequence` at `*n`: each filled and stroked with the paint of the span it is of, in
+ * the span's paint order, under the span's opacity (except the opacity of `filtered_span`, which the group of its filter carries). The pieces
+ * are placed under `local`, the map of the text's space. */
+static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const gvec_lw_text * text_in, const common * c,
+    const GSHGEOM_Map * local, const GVEC_Svg_Element * filtered_span, size_t i0, size_t i1, gvec_lw_node ** sequence, size_t * count) {
+  const gvec_lw_text text = *text_in;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
-  common c;
-  GVEC_Result r = prepare(ctx, inst, frame, true, &c);
-  if (r != GVEC_OK || !c.draw) {
-    return r;
-  }
-  ctx->item_local = c.local;
-  ctx->item_crisp = false;
-  gvec_lw_text text;
+  GVEC_Result r = GVEC_OK;
   bool usable;
-  r = gvec_lw_text_layout(ctx, inst, &text, &usable);
-  if (r != GVEC_OK || !usable || text.count == 0) {
-    return r;
-  }
-  ctx->paint_box = text.box;
-  gvec_lw_node ** sequence = gvec_arena_alloc(&ctx->arena, 2 * text.count * sizeof *sequence, sizeof(void *));
-  if (!sequence) {
-    return GVEC_ERR_OOM;
-  }
-  size_t n = 0;
-  for (size_t i = 0; i < text.count; i++) {
+  size_t n = *count;
+  for (size_t i = i0; i < i1; i++) {
     const GVEC_Svg_Instance * span = text.pieces[i].inst;
     GSHGEOM_Map piece_map;
-    if (!gvec_lw_compose(&c.local, &text.pieces[i].map, &piece_map)) {
+    if (!gvec_lw_compose(local, &text.pieces[i].map, &piece_map)) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text's stretch is past the range the waist can carry");
     }
     const GVEC_Svg_Element * se = gvec_svg_instance_element(span);
@@ -1389,7 +1376,7 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     }
     /* The opacity of a span other than the text itself is a group of its own around what the span paints. */
     double span_opacity = 1;
-    if (se != e && !text.pieces[i].decoration) {
+    if (se != e && se != filtered_span && !text.pieces[i].decoration) {
       r = gvec_lw_read_property(ctx, span, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &v, &usable);
       if (r != GVEC_OK || !usable) {
         return r;
@@ -1400,7 +1387,7 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
       if (!(span_opacity > 0)) {
         continue;
       }
-      common cc = c;
+      common cc = *c;
       cc.opacity = span_opacity;
       cc.composite = 0;
       cc.isolate = false;
@@ -1421,6 +1408,187 @@ static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
     for (size_t k = 0; k < parts; k++) {
       sequence[n++] = pair[k];
     }
+  }
+  *count = n;
+  return GVEC_OK;
+}
+
+/* The span that filters the pieces of `span` (itself or the nearest of its ancestors inside the text that has a `filter`), or NULL.
+ * A filter on a span inside a span that has one is not lowered: `*abandon` is set and the text is refused whole. */
+static const GVEC_Svg_Instance * filtered_owner(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * text_inst, const GVEC_Svg_Instance * span,
+    GVEC_Result * r, bool * abandon) {
+  const GVEC_Svg_Instance * found = NULL;
+  *r = GVEC_OK;
+  for (const GVEC_Svg_Instance * s = span; s && s != text_inst; s = gvec_svg_instance_parent(s)) {
+    GVEC_Svg_Style_Value v;
+    bool usable;
+    *r = gvec_lw_read_property(ctx, s, GVEC_SVG_PROP_FILTER, GVEC_LOWER_STYLE, &v, &usable);
+    if (*r != GVEC_OK) {
+      return NULL;
+    }
+    if (!usable) {
+      *abandon = true;
+      return NULL;
+    }
+    if (v.reference_count == 0) {
+      continue;
+    }
+    if (found) {
+      *abandon = true;
+      *r = gvec_lw_refuse(ctx, gvec_svg_instance_element(found), GVEC_LOWER_FILTER, "a filter on a span inside a span that has a filter is not lowered");
+      return NULL;
+    }
+    found = s;
+  }
+  return found;
+}
+
+/* The pieces i0..i1 of a text, all of the span `owner`'s, under the groups its `filter` makes: the filter's region is the box of the cells of the
+ * span (a filter on a span is applied to the span's own glyphs, and what the text draws around them is not in it). */
+static GVEC_Result text_span_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * text_inst, const GVEC_Svg_Instance * owner, const gvec_lw_text * text,
+    const common * c, size_t i0, size_t i1, gvec_lw_node ** sequence, size_t * n, bool * abandon) {
+  const GVEC_Svg_Element * fe = gvec_svg_instance_element(owner);
+  GVEC_Svg_Style_Value opacity;
+  bool usable;
+  GVEC_Result r = gvec_lw_read_property(ctx, owner, GVEC_SVG_PROP_OPACITY, GVEC_LOWER_STYLE, &opacity, &usable);
+  if (r != GVEC_OK || !usable) {
+    *abandon = !usable;
+    return r;
+  }
+  const double alpha = opacity.kind == GVEC_SVG_STYLE_NUMBER ? (opacity.number < 0 ? 0 : (opacity.number > 1 ? 1 : opacity.number)) : 1;
+  if (!(alpha > 0)) {
+    return GVEC_OK; /* opacity zero draws nothing, whatever is inside */
+  }
+  gvec_lw_filter_state state;
+  gvec_lw_filter_set set;
+  r = gvec_lw_filter_begin(ctx, owner, &c->local, &state, &set);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (state == GVEC_LW_FILTER_REFUSED) {
+    *abandon = true;
+    return GVEC_OK;
+  }
+  if (state == GVEC_LW_FILTER_ALL) {
+    return GVEC_OK;
+  }
+  if (state == GVEC_LW_FILTER_NONE) {
+    return text_pieces(ctx, text_inst, text, c, &c->local, NULL, i0, i1, sequence, n);
+  }
+  set.groups[0]->opacity = alpha; /* the opacity applies to the filtered result */
+  gvec_lw_node * chain[GVEC_LW_FILTER_LIST_MAX + 1];
+  size_t count = 0;
+  if (set.outer) {
+    chain[count++] = set.outer;
+  }
+  for (size_t k = 0; k < set.count; k++) {
+    chain[count++] = set.groups[k];
+  }
+  size_t entered = 0;
+  for (; entered < count; entered++) {
+    bool ok;
+    r = gvec_lw_wrap_enter(ctx, fe, &ok);
+    if (r != GVEC_OK || !ok) {
+      break;
+    }
+  }
+  if (entered < count) {
+    while (entered--) {
+      gvec_lw_wrap_leave(ctx);
+    }
+    return r;
+  }
+  GSHGEOM_Map identity;
+  const size_t saved_open = ctx->open;
+  if (set.outer) {
+    /* The content is a picture drawn through the instance: its own list, one more picture deep, in the text's own space. */
+    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+      return GVEC_ERR_INTERNAL;
+    }
+    if (ctx->picture_depth + 1 > ctx->caps.picture_depth) {
+      while (entered--) {
+        gvec_lw_wrap_leave(ctx);
+      }
+      *abandon = true;
+      return gvec_lw_refuse(ctx, fe, GVEC_LOWER_LIMIT, "the filtered span nests pictures deeper than the scene's limits allow");
+    }
+    ctx->picture_depth++;
+    ctx->open = 0;
+  }
+  gvec_lw_node ** inner = gvec_arena_alloc(&ctx->arena, 2 * (i1 - i0) * sizeof *inner, sizeof(void *));
+  size_t m = 0;
+  r = inner ? text_pieces(ctx, text_inst, text, c, set.outer ? &identity : &c->local, fe, i0, i1, inner, &m) : GVEC_ERR_OOM;
+  if (r == GVEC_OK) {
+    r = gvec_lw_append_all(ctx, set.groups[set.count - 1], inner, m);
+  }
+  set.groups[set.count - 1]->content = true; /* the span is rendered, though what it paints may be nothing: the filter still has its result */
+  if (set.outer) {
+    ctx->picture_depth--;
+    ctx->open = saved_open;
+  }
+  for (size_t k = 0; k < count; k++) {
+    gvec_lw_wrap_leave(ctx);
+  }
+  for (size_t k = count; r == GVEC_OK && k-- > 1;) {
+    r = gvec_lw_attach(ctx, chain[k - 1], chain[k]);
+  }
+  if (r == GVEC_OK && chain[0]->content) {
+    sequence[(*n)++] = chain[0];
+  }
+  return r;
+}
+
+/* `text`: its content as glyph runs, each filled and stroked with the paint of the span it is of, in the span's paint order, under the
+ * span's opacity; a gradient or a pattern is placed in the box of the whole text. */
+static GVEC_Result lw_text(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  common c;
+  GVEC_Result r = prepare(ctx, inst, frame, true, &c);
+  if (r != GVEC_OK || !c.draw) {
+    return r;
+  }
+  ctx->item_local = c.local;
+  ctx->item_crisp = false;
+  gvec_lw_text text;
+  bool usable;
+  r = gvec_lw_text_layout(ctx, inst, &text, &usable);
+  if (r != GVEC_OK || !usable || text.count == 0) {
+    return r;
+  }
+  ctx->paint_box = text.box;
+  gvec_lw_node ** sequence = gvec_arena_alloc(&ctx->arena, 2 * text.count * sizeof *sequence, sizeof(void *));
+  if (!sequence) {
+    return GVEC_ERR_OOM;
+  }
+  size_t n = 0;
+  size_t i = 0;
+  while (i < text.count) {
+    bool abandon = false;
+    const GVEC_Svg_Instance * owner = filtered_owner(ctx, inst, text.pieces[i].inst, &r, &abandon);
+    if (r != GVEC_OK || abandon) {
+      return r;
+    }
+    size_t j = i + 1;
+    while (j < text.count) {
+      const GVEC_Svg_Instance * next = filtered_owner(ctx, inst, text.pieces[j].inst, &r, &abandon);
+      if (r != GVEC_OK || abandon) {
+        return r;
+      }
+      if (next != owner) {
+        break;
+      }
+      j++;
+    }
+    if (!owner) {
+      r = text_pieces(ctx, inst, &text, &c, &c.local, NULL, i, j, sequence, &n);
+    }
+    else {
+      r = text_span_filter(ctx, inst, owner, &text, &c, i, j, sequence, &n, &abandon);
+    }
+    if (r != GVEC_OK || abandon) {
+      return r;
+    }
+    i = j;
   }
   if (n == 0) {
     return GVEC_OK;

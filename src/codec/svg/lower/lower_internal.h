@@ -408,6 +408,7 @@ typedef struct gvec_lw_text_piece {
   double image_width, image_height;   ///< The image's size in pixels.
   GSHGEOM_Map image_map;              ///< The image's pixels to the element's space: the strike's scale, and the glyph's place by the bearings of the bitmap.
   GSHGEOM_Map map;                    ///< The map of the run in the element's space: the identity, or the stretch of a textLength that scales the glyphs.
+  GSHGEOM_Bounds box;                 ///< The cells of the glyphs of the run, as the text's box takes them (empty for a decoration): what a filter on the span is placed in.
 } gvec_lw_text_piece;
 
 typedef struct gvec_lw_text {
@@ -421,6 +422,15 @@ typedef struct gvec_lw_text {
  * element was refused (and reported). Nothing is drawn for a text with no characters: `count` is 0.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable);
+
+/**
+ * The box of the glyph cells of the span @p span (a `tspan`, a `textPath`, or any element inside a `text`), in the space of its `text`:
+ * the union of the boxes of the runs of the span and of the spans inside it. `*ok` is false when the text cannot be laid out.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_text_span_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * span, GSHGEOM_Bounds * box, bool * ok);
+
+/** True when @p inst is @p ancestor or is inside it (the instances' own parents, compared by element). */
+GVEC_INTERNAL_API bool gvec_lw_instance_within(const GVEC_Svg_Instance * inst, const GVEC_Svg_Instance * ancestor);
 
 /** What `mask` makes of an element. */
 /** What lowering the `filter` of an element found (lower_filter.c). */

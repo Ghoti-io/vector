@@ -1350,6 +1350,8 @@ typedef struct tglyph {
   double size;      ///< The em size the glyph is drawn at (a small capital is smaller).
   bool on_path;     ///< The glyph is put on a path: its position is in the element's space already, not in the frame vertical text is laid out in.
   double path_angle; ///< On a path: the degrees the path turns the glyph by, in addition to its own rotation.
+  bool placed;      ///< On a path: `placed_box` holds the box of the glyph's cell where the path puts it (the cell itself is along the line, unplaced).
+  double placed_box[4]; ///< min x, min y, max x, max y of the turned cell, in the element's space.
 } tglyph;
 
 /* Whether a character stands upright in vertical text (Unicode's Vertical_Orientation U and Tu, in the blocks that matter): the ideographs,
@@ -1633,6 +1635,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
       out->group = 0;
       out->on_path = false;
+      out->placed = false;
       out->path_angle = 0;
       out->size = size;
       *pen_x += advance;
@@ -1808,6 +1811,43 @@ static GSHGEOM_Result map_path(const GSHGEOM_Path * in, const GSHGEOM_Map * map,
   }
   *out = path;
   return GSHGEOM_OK;
+}
+
+/* The union of the cells of the glyphs a..b (a hidden glyph has none).  A glyph's cell holds the spacing after it; the box stops where the
+ * glyph does, so a letter-spacing never adds space after the last one. */
+static void cells_box(const tglyph * glyphs, size_t a, size_t b, bool vertical, GSHGEOM_Bounds * box) {
+  box->empty = 1;
+  for (size_t g = a; g < b; g++) {
+    if (glyphs[g].hidden) {
+      continue;
+    }
+    if (glyphs[g].placed) {
+      const double * pb = glyphs[g].placed_box;
+      if (box->empty) {
+        box->min.x = pb[0], box->min.y = pb[1], box->max.x = pb[2], box->max.y = pb[3];
+        box->empty = 0;
+        continue;
+      }
+      if (pb[0] < box->min.x) box->min.x = pb[0];
+      if (pb[1] < box->min.y) box->min.y = pb[1];
+      if (pb[2] > box->max.x) box->max.x = pb[2];
+      if (pb[3] > box->max.y) box->max.y = pb[3];
+      continue;
+    }
+    const bool along_y = vertical && !glyphs[g].on_path;
+    const double x1 = glyphs[g].cell_x1 - (along_y ? 0 : glyphs[g].trail);
+    const double y1 = glyphs[g].cell_y1 - (along_y ? glyphs[g].trail : 0);
+    if (box->empty) {
+      box->min.x = glyphs[g].cell_x0, box->max.x = x1;
+      box->min.y = glyphs[g].cell_y0, box->max.y = y1;
+      box->empty = 0;
+      continue;
+    }
+    if (glyphs[g].cell_x0 < box->min.x) box->min.x = glyphs[g].cell_x0;
+    if (x1 > box->max.x) box->max.x = x1;
+    if (glyphs[g].cell_y0 < box->min.y) box->min.y = glyphs[g].cell_y0;
+    if (y1 > box->max.y) box->max.y = y1;
+  }
 }
 
 static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_text * out, bool * usable, GSHGEOM_Measured ** held) {
@@ -2196,6 +2236,18 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         gl->path_angle = gmath_atan2(ty, tx) * (180.0 / 3.14159265358979323846) - (t.vertical ? 90.0 : 0.0);
         gl->rotate += gl->path_angle;
         gl->on_path = true;
+        {
+          /* The cell, turned to the path's direction about the point the glyph sits at: the box of the glyph where it is drawn. */
+          const double cx[2] = {gl->cell_x0 - mid, gl->cell_x1 - gl->trail - mid}, cy[2] = {gl->cell_y0 - oy, gl->cell_y1 - oy};
+          for (int q = 0; q < 4; q++) {
+            const double px = fr.point.x + cx[q & 1] * tx - cy[q >> 1] * ty, py = fr.point.y + cx[q & 1] * ty + cy[q >> 1] * tx;
+            if (q == 0 || px < gl->placed_box[0]) gl->placed_box[0] = px;
+            if (q == 0 || py < gl->placed_box[1]) gl->placed_box[1] = py;
+            if (q == 0 || px > gl->placed_box[2]) gl->placed_box[2] = px;
+            if (q == 0 || py > gl->placed_box[3]) gl->placed_box[3] = py;
+          }
+          gl->placed = true;
+        }
         gl->pivot = g;
         gl->frame[0] = fr.point.x, gl->frame[1] = fr.point.y, gl->frame[2] = tx, gl->frame[3] = ty, gl->frame[4] = mid;
       }
@@ -2367,26 +2419,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     }
   }
   /* The box the text's paint is placed in: the union of its glyphs' cells (the text's height is the font's, not the outlines'). */
-  out->box.empty = 1;
-  for (size_t g = 0; g < glyph_count; g++) {
-    if (glyphs[g].hidden) {
-      continue;
-    }
-    /* A glyph's cell holds the spacing after it; the box stops where the glyph does, so a letter-spacing never adds space after the last one. */
-    const bool along_y = t.vertical && !glyphs[g].on_path;
-    const double x1 = glyphs[g].cell_x1 - (along_y ? 0 : glyphs[g].trail);
-    const double y1 = glyphs[g].cell_y1 - (along_y ? glyphs[g].trail : 0);
-    if (out->box.empty) {
-      out->box.min.x = glyphs[g].cell_x0, out->box.max.x = x1;
-      out->box.min.y = glyphs[g].cell_y0, out->box.max.y = y1;
-      out->box.empty = 0;
-      continue;
-    }
-    if (glyphs[g].cell_x0 < out->box.min.x) out->box.min.x = glyphs[g].cell_x0;
-    if (x1 > out->box.max.x) out->box.max.x = x1;
-    if (glyphs[g].cell_y0 < out->box.min.y) out->box.min.y = glyphs[g].cell_y0;
-    if (y1 > out->box.max.y) out->box.max.y = y1;
-  }
+  cells_box(glyphs, 0, glyph_count, t.vertical, &out->box);
   /* One run for each stretch of glyphs of one span and one face (a rotated glyph is a run of its own), between the lines that go under the
    * text and the lines that go over it. */
   out->pieces = gvec_arena_array(&ctx->arena, glyph_count + rect_count + 1, sizeof *out->pieces, sizeof(void *));
@@ -2428,6 +2461,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         out->pieces[out->count].run = rect;
         out->pieces[out->count].inst = rects[k].inst;
         out->pieces[out->count].decoration = true;
+        out->pieces[out->count].box.empty = 1;
         gshgeom_map_identity(2, &out->pieces[out->count].map);
         out->count++;
       }
@@ -2467,6 +2501,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         cp->image_height = colour.height;
         cp->image_map = colour.map;
         cp->inst = st->inst;
+        cells_box(glyphs, g, h, t.vertical, &cp->box);
         gshgeom_map_identity(2, &cp->map);
         out->count++;
         g = h;
@@ -2510,6 +2545,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       piece->run = resource;
       piece->inst = st->inst;
       piece->decoration = false;
+      cells_box(glyphs, g, h, t.vertical, &piece->box);
       /* The glyph's own turn (the rotate list, a sideways glyph's quarter, the path's), and the stretch of its text's length, which comes
        * after: the stretch is along the line, and a glyph on a path has its own line. */
       gshgeom_map_identity(2, &piece->map);
@@ -2582,4 +2618,49 @@ GVEC_Result gvec_lw_text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     gshgeom_measured_destroy(held[i]);
   }
   return r;
+}
+
+bool gvec_lw_instance_within(const GVEC_Svg_Instance * inst, const GVEC_Svg_Instance * ancestor) {
+  /* By element: two layouts of one text make an instance each of its spans, and a text holds no element twice. */
+  const GVEC_Svg_Element * want = gvec_svg_instance_element(ancestor);
+  for (; inst; inst = gvec_svg_instance_parent(inst)) {
+    if (gvec_svg_instance_element(inst) == want) {
+      return true;
+    }
+  }
+  return false;
+}
+
+GVEC_Result gvec_lw_text_span_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * span, GSHGEOM_Bounds * box, bool * ok) {
+  box->empty = 1;
+  *ok = false;
+  const GVEC_Svg_Instance * text = gvec_svg_instance_parent(span);
+  while (text && gvec_svg_element_kind(gvec_svg_instance_element(text)) != GVEC_SVG_KIND_TEXT) {
+    text = gvec_svg_instance_parent(text);
+  }
+  if (!text) {
+    return GVEC_OK;
+  }
+  gvec_lw_text laid;
+  bool usable = true;
+  GVEC_Result r = gvec_lw_text_layout(ctx, text, &laid, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  *ok = true;
+  for (size_t i = 0; i < laid.count; i++) {
+    const GSHGEOM_Bounds * b = &laid.pieces[i].box;
+    if (b->empty || !gvec_lw_instance_within(laid.pieces[i].inst, span)) {
+      continue;
+    }
+    if (box->empty) {
+      *box = *b;
+      continue;
+    }
+    if (b->min.x < box->min.x) box->min.x = b->min.x;
+    if (b->min.y < box->min.y) box->min.y = b->min.y;
+    if (b->max.x > box->max.x) box->max.x = b->max.x;
+    if (b->max.y > box->max.y) box->max.y = b->max.y;
+  }
+  return GVEC_OK;
 }

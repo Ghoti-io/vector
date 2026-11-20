@@ -1153,6 +1153,92 @@ TEST(LowerText, TheBoxOfVerticalTextHoldsTheSpacingBetweenGlyphsAndNotAfterTheLa
   EXPECT_EQ(b[2], a[2]);
 }
 
+namespace {
+
+/** A text with a filter (a flood in the units of the box) on the part of it that `inner` is. */
+bool LowerSpanFiltered(Fonts & f, const std::string & inner, Lowered & l, const std::string & more_defs = "") {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\"",
+               "<defs><filter id=\"f\" x=\"0\" y=\"0\" width=\"1\" height=\"1\"><feFlood flood-color=\"green\"/></filter>" + more_defs + "</defs>" +
+               "<text x=\"10\" y=\"150\">" + inner + "</text>"),
+           l, 0, 0, &options);
+  return l.Refusals() == 0;
+}
+
+size_t FilteredGroups(const Lowered & l) {
+  size_t n = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    const GSHSCENE_Item & it = l.Item(i);
+    if (it.kind == GSHSCENE_ITEM_GROUP_PUSH && it.group.filter) {
+      n++;
+    }
+  }
+  return n;
+}
+
+}  // namespace
+
+TEST(LowerText, AFilterOnASpanIsPlacedInTheBoxOfThatSpansGlyphsOnly) {
+  // A filter on a `tspan` is applied to the span's own glyphs, in the units of their box (text/tspan/with-filter: Chromium and the corpus's
+  // reference blur the span; it used to be dropped and the span drawn as it was).  "A" is outside the filter: the region starts at "B".
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerSpanFiltered(f, "A<tspan filter=\"url(#f)\">B</tspan>", l));
+  EXPECT_EQ(FilteredGroups(l), (size_t) 1);
+  double region[4];
+  ASSERT_TRUE(RegionOf(l, region));
+  EXPECT_EQ(region[0], 70.0) << "after the 60 of \"A\", from x 10";
+  EXPECT_EQ(region[2], 60.0) << "one glyph";
+}
+
+TEST(LowerText, AFilterOnASpanHoldsTheSpansInsideIt) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerSpanFiltered(f, "A<tspan filter=\"url(#f)\">B<tspan>C</tspan></tspan>", l));
+  EXPECT_EQ(FilteredGroups(l), (size_t) 1) << "one group for the span and the span inside it";
+  double region[4];
+  ASSERT_TRUE(RegionOf(l, region));
+  EXPECT_EQ(region[0], 70.0);
+  EXPECT_EQ(region[2], 120.0) << "two glyphs";
+}
+
+TEST(LowerText, TheOpacityOfAFilteredSpanIsOnTheGroupOfItsFilter) {
+  // The opacity applies to the filtered result (Filter Effects 1), not to the glyphs under the filter.
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerSpanFiltered(f, "A<tspan filter=\"url(#f)\" opacity=\"0.5\">B</tspan>", l));
+  bool found = false;
+  for (size_t i = 0; i < l.Items(); i++) {
+    const GSHSCENE_Item & it = l.Item(i);
+    if (it.kind == GSHSCENE_ITEM_GROUP_PUSH && it.group.filter) {
+      EXPECT_DOUBLE_EQ(it.group.opacity, 0.5);
+      found = true;
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
+TEST(LowerText, AFilterOnATextPathIsPlacedInTheBoxOfTheGlyphsWhereThePathPutsThem) {
+  // The glyphs' cells are along the line, unplaced; on a path the box is of the cells turned to the path (text/textPath/with-filter).
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerSpanFiltered(f, "<textPath href=\"#p\" filter=\"url(#f)\">AB</textPath>", l, "<path id=\"p\" d=\"M 10 100 L 210 100\"/>"));
+  EXPECT_EQ(FilteredGroups(l), (size_t) 1);
+  double region[4];
+  ASSERT_TRUE(RegionOf(l, region));
+  EXPECT_NEAR(region[0], 20.0, 1e-6) << "the path starts at x 10, and the text's x of 10 is along it";
+  EXPECT_NEAR(region[2], 120.0, 1e-6) << "two glyphs of 60 along a line";
+}
+
+TEST(LowerText, AFilterOnASpanInsideASpanThatHasOneIsRefused) {
+  Fonts f;
+  Lowered l;
+  EXPECT_FALSE(LowerSpanFiltered(f, "<tspan filter=\"url(#f)\">A<tspan filter=\"url(#f)\">B</tspan></tspan>", l));
+  EXPECT_EQ(l.Refusals(), (size_t) 1);
+}
+
 TEST(LowerText, AMarkShapedAsAGlyphOfItsOwnTurnsAboutTheOriginOfItsBase) {
   // The face shapes "A" and U+0301 as two glyphs of one cluster; the rotate list gives the cluster one angle, and both turn about the base's
   // origin, so they are one run under one map (text/text/rotate-with-multiple-values-and-complex-text: the mark used to turn about its own origin).

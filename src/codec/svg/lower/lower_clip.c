@@ -1198,6 +1198,16 @@ GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     }
     return text_result;
   }
+  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_TSPAN || gvec_svg_element_kind(e) == GVEC_SVG_KIND_TEXT_PATH) {
+    /* The box of a span is the cells of its own glyphs, in the space of its text: what a filter on the span is placed in. */
+    bool ok;
+    GVEC_Result span_result = gvec_lw_text_span_box(ctx, inst, box, &ok);
+    *known = true;
+    if (!ok) {
+      box->empty = 1;
+    }
+    return span_result;
+  }
   if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_USE) {
     GSHGEOM_Map identity;
     if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
