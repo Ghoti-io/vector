@@ -918,6 +918,28 @@ TEST(LowerResolverUse, TheMarkersOfExternalElementsCountAgainstTheLoweringsLimit
   EXPECT_EQ(all.Refusals(), (size_t) 0);
 }
 
+TEST(LowerResolverUse, ATextInAnExternalDocumentIsDrawnWithTheFontsOfTheLowering) {
+  // The external document is lowered in a context of its own, whose style is read through the one of the parent: they share the engine that
+  // answers the font units, or a property of the text is read from a style the other engine made and the text is refused.
+  GFNT_FontSet * set = nullptr;
+  const char * dirs[] = {"tests/data/fonts"};
+  static const GFNT_FontAlias aliases[] = {{"sans-serif", "Vector Test"}};
+  ASSERT_EQ(gfnt_fontset_scan(dirs, 1, aliases, 1, nullptr, &set, nullptr), GFNT_OK);
+  GVEC_Fonts * fonts = nullptr;
+  ASSERT_EQ(gvec_fonts_new(set, nullptr, &fonts), GVEC_OK);
+  Fake fake;
+  fake.Put("t.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"><text id=\"t\" font-family=\"sans-serif\" font-size=\"10\">A</text></svg>");
+  GVEC_Lower_Options o;
+  std::memset(&o, 0, sizeof o);
+  o.fonts = fonts;
+  Lowered l;
+  Lower(Doc(UseOf("t.svg#t")), l, fake, o);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_GE(Fills(l), (size_t) 1);
+  gvec_fonts_free(fonts);
+  gfnt_fontset_free(set);
+}
+
 TEST(LowerResolverUse, ANestedExternalReferenceIsResolvedAgainstTheDocumentThatHoldsIt) {
   Fake fake;
   fake.Put("https://h/a/b.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"><g id=\"x\"><use href=\"../c/d.svg#y\"/></g></svg>");

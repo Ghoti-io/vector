@@ -289,8 +289,8 @@ void gvec_svg_element_interface(GTEXT_CSS_Element_Interface * table, void * user
 
 /* A document has no fonts, so the metrics a font would give are the fallbacks CSS Values 4 and CSS Fonts 4 name: the x-height
  * and the advance of "0" are half the font size when the font has none (Values 4, 6.1.1), the cap height is 0.7 em, the advance
- * of U+6C34 is 1 em, and the `normal` line height is 1.2 em. A renderer that has the fonts supplies its own through text layout
- * (a later milestone); these keep a style a function of the document alone. */
+ * of U+6C34 is 1 em, and the `normal` line height is 1.2 em. A lowering that is given fonts has its own engine whose font units are
+ * the faces' (gvec_svg_style_context_new_with_fonts()); these are what every other style reads, a function of the document alone. */
 static bool env_font_metric(void * user, const GTEXT_CSS_Font_Query * query, GTEXT_CSS_Font_Metric metric, double * px) {
   (void) user;
   switch (metric) {
@@ -330,6 +330,11 @@ void gvec_svg_environment(GTEXT_CSS_Environment * env, double width, double heig
 
 GVEC_Result gvec_svg_style_context_new(const GVEC_Svg_Document * document, GVEC_Diagnostics * diagnostics,
     const GVEC_Allocator * allocator, GVEC_Svg_Style_Context ** out_context) {
+  return gvec_svg_style_context_new_with_fonts(document, diagnostics, allocator, NULL, out_context);
+}
+
+GVEC_Result gvec_svg_style_context_new_with_fonts(const GVEC_Svg_Document * document, GVEC_Diagnostics * diagnostics,
+    const GVEC_Allocator * allocator, const gvec_svg_font_hooks * hooks, GVEC_Svg_Style_Context ** out_context) {
   if (!document || !out_context) {
     return GVEC_ERR_INVALID;
   }
@@ -347,8 +352,10 @@ GVEC_Result gvec_svg_style_context_new(const GVEC_Svg_Document * document, GVEC_
   context->color_scheme = document->color_scheme;
   gvec_arena_init(&context->arena, allocator);
 
-  GVEC_Result r = gvec_svg_engine_acquire(allocator, context->viewport_width, context->viewport_height, context->color_scheme,
-      context->limits.max_custom_expansion, &context->engine);
+  GVEC_Result r = hooks ? gvec_svg_engine_make_private(allocator, context->viewport_width, context->viewport_height, context->color_scheme,
+                              context->limits.max_custom_expansion, hooks, &context->engine)
+                        : gvec_svg_engine_acquire(allocator, context->viewport_width, context->viewport_height, context->color_scheme,
+                              context->limits.max_custom_expansion, &context->engine);
   if (r != GVEC_OK) {
     gvec_svg_style_context_free(context);
     return r;

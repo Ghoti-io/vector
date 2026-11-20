@@ -866,6 +866,14 @@ group inside the text's own: the filter's region and the units of the box are th
 its cell turned to the path's direction there, not left along the line. The span's `opacity` is on the filter's group (the result is what is
 faded), and its fill and stroke stay each glyph's. A filter on a span inside a span that has one is refused, not drawn with only one of them.
 
+**X5b The font units are the faces'.** `ex`, `ch`, `cap`, `ic` and the `lh` of a `normal` line height need a face (CSS Values 4, 6.1). A style
+read for a document alone uses the fallbacks the specification names for a font that has none (half an em for `ex` and `ch`, 0.7 for `cap`, an em
+for `ic`, 1.2 em for `normal`). A lowering that is given fonts makes an engine of its own whose callbacks ask them: the face the computed
+`font-family`, weight, width and style select for the character the unit names (`x`, `0`, `H`, U+6C34), its `OS/2` x-height and cap height, the
+advance of the glyph, and ascent, descent and gap of `hhea`; a face that has the value zero, or no such glyph, gets the fallback. Nested documents
+(an external `use`, an `image`) share their parent's engine, since their instances are read through it. The reference corpus is `resvg`'s, which
+takes half the font size for `ex`, so the cases that use it are `ACCEPTED` on the specification and on Chromium, which sizes by the face.
+
 **X6 A `use` has the box of what it draws.** A filter in the units of the box (and the default region) on a `use`, and on a group that holds one,
 takes the box of the referent's instance, moved by the `use`'s `x` and `y` and the referent's own transform, in the `use`'s own space. A `use` of
 nothing or of an element `display` removes adds nothing. The box of a `use` of a viewport (a `symbol` or a nested `svg`) is still not known,

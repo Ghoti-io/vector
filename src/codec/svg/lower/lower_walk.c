@@ -305,7 +305,15 @@ GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC
   if (ctx->refused) {
     memset(ctx->refused, 0, count * sizeof *ctx->refused);
   }
-  GVEC_Result r = gvec_svg_style_context_new(ctx->document, diagnostics, ctx->allocator, &ctx->style);
+  /* With fonts, the units that need a face (`ex`, `ch`, `cap`, `ic`, `lh` of a `normal` line height) are the face's; without them, the fallbacks. */
+  gvec_svg_font_hooks hooks;
+  const bool fonted = ctx->options && ctx->options->fonts;
+  if (fonted) {
+    gvec_fonts_style_hooks(ctx->options->fonts, &hooks);
+    /* A nested document (an external `use`, an `image`) is read through its parent's engine, so it shares it. */
+    hooks.reuse = parent && parent->style ? parent->style->engine : NULL;
+  }
+  GVEC_Result r = gvec_svg_style_context_new_with_fonts(ctx->document, diagnostics, ctx->allocator, fonted ? &hooks : NULL, &ctx->style);
   if (r == GVEC_OK) {
     ctx->style->res = ctx->res;
     ctx->style->base = ctx->base;

@@ -1180,6 +1180,43 @@ size_t FilteredGroups(const Lowered & l) {
 
 }  // namespace
 
+namespace {
+
+/** The font size of the run of `<text font-size=VALUE>A</text>` under a root of 100 (the test face: 1000 units to the em, a glyph 600 wide). */
+double SizeOf(Fonts & f, const std::string & value) {
+  Lowered l;
+  if (!LowerText(f, "font-size=\"" + value + "\"", "A", l)) {
+    return -1;
+  }
+  GSHSCENE_Glyph_Run run;
+  return ReadRun(l, 0, run) ? run.size : -2;
+}
+
+}  // namespace
+
+TEST(LowerText, TheAdvanceOfZeroIsTheFacesAndNotHalfAnEm) {
+  // `ch` is the advance of "0" in the font the parent has (CSS Values 4); the test face's is 600 units, and half an em is the fallback for a font that has none.
+  Fonts f;
+  EXPECT_DOUBLE_EQ(SizeOf(f, "2ch"), 120.0);
+}
+
+TEST(LowerText, TheNormalLineHeightIsTheFacesAscentDescentAndGap) {
+  // `lh` of a `normal` line height: 800 and 200 units of the test face make one em, where the fallback is 1.2.
+  Fonts f;
+  EXPECT_DOUBLE_EQ(SizeOf(f, "1lh"), 100.0);
+}
+
+TEST(LowerText, AFontWithoutAnXHeightOrACapHeightHasTheFallbacksOfValues4) {
+  Fonts f;
+  EXPECT_DOUBLE_EQ(SizeOf(f, "1ex"), 50.0);
+  EXPECT_DOUBLE_EQ(SizeOf(f, "1cap"), 70.0);
+}
+
+TEST(LowerText, TheAdvanceOfAnIdeographTheFaceLacksIsOneEm) {
+  Fonts f;
+  EXPECT_DOUBLE_EQ(SizeOf(f, "1ic"), 100.0);
+}
+
 TEST(LowerText, AFilterOnASpanIsPlacedInTheBoxOfThatSpansGlyphsOnly) {
   // A filter on a `tspan` is applied to the span's own glyphs, in the units of their box (text/tspan/with-filter: Chromium and the corpus's
   // reference blur the span; it used to be dropped and the span drawn as it was).  "A" is outside the filter: the region starts at "B".

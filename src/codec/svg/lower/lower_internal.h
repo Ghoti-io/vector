@@ -396,6 +396,10 @@ GVEC_INTERNAL_API GVEC_Result gvec_fonts_face(const GVEC_Fonts * fonts, const ch
     int italic, double width, uint32_t codepoint, const GFNT_Face ** out, bool * found);
 
 /** The face resource of `face` in `store`, with a reference the caller releases (the scene font is made on first use and kept). */
+struct gvec_svg_font_hooks;
+/** The hooks that answer a style's font-relative units (`ex`, `ch`, `cap`, `ic`, a `normal` line height) from @p fonts. */
+GVEC_INTERNAL_API void gvec_fonts_style_hooks(const GVEC_Fonts * fonts, struct gvec_svg_font_hooks * hooks);
+
 GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
     const GVEC_Fonts * fonts, const GFNT_Face * face, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);
 

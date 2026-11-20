@@ -55,7 +55,7 @@ static void init_cache(void) {
 }
 
 static GVEC_Result build(const GVEC_Allocator * allocator, double w, double h, GVEC_Color_Scheme scheme, size_t expansion,
-    gvec_svg_engine ** out) {
+    const gvec_svg_font_hooks * hooks, gvec_svg_engine ** out) {
   gvec_svg_engine * engine = gvec_alloc(allocator, sizeof *engine);
   if (!engine) {
     return GVEC_ERR_OOM;
@@ -75,6 +75,11 @@ static GVEC_Result build(const GVEC_Allocator * allocator, double w, double h, G
   /* The callbacks ignore their `user`: an engine is shared, and knows nothing of any document. */
   gvec_svg_element_interface(&engine->table, NULL);
   gvec_svg_environment(&engine->env, w, h, scheme, NULL);
+  if (hooks) {
+    engine->env.user = hooks->user;
+    engine->env.font_metric = hooks->metric;
+    engine->env.normal_line_height = hooks->line_height;
+  }
   GTEXT_CSS_Compute_Options options = gtext_css_compute_options_default();
   options.allocator = allocator;
   options.elements = &engine->table;
@@ -113,11 +118,11 @@ static bool is_default(const GVEC_Allocator * allocator) {
 GVEC_Result gvec_svg_engine_acquire(const GVEC_Allocator * allocator, double w, double h, GVEC_Color_Scheme scheme, size_t expansion,
     gvec_svg_engine ** out) {
   if (!is_default(allocator)) {
-    return build(allocator, w, h, scheme, expansion, out);
+    return build(allocator, w, h, scheme, expansion, NULL, out);
   }
   gcu_once(&g_once, init_cache);
   if (!g_ready) {
-    return build(NULL, w, h, scheme, expansion, out);
+    return build(NULL, w, h, scheme, expansion, NULL, out);
   }
   GCU_MUTEX_LOCK(g_mutex);
   gvec_svg_engine * found = find(w, h, scheme, expansion);
@@ -130,7 +135,7 @@ GVEC_Result gvec_svg_engine_acquire(const GVEC_Allocator * allocator, double w, 
   GCU_MUTEX_UNLOCK(g_mutex);
   /* Built outside the lock: another thread may build the same one, and one of them is then dropped below. */
   gvec_svg_engine * made = NULL;
-  GVEC_Result r = build(NULL, w, h, scheme, expansion, &made);
+  GVEC_Result r = build(NULL, w, h, scheme, expansion, NULL, &made);
   if (r != GVEC_OK) {
     return r;
   }
@@ -172,12 +177,25 @@ GVEC_Result gvec_svg_engine_acquire(const GVEC_Allocator * allocator, double w, 
   return GVEC_OK;
 }
 
+GVEC_Result gvec_svg_engine_make_private(const GVEC_Allocator * allocator, double w, double h, GVEC_Color_Scheme scheme, size_t expansion,
+    const gvec_svg_font_hooks * hooks, gvec_svg_engine ** out) {
+  if (hooks && hooks->reuse && !hooks->reuse->shared) {
+    /* The same lowering's, on one thread: its nested documents ask the same fonts, and their instances are read through the parent's engine. */
+    hooks->reuse->references++;
+    *out = hooks->reuse;
+    return GVEC_OK;
+  }
+  return build(is_default(allocator) ? NULL : allocator, w, h, scheme, expansion, hooks, out);
+}
+
 void gvec_svg_engine_release(gvec_svg_engine * engine) {
   if (!engine) {
     return;
   }
   if (!engine->shared) {
-    destroy(engine);
+    if (--engine->references == 0) {
+      destroy(engine);
+    }
     return;
   }
   GCU_MUTEX_LOCK(g_mutex);

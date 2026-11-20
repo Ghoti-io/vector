@@ -97,6 +97,22 @@ typedef struct gvec_svg_engine {
   struct gvec_svg_engine * next;   ///< The cache's list.
 } gvec_svg_engine;
 
+/** What answers the font-relative units a style needs a font for (`ex`, `ch`, `cap`, `ic`, a `normal` line height): the caller's fonts. */
+typedef struct gvec_svg_font_hooks {
+  void * user;
+  bool (*metric)(void * user, const GTEXT_CSS_Font_Query * query, GTEXT_CSS_Font_Metric metric, double * px);
+  bool (*line_height)(void * user, const GTEXT_CSS_Font_Query * query, double * px);
+  struct gvec_svg_engine * reuse; ///< A private engine already made for these fonts (a nested lowering shares its parent's), or NULL.
+} gvec_svg_font_hooks;
+
+/** An engine that is the caller's alone, its font units answered by @p hooks: not in the cache, which holds engines that know no fonts. */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_engine_make_private(const GVEC_Allocator * allocator, double viewport_width, double viewport_height,
+    GVEC_Color_Scheme scheme, size_t max_custom_expansion, const gvec_svg_font_hooks * hooks, gvec_svg_engine ** out);
+
+/** gvec_svg_style_context_new() with @p hooks (NULL: none, the context shares the cached engine). */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_style_context_new_with_fonts(const GVEC_Svg_Document * document, GVEC_Diagnostics * diagnostics,
+    const GVEC_Allocator * allocator, const gvec_svg_font_hooks * hooks, GVEC_Svg_Style_Context ** out_context);
+
 /** The engine for an environment: from the cache when `allocator` is the default and one was made, else made now. */
 GVEC_INTERNAL_API GVEC_Result gvec_svg_engine_acquire(const GVEC_Allocator * allocator, double viewport_width, double viewport_height,
     GVEC_Color_Scheme scheme, size_t max_custom_expansion, gvec_svg_engine ** out);
