@@ -152,6 +152,8 @@ struct GVEC_Svg_Style_Context {
   const GVEC_Svg_Instance ** document_instances; ///< Made by gvec_svg_document_instances().
   uint32_t * component;             ///< After gvec_svg_style_resolve_references(): for each element, the number of the reference cycle it is on (from 1), else 0.
   bool references_resolved;
+  uint32_t * marker_cut;            ///< Pairs (marker, marker) of element orders: the second is cut from the content of the first (svg_refs.c); NULL when there are none.
+  size_t marker_cut_count;          ///< Pairs.
   GTEXT_CSS_Rule_Index * rules;     ///< The rules of the document's `style` elements, frozen; NULL when it has none or before gvec_svg_style_sheets().
   GTEXT_CSS_Conditions * conditions; ///< What `@media`, `@supports` and `@container` of those rules are answered by: the engine's environment, a screen of the viewport's size.
   GTEXT_CSS_Selector_Match_Context * match; ///< The match context of `rules` over the document's tree.

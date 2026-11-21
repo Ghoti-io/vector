@@ -205,7 +205,7 @@ GVEC_Result gvec_svg_used_paint(GVEC_Svg_Style_Context * context, const GVEC_Svg
 }
 
 /* One item of a reference list. */
-static GVEC_Result reference_item(GVEC_Svg_Style_Context * context, const GVEC_Svg_Element * from, const GTEXT_CSS_Value * v,
+static GVEC_Result reference_item(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * v,
     GVEC_Svg_Style_Reference * out) {
   memset(out, 0, sizeof *out);
   char * text = NULL;
@@ -222,7 +222,9 @@ static GVEC_Result reference_item(GVEC_Svg_Style_Context * context, const GVEC_S
   if (v->kind == GTEXT_CSS_VAL_URL) {
     out->is_url = true;
     GVEC_Result r = gvec_svg_resolve_url(context, &v->text, &out->local, &out->id, &out->target);
-    if (r == GVEC_OK && out->target && gvec_svg_reference_cut(context, from, out->target)) {
+    const bool marker = out->target && out->target->kind == GVEC_SVG_KIND_MARKER;
+    if (r == GVEC_OK && out->target &&
+        (marker ? gvec_svg_marker_reference_cut(context, instance, out->target) : gvec_svg_reference_cut(context, instance->element, out->target))) {
       out->target = NULL;
       out->cut = true;
     }
@@ -254,7 +256,7 @@ GVEC_Result gvec_svg_used_references(GVEC_Svg_Style_Context * context, const GVE
     if (keyword_is(&items[i], "none")) {
       continue;
     }
-    GVEC_Result r = reference_item(context, instance->element, &items[i], &refs[n]);
+    GVEC_Result r = reference_item(context, instance, &items[i], &refs[n]);
     if (r != GVEC_OK) {
       return r;
     }

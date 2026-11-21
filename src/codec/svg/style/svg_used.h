@@ -84,6 +84,14 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_resolve_url(GVEC_Svg_Style_Context * cont
     const char ** out_id, const GVEC_Svg_Element ** out_target);
 
 /** Whether a reference of a property to `target` is cut because both are on one cycle through references (gvec_svg_style_resolve_references). */
+/**
+ * Whether a reference to the marker `to`, read on `instance`, is cut because it is inside the content of a marker that is still being walked. A marker that
+ * draws a marker that names it is a cycle; the walk is Chromium's: markers in document order, depth first, each once, and a reference to a marker still
+ * on the walk is cut (so a marker keeps a nested marker the cycle did not make it name again, and a marker reached through another has the cuts of the
+ * way it was first reached by). False outside the content of a marker.
+ */
+GVEC_INTERNAL_API bool gvec_svg_marker_reference_cut(const GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GVEC_Svg_Element * to);
+
 GVEC_INTERNAL_API bool gvec_svg_reference_cut(const GVEC_Svg_Style_Context * context, const GVEC_Svg_Element * from, const GVEC_Svg_Element * to);
 
 /** A paint (`fill`, `stroke`). */

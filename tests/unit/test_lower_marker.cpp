@@ -438,6 +438,37 @@ TEST(LowerMarker, AMarkerThatIsInItsOwnContentIsCutNotLoopedOn) {
   EXPECT_LE(Instances(through_use).size(), (size_t) 1);
 }
 
+TEST(LowerMarker, AMarkerThatNamesItselfThroughAnotherIsCutByAWalkOfTheMarkersInDocumentOrder) {
+  // resvg's painting/marker/recursive-5: marker1 and marker2 both draw path1, which names both. Walking marker1 first, path1 in marker1 loses
+  // marker-start (marker1 is on the walk) and keeps marker-end, whose marker2 is walked from there and loses both of its own (both are on the
+  // walk). So marker1 draws marker2, and marker2 draws nothing more, wherever it is drawn from.
+  Lowered l;
+  LowerSvg(Svg("viewBox=\"0 0 200 200\"",
+               "<defs><marker id=\"m1\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\" refX=\"1\" refY=\"3\"><use href=\"#p1\"/></marker>"
+               "<marker id=\"m2\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\" refX=\"5\" refY=\"3\"><use href=\"#p1\"/></marker>"
+               "<path id=\"p1\" d=\"M1 1 5 3 1 5\" fill=\"none\" stroke=\"blue\" marker-start=\"url(#m1)\" marker-end=\"url(#m2)\"/></defs>"
+               "<path d=\"M10 10L190 190\" fill=\"none\" stroke=\"green\" stroke-width=\"5\" marker-start=\"url(#m1)\" marker-end=\"url(#m2)\"/>"),
+      l);
+  // The strokes drawn, counted through every picture: path2's, marker1's path1, the marker2 inside marker1 (its path1 is bare), and marker2's own path1
+  // (bare). Cut as one element at load, marker1's path1 would lose both markers and there would be three; drawn by a stack of the markers open, marker2's
+  // own path1 would draw marker1 again and there would be more.
+  std::function<size_t(const GSHSCENE_List *)> strokes = [&](const GSHSCENE_List * list) {
+    size_t n = 0;
+    for (size_t i = 0; list && i < gshscene_list_count(list); i++) {
+      const GSHSCENE_Item * item = nullptr;
+      EXPECT_EQ(gshscene_list_item(list, i, &item), GSHSCENE_OK);
+      if (item && item->kind == GSHSCENE_ITEM_STROKE) {
+        n++;
+      }
+      if (item && item->kind == GSHSCENE_ITEM_INSTANCE) {
+        n += strokes(gshscene_resource_picture(item->resource));
+      }
+    }
+    return n;
+  };
+  EXPECT_EQ(strokes(l.list), (size_t) 4);
+}
+
 TEST(LowerMarker, TheShapesTransformMovesItsMarkers) {
   Lowered l;
   LowerSvg(OnlyMarkers(Marker("orient=\"0\""), "<path d=\"M10 10L30 10\" fill=\"none\" transform=\"translate(5 7)\" marker-start=\"url(#m)\"/>"), l);

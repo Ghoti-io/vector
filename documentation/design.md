@@ -428,8 +428,9 @@ root down through the marker's ancestors) and not from the shape, and the percen
 marker used by two shapes with different paints is two pictures, and by two with the same paints, one. The instances are counted
 over the whole lowering, those of markers inside markers too, against `GVEC_Lower_Options.max_marker_instances` (by default and
 at most half the nodes a version of the scene may hold); the element that would pass it is refused whole with `limit`. A picture
-nested past the scene's depth is refused where it is. A marker whose content refers back to it is cut by the document's
-reference graph, which says so when it loads: nothing recurses.
+nested past the scene's depth is refused where it is. A marker whose content refers back to it, or a marker that names another that names it, is cut by a walk of the document's markers in document order, depth
+first, each once: a reference in the content of a marker to a marker still on the walk is cut (Chromium's rule, which `painting/marker/recursive-5` follows), and
+the document's reference graph says so when it loads: nothing recurses, because only the references that close a cycle of the walk are cut.
 
 **K10 Which shapes have markers.** Every shape does, a `rect`, a `circle` and an `ellipse` included (SVG 2, 13.7: markers are painted along "any shape element"); the vertices are those of the shape's path, so the start and end markers of a closed shape are at its first vertex. A marker on a path with an
 elliptical arc is placed like any other: an arc is one segment that ends one vertex, at its authoritative end.

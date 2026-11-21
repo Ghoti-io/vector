@@ -815,7 +815,9 @@ TEST(SvgStyleReferences, APatternPaintedWithItselfAndMarkersThroughUse) {
   EXPECT_EQ(pr.kind, GVEC_SVG_PAINT_COLOR);
   EXPECT_EQ(pr.color.color.rgba[0], 1.0);
   EXPECT_EQ(s.Get("user", GVEC_SVG_PROP_FILL).paint.kind, GVEC_SVG_PAINT_SERVER);
-  EXPECT_TRUE(s.Get("shape", GVEC_SVG_PROP_MARKER_START).references[0].cut);
+  /* A reference to a marker is cut by where it is read, the walk of the markers: the shape in the document is not in the content of a marker (its clone is,
+   * which the lowering tests draw). */
+  EXPECT_FALSE(s.Get("shape", GVEC_SVG_PROP_MARKER_START).references[0].cut);
 }
 
 TEST(SvgStyleReferences, DocumentsWithoutCyclesAndManyReferences) {

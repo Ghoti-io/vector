@@ -123,6 +123,154 @@ typedef struct frame {
   size_t next_edge;
 } frame;
 
+/* The elements whose content a marker walk does not read: what is not drawn where it stands (a marker nested in a marker, a `defs`, what a property
+ * references). */
+static bool not_walked(GVEC_Svg_Kind kind) {
+  return kind == GVEC_SVG_KIND_MARKER || kind == GVEC_SVG_KIND_DEFS || kind == GVEC_SVG_KIND_CLIP_PATH || kind == GVEC_SVG_KIND_MASK ||
+      kind == GVEC_SVG_KIND_FILTER || kind == GVEC_SVG_KIND_PATTERN || kind == GVEC_SVG_KIND_LINEAR_GRADIENT || kind == GVEC_SVG_KIND_RADIAL_GRADIENT;
+}
+
+typedef struct marker_refs {
+  uint32_t * items;
+  size_t count, capacity;
+} marker_refs;
+
+/* The markers the content of `marker` names, in document order: its elements and, at a `use`, the element it clones, each one's marker-start,
+ * marker-mid and marker-end (the order the edges were made in). `seen` (n bytes, zero) is left as it was found. */
+static GVEC_Result content_refs(GVEC_Svg_Style_Context * context, const GVEC_Svg_Document * doc, const size_t * start, const prop_edge * sorted,
+    const GVEC_Svg_Element * marker, uint8_t * seen, uint32_t * work, marker_refs * out) {
+  size_t top = 0, touched = 0;
+  GVEC_Result r = GVEC_OK;
+  work[top++] = marker->order;
+  uint32_t * visited = work + doc->element_count; /* the elements marked, to clear them */
+  while (top > 0 && r == GVEC_OK) {
+    const GVEC_Svg_Element * e = doc->elements[work[--top]];
+    if (seen[e->order]) {
+      continue;
+    }
+    seen[e->order] = 1;
+    visited[touched++] = e->order;
+    for (size_t k = start[e->order]; k < start[e->order + 1]; k++) {
+      if (doc->elements[sorted[k].to]->kind != GVEC_SVG_KIND_MARKER) {
+        continue;
+      }
+      if (out->count == out->capacity) {
+        size_t capacity = out->capacity ? out->capacity * 2 : 8;
+        uint32_t * grown = gvec_realloc(context->allocator, out->items, capacity * sizeof *grown);
+        if (!grown) {
+          r = GVEC_ERR_OOM;
+          break;
+        }
+        out->items = grown;
+        out->capacity = capacity;
+      }
+      out->items[out->count++] = sorted[k].to;
+    }
+    /* Pre-order, so the last child is pushed first. A `use` is its target. */
+    if (e->href_target && e->kind == GVEC_SVG_KIND_USE && !not_walked(e->href_target->kind) && top < doc->element_count) {
+      work[top++] = e->href_target->order;
+    }
+    /* The children are pushed and the pushed run reversed, so that the first child is the next to be read. */
+    size_t base = top;
+    for (const GVEC_Svg_Element * c = gvec_svg_element_first_child(e); c && top < doc->element_count; c = gvec_svg_element_next_sibling(c)) {
+      if (!not_walked(c->kind)) {
+        work[top++] = c->order;
+      }
+    }
+    for (size_t a = base, b = top; a + 1 < b; a++, b--) {
+      uint32_t t = work[a];
+      work[a] = work[b - 1];
+      work[b - 1] = t;
+    }
+  }
+  for (size_t i = 0; i < touched; i++) {
+    seen[visited[i]] = 0;
+  }
+  return r;
+}
+
+/* Chromium's walk of the markers (see gvec_svg_marker_reference_cut): the pairs (marker, marker named by its content) that are cut. */
+static GVEC_Result walk_markers(GVEC_Svg_Style_Context * context, const GVEC_Svg_Document * doc, const size_t * start, const prop_edge * sorted) {
+  const size_t n = doc->element_count;
+  uint8_t * state = gvec_alloc(context->allocator, n ? n : 1);
+  uint8_t * seen = gvec_alloc(context->allocator, n ? n : 1);
+  uint32_t * work = gvec_alloc(context->allocator, (n ? n : 1) * 2 * sizeof *work);
+  struct walk_frame {
+    uint32_t marker;
+    marker_refs refs;
+    size_t next;
+  } * frames = gvec_alloc(context->allocator, (n ? n : 1) * sizeof *frames);
+  uint32_t * cuts = NULL;
+  size_t cut_count = 0, cut_capacity = 0;
+  GVEC_Result r = GVEC_OK;
+  if (!state || !seen || !work || !frames) {
+    r = GVEC_ERR_OOM;
+    goto done;
+  }
+  memset(state, 0, n ? n : 1);
+  memset(seen, 0, n ? n : 1);
+  for (size_t root = 0; root < n && r == GVEC_OK; root++) {
+    if (doc->elements[root]->kind != GVEC_SVG_KIND_MARKER || state[root]) {
+      continue;
+    }
+    size_t depth = 0;
+    frames[0] = (struct walk_frame){(uint32_t) root, {NULL, 0, 0}, 0};
+    state[root] = 1;
+    r = content_refs(context, doc, start, sorted, doc->elements[root], seen, work, &frames[0].refs);
+    depth = 1;
+    while (depth > 0 && r == GVEC_OK) {
+      struct walk_frame * f = &frames[depth - 1];
+      if (f->next < f->refs.count) {
+        const uint32_t target = f->refs.items[f->next++];
+        if (state[target] == 1) {
+          if (cut_count + 2 > cut_capacity) {
+            size_t capacity = cut_capacity ? cut_capacity * 2 : 16;
+            uint32_t * grown = gvec_realloc(context->allocator, cuts, capacity * sizeof *grown);
+            if (!grown) {
+              r = GVEC_ERR_OOM;
+              break;
+            }
+            cuts = grown;
+            cut_capacity = capacity;
+          }
+          cuts[cut_count++] = f->marker;
+          cuts[cut_count++] = target;
+        }
+        else if (state[target] == 0) {
+          state[target] = 1;
+          frames[depth] = (struct walk_frame){target, {NULL, 0, 0}, 0};
+          r = content_refs(context, doc, start, sorted, doc->elements[target], seen, work, &frames[depth].refs);
+          depth++;
+        }
+        continue;
+      }
+      state[f->marker] = 2;
+      gvec_free(context->allocator, f->refs.items);
+      depth--;
+    }
+    while (depth > 0) { /* an error: free what is held */
+      gvec_free(context->allocator, frames[--depth].refs.items);
+    }
+  }
+  if (r == GVEC_OK && cut_count) {
+    context->marker_cut = gvec_arena_array(&context->arena, cut_count, sizeof *cuts, 4);
+    if (!context->marker_cut) {
+      r = GVEC_ERR_OOM;
+    }
+    else {
+      memcpy(context->marker_cut, cuts, cut_count * sizeof *cuts);
+      context->marker_cut_count = cut_count / 2;
+    }
+  }
+done:
+  gvec_free(context->allocator, cuts);
+  gvec_free(context->allocator, frames);
+  gvec_free(context->allocator, work);
+  gvec_free(context->allocator, seen);
+  gvec_free(context->allocator, state);
+  return r;
+}
+
 GVEC_Result gvec_svg_style_resolve_references(GVEC_Svg_Style_Context * context) {
   if (!context) {
     return GVEC_ERR_INVALID;
@@ -313,6 +461,10 @@ GVEC_Result gvec_svg_style_resolve_references(GVEC_Svg_Style_Context * context) 
       r = GVEC_OK;
     }
   }
+  r = walk_markers(context, doc, start, sorted);
+  if (r != GVEC_OK) {
+    goto done;
+  }
   context->component = component;
   context->references_resolved = true;
 done:
@@ -337,4 +489,22 @@ bool gvec_svg_reference_cut(const GVEC_Svg_Style_Context * context, const GVEC_S
   }
   uint32_t c = context->component[from->order];
   return c != 0 && c == context->component[to->order];
+}
+
+bool gvec_svg_marker_reference_cut(const GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GVEC_Svg_Element * to) {
+  if (!context || !instance || !to || context->marker_cut_count == 0) {
+    return false;
+  }
+  for (const GVEC_Svg_Instance * i = instance; i; i = i->parent) {
+    if (i->element->kind != GVEC_SVG_KIND_MARKER) {
+      continue;
+    }
+    for (size_t k = 0; k < context->marker_cut_count; k++) {
+      if (context->marker_cut[2 * k] == i->element->order && context->marker_cut[2 * k + 1] == to->order) {
+        return true;
+      }
+    }
+    return false;
+  }
+  return false;
 }
