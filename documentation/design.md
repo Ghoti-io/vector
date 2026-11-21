@@ -549,7 +549,7 @@ interface (the parent, siblings, `id`, the words of `class`, attributes, order),
 rule, and importance, specificity and order of appearance decide between rules. A rule or declaration that is not valid is dropped and reported as a
 warning at its `style` element. A sheet that cannot be applied whole is not applied, and the lowering refuses its `style` element (GVEC_LOWER_STYLESHEET)
 so that the document is not drawn half styled: an `@import` the caller's resolver does not supply (the Resources section; the library never fetches), or an imported sheet
-that cannot be had. A conditional rule (`@media`, `@supports`, `@container`, `@when`) and an `@import` with a condition are answered by the engine's evaluator, in an environment
+that cannot be had. A conditional rule (`@media`, `@supports`, `@container`, `@when`) and an `@import` with a `media` or `supports` condition (a `scope` condition is refused) are answered by the engine's evaluator, in an environment
 that is a screen of the viewport's size at 1 dppx, in the document's color scheme; no element is a container, so a container query is false, and `@supports` answers for the
 properties of the engine's registry (what the renderer draws is not asked). Geometry given in style (`height: 160px` on a `rect`) is read as SVG 2 reads it.
 

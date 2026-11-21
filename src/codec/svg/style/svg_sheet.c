@@ -99,9 +99,9 @@ static GVEC_Result compile_text(sheet_frame * frame, const char * text, size_t l
 static GTEXT_CSS_Sheet * import_sheet(void * user, const GTEXT_CSS_Import_Request * request) {
   sheet_frame * frame = user;
   GVEC_Svg_Style_Context * context = frame->context;
-  if (request->has_media || request->has_supports || request->has_scope) {
+  if (request->has_scope) {
     frame->failed = true;
-    refuse(context, frame->element, "an @import has a media, supports or scope condition, which are not applied");
+    refuse(context, frame->element, "an @import has a scope condition, which is not applied");
     return NULL;
   }
   if (!context->res || !gvec_res_enabled(context->res)) {

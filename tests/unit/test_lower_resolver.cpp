@@ -711,8 +711,19 @@ TEST(LowerResolverStyle, AnImportInALayerIsInThatLayerAndLosesToUnlayeredRules) 
   EXPECT_TRUE(IsRed(FillOf(alone, 0))) << "a rule of a layer still beats a presentation attribute";
 }
 
-TEST(LowerResolverStyle, AnImportWithAMediaSupportsOrScopeConditionIsRefusedHonestlyAndNotAsked) {
-  for (const char * condition : {"screen", "(min-width: 10px)", "supports(display: block)", "scope(.x)", "scope"}) {
+TEST(LowerResolverStyle, AnImportWithAMediaOrSupportsConditionIsAppliedWhenItHoldsAndAScopeConditionIsRefusedAndNotAsked) {
+  struct Row { const char * condition; bool applies; };
+  for (const Row & row : {Row{"screen", true}, Row{"print", false}, Row{"(min-width: 10px)", true}, Row{"(max-width: 10px)", false},
+           Row{"supports(display: block)", true}, Row{"supports(not (fill: red))", false}}) {
+    Fake fake;
+    fake.Put("a.css", "#a { fill: green }");
+    Lowered l;
+    Lower(Doc(Style(std::string("@import \"a.css\" ") + row.condition + ";") + Shape("fill=\"red\"")), l, fake);
+    EXPECT_EQ(l.Refusal(GVEC_LOWER_STYLESHEET), nullptr) << row.condition;
+    ASSERT_EQ(Fills(l), (size_t) 1) << row.condition;
+    EXPECT_EQ(IsGreen(FillOf(l, 0)), row.applies) << row.condition;
+  }
+  for (const char * condition : {"scope(.x)", "scope"}) {
     Fake fake;
     fake.Put("a.css", "#a { fill: green }");
     Lowered l;
