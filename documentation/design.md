@@ -765,6 +765,12 @@ reference to nothing and a cycle (the element's own filter is one being built) a
 deep through their `feImage`s, past which the filter is refused (`limit`). The rendering the primitive carries is the magnify filter of R9, which the CPU sink
 does not yet use: it draws the primitive with the nearest texel only (the corpus rows say so).
 
+**What a filter sees of its source.** A sink draws a filtered group into the extent of the target, so a filter finds the source graphic only where it is on the target:
+the offset of a skewed element, a tile or a blur that would bring content in from outside it finds nothing there, where the browsers and the references draw the
+filter over its whole region. A caller that wants that draws over the extent joined with `gshscene_filter_reach(list, target_map, ...)`, the device rectangle that the
+regions of the list's filters reach (a raster of that size, the target's map moved by its origin), and keeps the extent; the conformance runner does so, at most one
+extent's size beyond it on a side.
+
 ## Resources: the resolver (S1 to S10)
 
 A document may name bytes it does not hold: an `image` of a URL, a `style` with an `@import`, a `use` of an element of another file. By default none of them

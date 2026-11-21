@@ -476,12 +476,50 @@ static void run_case(const Options * o, const char * name, Verdict * v) {
     say(v, "ERROR", "render setup");
     goto done;
   }
+  /* A filter sees the source graphic inside the target's extent only; the references draw a filter over its whole region, so the render is made over
+   * the extent joined with the regions of the filters (at most the extent's size beyond it on a side) and the extent is cut from it. */
+  GIMG_Raster * wide_raster = NULL;
+  GSHSCENE_Target wide_target = target;
+  int64_t wide_x = 0, wide_y = 0;
+  {
+    GSHSCENE_Rect reach;
+    int found = 0;
+    if (gshscene_filter_reach(list, &target.map, NULL, &reach, &found) == GSHSCENE_OK && found &&
+        (reach.x0 < 0 || reach.y0 < 0 || reach.x1 > (int64_t) w || reach.y1 > (int64_t) h)) {
+      const int64_t margin_x = (int64_t) w, margin_y = (int64_t) h;
+      const int64_t x0 = reach.x0 < -margin_x ? -margin_x : reach.x0 < 0 ? reach.x0 : 0, y0 = reach.y0 < -margin_y ? -margin_y : reach.y0 < 0 ? reach.y0 : 0;
+      const int64_t x1 = reach.x1 > (int64_t) w + margin_x ? (int64_t) w + margin_x : reach.x1 > (int64_t) w ? reach.x1 : (int64_t) w;
+      const int64_t y1 = reach.y1 > (int64_t) h + margin_y ? (int64_t) h + margin_y : reach.y1 > (int64_t) h ? reach.y1 : (int64_t) h;
+      GSHGEOM_Map shift;
+      if (gimg_raster_create((uint32_t) (x1 - x0), (uint32_t) (y1 - y0), &format, GIMG_RASTER_OWNED, NULL, 0, &wide_raster) != GIMG_OK ||
+          gshgeom_map_translate(2, (double) -x0, (double) -y0, 0, &shift) != GSHGEOM_OK ||
+          gshgeom_map_compose(&shift, &target.map, &wide_target.map) != GSHGEOM_OK) {
+        say(v, "ERROR", "render setup (the wide target)");
+        goto done;
+      }
+      wide_target.surface = wide_raster;
+      wide_x = -x0;
+      wide_y = -y0;
+    }
+  }
   GSHSCENE_Render_Request request;
   memset(&request, 0, sizeof request);
   request.list = list;
-  request.target = &target;
+  request.target = wide_raster ? &wide_target : &target;
   request.report = report;
   GSHSCENE_Result sr = gshscene_sink_render(sink, &request);
+  if (sr == GSHSCENE_OK && wide_raster) {
+    /* The extent of the target, cut from the wide render. */
+    const size_t pixel = gimg_raster_bytes_per_pixel(&format);
+    unsigned char * to = gimg_raster_pixels(raster);
+    const unsigned char * from = gimg_raster_pixels(wide_raster);
+    const size_t to_stride = gimg_raster_stride_bytes(raster), from_stride = gimg_raster_stride_bytes(wide_raster);
+    for (uint32_t y = 0; y < h; y++) {
+      memcpy(to + (size_t) y * to_stride, from + (size_t) (y + wide_y) * from_stride + (size_t) wide_x * pixel, (size_t) w * pixel);
+    }
+  }
+  gimg_raster_destroy(wide_raster);
+  wide_raster = NULL;
   if (sr != GSHSCENE_OK) {
     say(v, "ERROR", "render %s", gshscene_result_string(sr));
     goto done;
