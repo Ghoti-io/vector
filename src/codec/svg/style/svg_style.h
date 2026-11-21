@@ -157,6 +157,8 @@ struct GVEC_Svg_Style_Context {
   GTEXT_CSS_Selector_Match_Context * match; ///< The match context of `rules` over the document's tree.
   GTEXT_CSS_Atrule_Set * atrules;   ///< The at-rules of the same sheets (`@font-feature-values`), in cascade order; frozen at the first find. NULL when there are no sheets.
   bool atrules_frozen;
+  struct gvec_svg_profile * profiles; ///< The `@color-profile`s a color has named, each had once (svg_profile.c).
+  size_t profile_count, profile_capacity;
   bool sheets_ready;                ///< gvec_svg_style_sheets() ran.
   GVEC_Result sheets_result;        ///< What it returned.
   const GVEC_Svg_Element * sheet_refused; ///< The first `style` element whose sheet could not be applied (an `@import`, a conditional rule), else NULL.
@@ -186,6 +188,21 @@ GVEC_INTERNAL_API bool gvec_svg_once_first(GVEC_Svg_Style_Context * context, gve
 /** A diagnostic of the style layer, located at the attribute when there is one, else at the element. */
 /** The `@font-feature-values` of the family `family` (a name as written), merged in cascade order over the document's sheets; NULL when it has none. */
 GVEC_INTERNAL_API const GTEXT_CSS_Feature_Values * gvec_svg_style_feature_values(GVEC_Svg_Style_Context * context, const char * family, size_t length);
+
+/** The `@color-profile` of this name in the document's sheets (the last wins), or NULL. */
+GVEC_INTERNAL_API const GTEXT_CSS_Color_Profile * gvec_svg_style_color_profile(GVEC_Svg_Style_Context * context, const char * name, size_t length);
+
+typedef struct gvec_svg_profile gvec_svg_profile;
+
+/**
+ * A color in the space of a `@color-profile` (a `color(--name ...)`, or `device-cmyk()` when the document names a profile for it), as linear Rec. 2020 in
+ * `rgb`. The profile is asked of the resolver the first time. GVEC_ERR_UNSUPPORTED with `*why` when it cannot be had or used; GVEC_ERR_OOM.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_style_profile_color(GVEC_Svg_Style_Context * context, const char * name, size_t length, const double * channels,
+    size_t count, double rgb[3], const char ** why);
+
+/** Free the profiles a context holds. */
+GVEC_INTERNAL_API void gvec_svg_style_profiles_free(GVEC_Svg_Style_Context * context);
 
 GVEC_INTERNAL_API GVEC_Result gvec_svg_style_diag(GVEC_Svg_Style_Context * context, GVEC_Diag_Severity severity, GVEC_Diag_Code code,
     uint32_t detail, const GVEC_Svg_Element * element, const GVEC_Svg_Attribute * attribute, const char * message);

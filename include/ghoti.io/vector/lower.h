@@ -123,7 +123,8 @@ typedef enum GVEC_Image_Problem {
 typedef enum GVEC_Resource_Kind {
   GVEC_RESOURCE_IMAGE = 1,  ///< The data of an `image` or an `feImage`: a raster, or an SVG document (the bytes decide).
   GVEC_RESOURCE_STYLE,      ///< A style sheet named by an `@import` of a `style` element or of a sheet already imported.
-  GVEC_RESOURCE_DOCUMENT    ///< An SVG document that an `href` of a `use` names an element of.
+  GVEC_RESOURCE_DOCUMENT,   ///< An SVG document that an `href` of a `use` names an element of.
+  GVEC_RESOURCE_COLOR_PROFILE ///< An ICC profile named by the `src` of a `@color-profile` (the space of a `color(--name ...)`, or of `device-cmyk()`); bounded by `max_image_bytes`.
 } GVEC_Resource_Kind;
 
 /**

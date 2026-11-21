@@ -548,6 +548,25 @@ TEST(SvgStyleColor, SystemColors) {
   EXPECT_EQ(FillOf(only_dark, "c").color.rgba[0], 0.0);
 }
 
+TEST(SvgStyleColor, ASystemColorInAMixOrARelativeColorIsTheTableValueInTheElementsScheme) {
+  Styled light(Svg("", "<rect id=\"m\" fill=\"color-mix(in srgb, Canvas, red)\"/><rect id=\"f\" fill=\"color-mix(in srgb, ButtonFace, black)\"/>"
+                       "<rect id=\"r\" fill=\"rgb(from ButtonFace r g 0)\"/><rect id=\"t\" fill=\"color-mix(in srgb, CanvasText, white)\"/>"));
+  GVEC_Svg_Color m = FillOf(light, "m");
+  EXPECT_EQ(m.kind, GVEC_SVG_COLOR_SOLID);
+  EXPECT_NEAR(m.color.rgba[0], 1.0, 1e-3) << "white and red, half each";
+  EXPECT_NEAR(m.color.rgba[1], 0.5, 1e-3);
+  EXPECT_NEAR(m.color.rgba[2], 0.5, 1e-3);
+  EXPECT_NEAR(FillOf(light, "f").color.rgba[0], 0xef / 255.0 / 2, 2e-3) << "ButtonFace is the table's, half of it";
+  GVEC_Svg_Color r = FillOf(light, "r");
+  EXPECT_NEAR(r.color.rgba[0], 0xef / 255.0, 2e-3);
+  EXPECT_NEAR(r.color.rgba[2], 0.0, 1e-3);
+  EXPECT_NEAR(FillOf(light, "t").color.rgba[0], 0.5, 2e-3) << "CanvasText is black in the light scheme";
+  Styled dark(Svg("style=\"color-scheme: dark\"", "<rect id=\"m\" fill=\"color-mix(in srgb, Canvas, red)\"/><rect id=\"t\" fill=\"color-mix(in srgb, CanvasText, black)\"/>"));
+  EXPECT_NEAR(FillOf(dark, "m").color.rgba[0], 0.5, 2e-3) << "Canvas is black in the dark scheme";
+  EXPECT_NEAR(FillOf(dark, "m").color.rgba[1], 0.0, 1e-3);
+  EXPECT_NEAR(FillOf(dark, "t").color.rgba[0], 0.5, 2e-3) << "and CanvasText white";
+}
+
 TEST(SvgStylePaint, ServersFallbacksAndKeywords) {
   Styled s(Svg("", "<defs><linearGradient id=\"g\"/><pattern id=\"p\"/><rect id=\"notaserver\"/></defs>"
                    "<rect id=\"a\" fill=\"url(#g)\"/><rect id=\"b\" fill=\"url(#p) red\"/><rect id=\"c\" fill=\"url(#missing) blue\"/>"

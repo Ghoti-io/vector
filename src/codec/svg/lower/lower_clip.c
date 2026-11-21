@@ -34,9 +34,12 @@
 
 #include <ghoti.io/math/elementary.h>
 #include <ghoti.io/shape-geometry/arc.h>
+#include <ghoti.io/shape-geometry/flatten.h>
 #include <ghoti.io/shape-geometry/path.h>
+#include <ghoti.io/shape-geometry/stroke.h>
 #include <ghoti.io/shape-scene/clip_union.h>
 #include <ghoti.io/shape-scene/glyph.h>
+#include <ghoti.io/shape-scene/stroke.h>
 
 #include "lower_internal.h"
 
@@ -1067,26 +1070,53 @@ static void merge_bounds(GSHGEOM_Bounds * acc, const GSHGEOM_Bounds * b) {
   acc->max.y = b->max.y > acc->max.y ? b->max.y : acc->max.y;
 }
 
-/* How far the stroke of a shape reaches past its fill box, in the space `map` leads to: half the stroke width, scaled by the map. Joins and
- * caps that reach further than half the width (a miter at a sharp angle, a square cap on a slanted line) are not counted. */
-static GVEC_Result stroke_pad(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * map, double * pad) {
-  GVEC_Svg_Style_Value v;
-  bool usable;
-  *pad = 0;
-  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_STROKE, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, &v, &usable);
-  if (r != GVEC_OK || !usable || v.paint.kind == GVEC_SVG_PAINT_NONE) {
+/* The box of the stroke of a shape, in the space `map` leads to: the bounds of the outline the stroker makes of the shape's centerline (joins, caps,
+ * miters and dashes included), grown into `*box` (which holds the fill box in that space). The outline is made at 16 device units to the unit, so
+ * the box is exact to 1/1024 of a unit. *ok is false when the stroke cannot be boxed (it is refused, or the stroker's limits are passed). */
+GVEC_Result gvec_lw_stroke_bounds(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHSCENE_Resource * centerline, const GSHGEOM_Map * map,
+    GSHGEOM_Bounds * box, bool * ok) {
+  enum { SCALE = 16 };
+  *ok = true;
+  gvec_lw_stroke stroke;
+  GVEC_Result r = gvec_lw_stroke_of(ctx, inst, &stroke);
+  if (r != GVEC_OK) {
     return r;
   }
-  r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_STROKE_WIDTH, GVEC_LOWER_STYLE, &v, &usable);
-  if (r != GVEC_OK || !usable) {
-    return r;
-  }
-  double width = v.kind == GVEC_SVG_STYLE_LENGTH ? v.number : 1;
-  if (!(width > 0)) {
+  if (stroke.decision == GVEC_LW_PAINT_REFUSED) {
+    *ok = false;
     return GVEC_OK;
   }
-  double sx = gmath_hypot(map->m[0][0], map->m[1][0]), sy = gmath_hypot(map->m[0][1], map->m[1][1]);
-  *pad = width / 2 * (sx > sy ? sx : sy);
+  if (stroke.decision != GVEC_LW_PAINT_DRAW) {
+    return GVEC_OK; /* no stroke: the box is the fill box */
+  }
+  GSHGEOM_Stroke geometry;
+  GSHGEOM_Map scaled = *map;
+  for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 2; j++) {
+      scaled.m[i][j] *= SCALE;
+    }
+    scaled.t[i] *= SCALE;
+  }
+  GSHGEOM_Stroke_Outline * outline = NULL;
+  if (gshscene_resource_stroke_geometry(stroke.style, &geometry) != GSHSCENE_OK ||
+      gshgeom_stroke_expand(gshscene_resource_path(centerline), &geometry, &scaled, NULL, NULL, &outline) != GSHGEOM_OK) {
+    *ok = false;
+    return GVEC_OK;
+  }
+  if (gshgeom_stroke_outline_status(outline) == GSHGEOM_STROKE_DRAWN) {
+    const GSHGEOM_Flat_Path * parts[2] = {gshgeom_stroke_outline_body(outline), gshgeom_stroke_outline_aligned(outline)};
+    GSHGEOM_Bounds grown = *box;
+    for (int k = 0; k < 2; k++) {
+      const GSHGEOM_Device_Point * points = gshgeom_flat_path_points(parts[k]);
+      for (size_t i = 0, n = gshgeom_flat_path_point_count(parts[k]); points && i < n; i++) {
+        GSHGEOM_Point p = {(double) points[i].x / (GSHGEOM_DEVICE_ONE * SCALE), (double) points[i].y / (GSHGEOM_DEVICE_ONE * SCALE), 0};
+        GSHGEOM_Bounds one = {0, p, p};
+        merge_bounds(&grown, &one);
+      }
+    }
+    *box = grown;
+  }
+  gshgeom_stroke_outline_destroy(outline);
   return GVEC_OK;
 }
 
@@ -1303,16 +1333,16 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
         *known = false;
         return GVEC_OK;
       }
-      double pad = 0;
       if (ctx->box_stroke && !one.empty) {
-        r = stroke_pad(ctx, ci, &inner, &pad);
+        bool stroked;
+        r = gvec_lw_stroke_bounds(ctx, ci, path, &inner, &one, &stroked);
         if (r != GVEC_OK) {
           return r;
         }
-        one.min.x -= pad;
-        one.min.y -= pad;
-        one.max.x += pad;
-        one.max.y += pad;
+        if (!stroked) {
+          *known = false;
+          return GVEC_OK;
+        }
       }
       merge_bounds(box, &one);
     }
@@ -1477,18 +1507,17 @@ GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   if (ctx->box_stroke && !box->empty) {
     /* The stroke box: the fill box grown by what the stroke reaches past the path. */
     GSHGEOM_Map identity;
-    double pad = 0;
+    bool stroked;
     if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
       return GVEC_ERR_INTERNAL;
     }
-    r = stroke_pad(ctx, inst, &identity, &pad);
+    r = gvec_lw_stroke_bounds(ctx, inst, path, &identity, box, &stroked);
     if (r != GVEC_OK) {
       return r;
     }
-    box->min.x -= pad;
-    box->min.y -= pad;
-    box->max.x += pad;
-    box->max.y += pad;
+    if (!stroked) {
+      *known = false;
+    }
   }
   return GVEC_OK;
 }

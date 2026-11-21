@@ -245,11 +245,15 @@ written, are converted with the `color` library's matrices to linear Rec. 2020; 
 `double`. `lab()`, `lch()` (D50), `oklab()`, `oklch()` and `color(xyz ...)` are converted exactly (CSS Color 4, 9) and Bradford-adapted
 to linear Rec. 2020 too, a color outside the gamut kept with a component beyond `[0, 1]` for the sink to map into its target. `color-mix()`, relative colors,
 `alpha()` and `contrast-color()` are computed by the engine to a color of one of these forms (with the element's `color` where `currentcolor` is written) and read
-from it; `device-cmyk()` is the naive conversion. The system colors are a table of the library's own (CSS Color 4 leaves their values to the user
+from it; `device-cmyk()` is the naive conversion unless the document names a `@color-profile device-cmyk` for it. The system colors are a table of the library's own (CSS Color 4 leaves their values to the user
 agent, and the two browsers differ): Chromium's values, light and dark, a deprecated name being the color CSS Color 4 maps it to; `Canvas` and
-`CanvasText` are the document's background and foreground. What is refused is a `color()` space named by `@color-profile` (no engine applies
-one) and a mix or relative color that holds a system color: reading one is `GVEC_ERR_UNSUPPORTED` and a `GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's
-location. `Canvas`, `CanvasText` and `light-dark()` follow the element's used color scheme: `color-scheme:
+`CanvasText` are the document's background and foreground. A `color()` in a space a `@color-profile` names (and `device-cmyk()` when the document names a profile for it) is converted through the ICC profile that
+rule's `src` names, which the caller's resolver supplies (`GVEC_RESOURCE_COLOR_PROFILE`, bounded by `max_image_bytes`, resolved against the document's base,
+asked once per document), by the `color` library's transform at the rule's rendering intent to linear Rec. 2020; the browsers ignore `@color-profile`, so the oracle
+draws such a declaration as if it were not written and a document that uses one is not compared. What is refused is a profile that cannot be had (no resolver,
+refused, not found, not an ICC profile, not RGB, CMYK or gray, with no table for the intent, or with other channels than the color writes): reading one is `GVEC_ERR_UNSUPPORTED` and a `GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's
+location. A system color inside a `color-mix()` or a relative color is written to the engine as the `rgb()` color the table gives in the element's scheme (`CanvasText`, the
+document's foreground, which a computation cannot leave open, as black in the light scheme and white in the dark). `Canvas`, `CanvasText` and `light-dark()` follow the element's used color scheme: `color-scheme:
 normal` is light, and the preference of the load options decides only for an element that supports both.
 
 **C9 Other used values.** `transform` is the list of its functions, the origin and the box; with the initial
@@ -798,7 +802,7 @@ The resolver cannot make the library read what it was not handed: a reply longer
 size with no bytes is a failure, a media type that is not a short NUL-terminated string is ignored. A resolver that maps a URL to a path owns that policy
 (`..`, links, schemes): the library gives it the resolved string and nothing more.
 
-**S2 What the resolver is asked.** A `GVEC_Resource_Request`: the `kind` (`image`, `style`, `document`), the `reference` as written (without its `#fragment`),
+**S2 What the resolver is asked.** A `GVEC_Resource_Request`: the `kind` (`image`, `style`, `document`, `color-profile`), the `reference` as written (without its `#fragment`),
 the `url` (the reference resolved against the `base`, RFC 3986 section 5.2.2, the fragment dropped, the dot segments removed; with no base, or a base that is
 itself relative, a `..` with nothing above it is kept, so that the string names what the document named and nothing else), the `base` (the options' `base_uri`,
 or the `url` of the resource that named this one), the byte limit (the smaller of the kind's limit, `max_image_bytes`, `max_style_bytes` or `max_input_bytes`, and

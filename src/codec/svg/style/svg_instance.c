@@ -395,6 +395,7 @@ void gvec_svg_style_context_free(GVEC_Svg_Style_Context * context) {
   gtext_css_selector_match_context_free(context->match);
   gtext_css_rule_index_free(context->rules);
   gtext_css_atrule_set_free(context->atrules);
+  gvec_svg_style_profiles_free(context);
   gtext_css_conditions_free(context->conditions);
   gvec_free(context->allocator, context->styles);
   gvec_svg_engine_release(context->engine);

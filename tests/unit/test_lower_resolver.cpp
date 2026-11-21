@@ -28,6 +28,8 @@
  */
 
 #include "../lower_helpers.h"
+
+#include <cmath>
 #include "../../src/codec/svg/svg_resource.h"
 
 #include <ghoti.io/shape-scene/image.h>
@@ -1184,6 +1186,144 @@ TEST(LowerResolverAllocation, EveryFailureOnTheResolverPathIsOutOfMemoryAndNothi
     }
   }
   EXPECT_GT(total, 100);
+}
+
+//-----------------------------------------------------------------------------
+// @color-profile
+//-----------------------------------------------------------------------------
+
+namespace {
+
+std::string Profile(const char * name) {
+  std::vector<unsigned char> bytes = FileBytes(std::string("tests/data/icc/") + name);
+  return std::string(bytes.begin(), bytes.end());
+}
+
+// The first fill of a lowering that is a plain color.
+bool FirstFill(const Lowered & l, GSHSCENE_Paint * out) {
+  for (const GSHSCENE_Item & item : FillItems(l)) {
+    if (item.paint.kind == GSHSCENE_PAINT_SOLID) {
+      *out = item.paint;
+      return true;
+    }
+  }
+  return false;
+}
+
+std::string ProfileDoc(const std::string & fill, const char * src = "p.icc") {
+  return Doc(Style(std::string("@color-profile --p { src: url(") + src + "); }") + Shape("fill=\"" + fill + "\""));
+}
+
+}  // namespace
+
+TEST(LowerResolverProfile, AColorInTheSpaceOfAProfileIsConvertedThroughItToRec2020) {
+  Fake fake;
+  fake.Put("p.icc", Profile("srgb_g22.icc"));
+  Lowered l;
+  Lower(ProfileDoc("color(--p 1 0 0)"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Paint p;
+  ASSERT_TRUE(FirstFill(l, &p));
+  // sRGB red in linear Rec. 2020 (ITU-R BT.2087)
+  EXPECT_EQ(p.space.primaries, GCOL_PRIMARIES_BT2020);
+  EXPECT_EQ(p.space.transfer, GCOL_TRANSFER_LINEAR);
+  EXPECT_NEAR(p.rgba[0], 0.6274, 1e-3);
+  EXPECT_NEAR(p.rgba[1], 0.0691, 1e-3);
+  EXPECT_NEAR(p.rgba[2], 0.0164, 1e-3);
+  ASSERT_EQ(fake.seen.size(), (size_t) 1);
+  EXPECT_EQ(fake.seen[0].kind, GVEC_RESOURCE_COLOR_PROFILE);
+  EXPECT_EQ(fake.seen[0].reference, "p.icc");
+  EXPECT_EQ(fake.seen[0].max_bytes, (size_t) 32 << 20);
+}
+
+TEST(LowerResolverProfile, TheProfileIsAskedOnceHoweverManyColorsNameIt) {
+  Fake fake;
+  fake.Put("p.icc", Profile("srgb_g22.icc"));
+  Lowered l;
+  Lower(Doc(Style("@color-profile --p { src: url(p.icc); }") + Shape("fill=\"color(--p 1 0 0)\" stroke=\"color(--p 0 0 1)\"") +
+            "<path d=\"M5 5h4v4h-4z\" fill=\"color(--p 0 1 0 / 0.5)\"/>"),
+      l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(fake.Calls(), (size_t) 1);
+}
+
+TEST(LowerResolverProfile, AProfileThatSwapsRedAndGreenSwapsThem) {
+  Fake fake;
+  fake.Put("p.icc", Profile("swap_rg.icc"));
+  Lowered l;
+  Lower(ProfileDoc("color(--p 1 0 0)"), l, fake);
+  GSHSCENE_Paint p;
+  ASSERT_TRUE(FirstFill(l, &p));
+  // the device's red is the primary the profile gives it: sRGB's green, in Rec. 2020 (0.3293, 0.9195, 0.0880)
+  EXPECT_NEAR(p.rgba[0], 0.3293, 2e-3);
+  EXPECT_NEAR(p.rgba[1], 0.9195, 2e-3);
+  EXPECT_NEAR(p.rgba[2], 0.0880, 2e-3);
+}
+
+TEST(LowerResolverProfile, AGrayProfileTakesOneChannel) {
+  Fake fake;
+  fake.Put("p.icc", Profile("gray_g22.icc"));
+  Lowered l;
+  Lower(ProfileDoc("color(--p 0.5)"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Paint p;
+  ASSERT_TRUE(FirstFill(l, &p));
+  EXPECT_NEAR(p.rgba[0], std::pow(0.5, 2.2), 2e-3);  // a neutral: the same in each channel
+  EXPECT_NEAR(p.rgba[1], p.rgba[0], 1e-3);
+  EXPECT_NEAR(p.rgba[2], p.rgba[0], 1e-3);
+  Fake other;
+  other.Put("p.icc", Profile("gray_g22.icc"));
+  Lowered wrong;
+  Lower(ProfileDoc("color(--p 0.5 0.5 0.5)"), wrong, other);
+  EXPECT_NE(wrong.Refusal(GVEC_LOWER_UNSUPPORTED_COLOR_SPACE), nullptr) << "three channels for a gray profile";
+}
+
+TEST(LowerResolverProfile, ATableProfileIsAppliedAndAlphaIsKept) {
+  Fake fake;
+  fake.Put("p.icc", Profile("rgb_mab.icc"));
+  Lowered l;
+  Lower(ProfileDoc("color(--p 0.25 0.5 0.75 / 0.5)"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Paint p;
+  ASSERT_TRUE(FirstFill(l, &p));
+  EXPECT_NEAR(p.rgba[3], 0.5, 1e-9);
+}
+
+TEST(LowerResolverProfile, DeviceCmykUsesAProfileThatTheDocumentNamesForIt) {
+  Fake fake;
+  fake.Put("c.icc", Profile("cmyk_mft2.icc"));
+  Lowered with;
+  Lower(Doc(Style("@color-profile device-cmyk { src: url(c.icc); }") + Shape("fill=\"device-cmyk(0 0 0 0)\"")), with, fake);
+  EXPECT_EQ(with.Refusals(), (size_t) 0);
+  GSHSCENE_Paint p;
+  ASSERT_TRUE(FirstFill(with, &p));
+  EXPECT_EQ(p.space.primaries, GCOL_PRIMARIES_BT2020) << "converted through the profile, not the naive sRGB conversion";
+  EXPECT_GT(p.rgba[1], 0.8) << "no ink on the page is paper white (a CMYK profile read as light would give black)";
+  EXPECT_EQ(fake.seen.size(), (size_t) 1);
+  Lowered naive;
+  Fake none;
+  Lower(Doc(Shape("fill=\"device-cmyk(0 0 0 0)\"")), naive, none);
+  ASSERT_TRUE(FirstFill(naive, &p));
+  EXPECT_EQ(p.space.primaries, GCOL_PRIMARIES_SRGB);
+  EXPECT_EQ(none.seen.size(), (size_t) 0) << "with no profile named, nothing is asked";
+}
+
+TEST(LowerResolverProfile, AProfileThatCannotBeHadRefusesTheElementAndSaysWhy) {
+  for (GVEC_Resource_Status status : {GVEC_RESOURCE_REFUSED, GVEC_RESOURCE_NOT_FOUND, GVEC_RESOURCE_FAILED}) {
+    Fake fake;
+    fake.Status("p.icc", status);
+    Lowered l;
+    Lower(ProfileDoc("color(--p 1 0 0)"), l, fake);
+    EXPECT_NE(l.Refusal(GVEC_LOWER_UNSUPPORTED_COLOR_SPACE), nullptr) << "status " << (int) status;
+  }
+  Fake junk;
+  junk.Put("p.icc", "this is not an ICC profile");
+  Lowered bad;
+  Lower(ProfileDoc("color(--p 1 0 0)"), bad, junk);
+  EXPECT_NE(bad.Refusal(GVEC_LOWER_UNSUPPORTED_COLOR_SPACE), nullptr);
+  Lowered nothing;  // no resolver at all
+  LowerSvg(ProfileDoc("color(--p 1 0 0)"), nothing);
+  EXPECT_NE(nothing.Refusal(GVEC_LOWER_UNSUPPORTED_COLOR_SPACE), nullptr);
 }
 
 int main(int argc, char ** argv) {

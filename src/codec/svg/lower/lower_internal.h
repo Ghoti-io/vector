@@ -385,6 +385,11 @@ typedef struct gvec_lw_stroke {
 /** Read the stroke properties of an instance and make the style and the paint; refuses the element whole when it cannot. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_stroke * out);
 
+/** The box of the stroke of an element's centerline in the space `map` leads to: `*box` holds the fill box there and is grown by the stroker's
+ * outline. `*ok` is false when the stroke cannot be boxed. No stroke leaves the box as it is. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_bounds(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHSCENE_Resource * centerline,
+    const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * ok);
+
 /** The instance of an element of the document, made through its ancestors so that a property inherits as it does in the tree. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_instance_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Instance ** out);
 

@@ -26,10 +26,10 @@
  * own space, and made an exact primitive or path of the waist: a circle is an ellipse, `inset()` a rounded rectangle whose corners
  * are scaled as CSS Backgrounds says when they would overlap, and `polygon()`, `path()` and `shape()` paths (a `shape()` is written as the path data it stands for). The result is one clip region
  * in the element's space; what this cannot read is told apart as invalid (the property is then as if not specified, CSS) or valid
- * and refused (an `em` length that needs the font, a stroke box this does not compute).
+ * and refused (an `em` length that needs the font, a stroke the stroker cannot expand).
  *
  * The reference boxes: `fill-box` is the bounds of the element's geometry; `stroke-box` those bounds taken through the waist's stroke
- * widened by half the stroke when the element has one (a rectangle, circle or ellipse; no other geometry is refused for a box it cannot name); `view-box` the nearest viewport, which must start at the origin. `border-box` and `margin-box`
+ * grown to the outline the stroker makes of it when the element has a stroke (joins and caps included, exact to 1/1024 of a unit); `view-box` the nearest viewport, which must start at the origin. `border-box` and `margin-box`
  * are `stroke-box`, `content-box` and `padding-box` are `fill-box` (SVG 2), and `border-box` is the default. An element with no
  * geometry of its own (a group) has no box to name and is refused.
  */
@@ -1076,20 +1076,23 @@ static box_status reference_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
       return BOX_ERROR; /* Refused already, and reported. */
     }
     if (stroke.decision == GVEC_LW_PAINT_DRAW) {
-      /* The stroke's box is the geometry's box widened by half the width on every side. That is exact for a rectangle (a miter, a
-       * bevel or a round join all leave the sides where they are), a circle and an ellipse; for any other geometry a join or a cap
-       * can reach further, and the box is not one this computes. */
-      GVEC_Svg_Kind element_kind = gvec_svg_element_kind(e);
-      GSHSCENE_Stroke_Style style;
-      if ((element_kind != GVEC_SVG_KIND_RECT && element_kind != GVEC_SVG_KIND_CIRCLE && element_kind != GVEC_SVG_KIND_ELLIPSE) ||
-          gshscene_resource_stroke_style(stroke.style, &style) != GSHSCENE_OK) {
+      /* The stroke's box is the bounds of the stroker's outline: the geometry's box widened by half the width on every side for a
+       * rectangle, a circle and an ellipse, and past that where a join (a miter at a sharp angle) or a cap (a square one on a slanted line)
+       * reaches. */
+      GSHGEOM_Map identity;
+      bool stroked;
+      if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+        *result = GVEC_ERR_INTERNAL;
+        return BOX_ERROR;
+      }
+      r = gvec_lw_stroke_bounds(ctx, inst, resource, &identity, &bounds, &stroked);
+      if (r != GVEC_OK) {
+        *result = r;
+        return BOX_ERROR;
+      }
+      if (!stroked) {
         return BOX_REFUSED;
       }
-      double half = style.width / 2;
-      bounds.min.x -= half;
-      bounds.min.y -= half;
-      bounds.max.x += half;
-      bounds.max.y += half;
     }
   }
   out->x = bounds.min.x;

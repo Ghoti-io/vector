@@ -219,6 +219,24 @@ TEST(LowerBasicShape, AGroupAUseAndAnInnerSvgAreMeasuredByWhatTheyDraw) {
   EXPECT_NE(foreign.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
 }
 
+TEST(LowerBasicShape, TheStrokeBoxOfAPathLineOrPolylineTakesInItsJoinsAndCaps) {
+  // a right angle: the miter reaches half the width past the corner on both axes, the same as the box widened by half the width
+  Lowered right;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<polyline points=\"10,10 60,10 60,50\" fill=\"none\" stroke=\"red\" stroke-width=\"4\" style=\"clip-path: inset(0) stroke-box\"/>"), right);
+  EXPECT_EQ(right.Refusals(), (size_t) 0);
+  ExpectBounds(right, 10, 8, 62, 50);  // the butt caps end at the ends of the line
+  Lowered square;  // a square cap reaches half the width past the end of a line
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<line x1=\"10\" y1=\"20\" x2=\"60\" y2=\"20\" stroke=\"red\" stroke-width=\"6\" stroke-linecap=\"square\" style=\"clip-path: inset(0) stroke-box\"/>"), square);
+  EXPECT_EQ(square.Refusals(), (size_t) 0);
+  ExpectBounds(square, 7, 17, 63, 23);
+  Lowered sharp;  // a miter at a sharp angle reaches well past half the width: the tip is at 1 / sin(angle / 2) half widths
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<polyline points=\"0,0 60,0 0,20\" fill=\"none\" stroke=\"red\" stroke-width=\"2\" stroke-miterlimit=\"20\" style=\"clip-path: inset(0) stroke-box\"/>"), sharp);
+  EXPECT_EQ(sharp.Refusals(), (size_t) 0);
+  GSHGEOM_Bounds b;
+  ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(sharp.Item(0).resource), &b), GSHGEOM_OK);
+  EXPECT_GT(b.max.x - b.min.x, 62.0 + 3.0) << "wider than the box widened by half the width: the miter's tip is past it";
+}
+
 TEST(LowerBasicShape, RectAndXywhTakeTheirPercentagesOfTheWidthAndOfTheHeight) {
   // a box of 100 by 40, which is not square, so that a percentage taken of the wrong side is seen
   Lowered r;
@@ -293,7 +311,7 @@ TEST(LowerBasicShape, AShapeWithNoAreaLetsNothingThrough) {
   EXPECT_EQ(circle.Refusals(), (size_t) 0);
 }
 
-TEST(LowerBasicShape, WhatIsNotAShapeIsAsIfNotSpecifiedAGroupIsMeasuredByWhatItDrawsAndALineWithAStrokeIsRefused) {
+TEST(LowerBasicShape, WhatIsNotAShapeIsAsIfNotSpecifiedAGroupIsMeasuredByWhatItDraws) {
   Lowered junk;
   Lower("circle(banana)", junk);
   EXPECT_EQ(Kinds(junk), (std::vector<GSHSCENE_Item_Kind>{FILL}));
@@ -302,9 +320,16 @@ TEST(LowerBasicShape, WhatIsNotAShapeIsAsIfNotSpecifiedAGroupIsMeasuredByWhatItD
   LowerSvg(Svg("width=\"200\" height=\"200\"", "<g style=\"clip-path: circle(50%)\"><rect width=\"6\" height=\"6\"/></g>"), group);
   EXPECT_EQ(group.Refusals(), (size_t) 0);
   EXPECT_GT(group.Count(GSHSCENE_ITEM_FILL), (size_t) 0);
-  Lowered line;  // a diagonal line's stroke reaches by its caps and its slope, which the half width does not
-  LowerSvg(Svg("width=\"200\" height=\"200\"", "<line x2=\"50\" y2=\"30\" stroke=\"red\" stroke-width=\"6\" style=\"clip-path: circle()\"/>"), line);
-  EXPECT_NE(line.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+  Lowered line;  // a diagonal line's butt-capped stroke is a slanted rectangle: it reaches 3 * (30, 50) / |(50, 30)| past the ends, in x and y
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<line x2=\"50\" y2=\"30\" stroke=\"red\" stroke-width=\"6\" style=\"clip-path: inset(0)\"/>"), line);
+  EXPECT_EQ(line.Refusals(), (size_t) 0);
+  double b[4];
+  ASSERT_TRUE(Bounds(line, b));
+  const double n = 3.0 / std::hypot(50.0, 30.0);
+  EXPECT_NEAR(b[0], -30 * n, 0.002);
+  EXPECT_NEAR(b[1], -50 * n, 0.002);
+  EXPECT_NEAR(b[2], 50 + 30 * n, 0.002);
+  EXPECT_NEAR(b[3], 30 + 50 * n, 0.002);
 }
 
 TEST(LowerBasicShape, TheViewBoxIsRefusedWhenTheViewportDoesNotStartAtTheOrigin) {

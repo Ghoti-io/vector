@@ -378,7 +378,40 @@ typedef struct subst {
   const GTEXT_CSS_Color * ptrs[16];
   size_t pused;
   const GTEXT_CSS_Color * current;
+  GVEC_Svg_Style_Context * context;      ///< For a system color: the table and the scheme it is read in.
+  const GVEC_Svg_Instance * instance;
+  GTEXT_CSS_Color_Component hex[4][4];   ///< The channels and alpha of the system colors made into hex colors.
+  size_t hex_used;
 } subst;
+
+/* The sRGB value (red, green, blue, alpha in [0, 1]) of a system color in the scheme of `instance`; false when `c` is not one. `CanvasText` is
+ * the document's foreground, which a color computation cannot leave open: it is black in the light scheme and white in the dark (Chromium's). */
+static bool system_rgba(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Color * c, double rgba[4]) {
+  if (c->kind != GTEXT_CSS_COLOR_KEYWORD || (c->keyword != GTEXT_CSS_COLOR_KW_SYSTEM && c->keyword != GTEXT_CSS_COLOR_KW_DEPRECATED)) {
+    return false;
+  }
+  const bool dark = used_scheme_is_dark(context, instance);
+  if (is_name(c, "canvastext") || one_of(c, canvas_text_names, sizeof canvas_text_names / sizeof *canvas_text_names)) {
+    rgba[0] = rgba[1] = rgba[2] = dark ? 1.0 : 0.0;
+    rgba[3] = 1;
+    return true;
+  }
+  for (size_t i = 0; i < sizeof system_colors / sizeof *system_colors; i++) {
+    if (is_name(c, system_colors[i].name)) {
+      const uint32_t v = dark ? system_colors[i].dark : system_colors[i].light;
+      for (int k = 0; k < 4; k++) {
+        rgba[k] = (double) ((v >> (24 - 8 * k)) & 0xffu) / 255.0;
+      }
+      return true;
+    }
+  }
+  if (is_name(c, "canvas") || one_of(c, canvas_names, sizeof canvas_names / sizeof *canvas_names)) {
+    rgba[0] = rgba[1] = rgba[2] = dark ? 0.0 : 1.0;
+    rgba[3] = 1;
+    return true;
+  }
+  return false;
+}
 
 static bool subst_color(subst * s, const GTEXT_CSS_Color * c, unsigned depth, const GTEXT_CSS_Color ** out) {
   if (depth > 6) {
@@ -387,6 +420,33 @@ static bool subst_color(subst * s, const GTEXT_CSS_Color * c, unsigned depth, co
   if (c->kind == GTEXT_CSS_COLOR_KEYWORD && c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {
     *out = s->current;
     return s->current != NULL;
+  }
+  double system[4];
+  if (s->context && system_rgba(s->context, s->instance, c, system)) {
+    /* a system color inside a mix or a relative color: the engine cannot know it, so it is written as the rgb() color it is */
+    if (s->used >= sizeof s->pool / sizeof s->pool[0] || s->hex_used >= sizeof s->hex / sizeof s->hex[0]) {
+      return false;
+    }
+    GTEXT_CSS_Color * hex = &s->pool[s->used++];
+    GTEXT_CSS_Color_Component * comps = s->hex[s->hex_used++];
+    memset(hex, 0, sizeof *hex);
+    memset(comps, 0, 4 * sizeof *comps);
+    hex->kind = GTEXT_CSS_COLOR_FUNCTION;
+    hex->function = GTEXT_CSS_COLOR_FN_RGB;
+    for (int k = 0; k < 3; k++) {
+      comps[k].kind = GTEXT_CSS_COMP_NUMBER;
+      comps[k].value = system[k] * 255.0;
+    }
+    hex->components = comps;
+    hex->component_count = 3;
+    if (system[3] < 1.0) {
+      comps[3].kind = GTEXT_CSS_COMP_NUMBER;
+      comps[3].value = system[3];
+      hex->alpha = comps[3];
+      hex->alpha_written = true;
+    }
+    *out = hex;
+    return true;
   }
   if (!c->origin && c->item_count == 0) {
     *out = c;
@@ -568,6 +628,8 @@ static GVEC_Result computed_color(GVEC_Svg_Style_Context * context, const GVEC_S
     const GVEC_Svg_Element * where, GVEC_Svg_Color * out) {
   subst s;
   memset(&s, 0, sizeof s);
+  s.context = context;
+  s.instance = instance;
   const GTEXT_CSS_Value * v = NULL;
   GVEC_Result r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_COLOR, NULL, &v);
   if (r != GVEC_OK) {
@@ -589,6 +651,32 @@ static GVEC_Result computed_color(GVEC_Svg_Style_Context * context, const GVEC_S
     return refuse(context, where, 0, "the color the engine computes is of a form this library does not read");
   }
   return color_of(context, instance, &synthetic, where, false, out);
+}
+
+/* A color in the space of a `@color-profile`: its channels are converted through the profile (svg_profile.c) to linear Rec. 2020. */
+static GVEC_Result profile_color(GVEC_Svg_Style_Context * context, const char * name, size_t length, const GTEXT_CSS_Color * c, double alpha,
+    const GVEC_Svg_Element * where, GVEC_Svg_Color * out) {
+  double channels[4], rgb[3], rgba[4];
+  if (c->component_count == 0 || c->component_count > 4) {
+    return refuse(context, where, (uint32_t) c->space, "a color of a @color-profile has more channels than a profile has");
+  }
+  for (size_t i = 0; i < c->component_count; i++) {
+    if (!channel(&c->components[i], 1.0, &channels[i])) {
+      return refuse(context, where, (uint32_t) c->space, "a color channel needs an environment and could not be computed");
+    }
+  }
+  const char * why = NULL;
+  GVEC_Result r = gvec_svg_style_profile_color(context, name, length, channels, c->component_count, rgb, &why);
+  if (r == GVEC_ERR_UNSUPPORTED) {
+    return refuse(context, where, (uint32_t) c->space, why);
+  }
+  if (r != GVEC_OK) {
+    return r;
+  }
+  memcpy(rgba, rgb, sizeof rgb);
+  rgba[3] = alpha;
+  solid(out, rgba, GCOL_PRIMARIES_BT2020, GCOL_TRANSFER_LINEAR, 0);
+  return GVEC_OK;
 }
 
 static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Color * c,
@@ -704,6 +792,9 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
       return GVEC_OK;
     }
     case GTEXT_CSS_COLOR_FN_COLOR: {
+      if (c->space == GTEXT_CSS_SPACE_CUSTOM) {
+        return profile_color(context, c->name.data, c->name.length, c, alpha, where, out);
+      }
       if (c->component_count != 3) {
         return refuse(context, where, (uint32_t) c->space, "a color() function of another number of channels");
       }
@@ -795,6 +886,9 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
     double cmyk[4];
     if (c->component_count != 4 || !alpha_of(c, &alpha)) {
       return refuse(context, where, 0, "device-cmyk() of another number of channels");
+    }
+    if (gvec_svg_style_color_profile(context, "device-cmyk", 11)) {
+      return profile_color(context, "device-cmyk", 11, c, alpha, where, out); /* the document says what the inks are */
     }
     for (int i = 0; i < 4; i++) {
       if (!channel(&c->components[i], 1.0, &cmyk[i])) {

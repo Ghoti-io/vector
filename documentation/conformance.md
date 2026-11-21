@@ -327,11 +327,11 @@ The rest of the audit found the rows' prose wrong in two places (a decoration's 
 The score is **1,543 of 1,679 (91.90%)**: 589 `PASS`, 36 `ACCEPTED`, 762 `EDGE`, 156 `ORACLE_AGREES`; 115 `ORACLE_SPLIT`, no `DEFECT`, no `REFUSED`, no `NOT_LOADED`, 21 `EXCLUDED`.
 
 What the lowering still refuses, by reason (`refusals.md`): `foreignObject` and embedded media (not SVG, never lowered); a reference to something outside the document unless the caller's resolver
-supplies it (the gate for external references); a basic shape whose reference box is the stroke box of a path, line, polyline or polygon (its joins and caps reach beyond half the width) or of an element that holds a
-`foreignObject`; a mix or relative color that holds a system color; a `color()` space named by `@color-profile`, which no engine applies (the browsers draw such a declaration as if it were not written, where this refuses the
-element and says so). Lowered since the audit above: the alternates of `font-variant` (through the document's `@font-feature-values`), a basic shape (`shape()`, and `rect()` and `xywh()`, which the engine
+supplies it (the gate for external references); a basic shape whose reference box is the stroke box of an element that holds a
+`foreignObject`. A `color()` space named by `@color-profile` is converted through the profile the caller's resolver supplies (the browsers ignore the rule and draw such a
+declaration as if it were not written, so this is unmeasured by them); with no profile to be had the element is refused and says so. Lowered since the audit above: the alternates of `font-variant` (through the document's `@font-feature-values`), a basic shape (`shape()`, and `rect()` and `xywh()`, which the engine
 computes to `inset()`) and a clip in the units of a bounding box on a `clipPath`'s shape, `use` or text, a basic shape on a `clipPath`, text and a `use` of text with a `clip-path` of their own, a basic shape on a group, a `use`,
-a nested `svg`, a `switch` or text, and the system colors. A marker that draws a marker that names it (`painting/marker/recursive-5`) is cut where the cycle closes, which the style layer decides once for
+a nested `svg`, a `switch` or text, and the system colors (also inside a mix or a relative color: the table's value in the element's scheme, `CanvasText` being black light and white dark there). A marker that draws a marker that names it (`painting/marker/recursive-5`) is cut where the cycle closes, which the style layer decides once for
 a document; Chromium (which matches the reference) resolves it by walking the resources in document order and cutting, in each shape of a marker's content (a `use`'s clone has its own), the
 reference that names a marker still being walked, so that a marker's content keeps a nested marker the cycle did not make it name again: that is the rule to build if the row is ever to pass.
 
