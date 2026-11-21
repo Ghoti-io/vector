@@ -306,3 +306,28 @@ make oracle-tolerance PREFIX=...      # measure the oracles
 
 `check-conformance` needs no corpus and no oracle. The checks that need a container engine and the built images
 are skipped, counted in its summary line, and fail instead when `GHOTI_ORACLE_REQUIRED=1`.
+
+## The audit of the reviewed rows
+
+Every `ORACLE_SPLIT` and `ORACLE_AGREES` row is a claim until the drawing is beside the engines it names. The 75 text splits and the 93 text rows that agree with an
+oracle, and the 97 others, were rendered in Chromium 154 and Firefox 153 (the corpus's fonts, no network) and in `resvg` 0.45.1 given the same fonts and the
+generic-family aliases the runner gives the library, and compared by the pixels that differ and by where the ink is (ink more than two pixels from any ink of the other
+image). The finds, each fixed with a test and a plant:
+
+- The `x`, `y`, `dx`, `dy` and `rotate` lists were indexed by UTF-16 unit; SVG 2 says by code point, and Chromium draws it so (the two compound-emoji rows say what each engine does).
+- A decoration declared by a `g` round the text was painted with the text's paint (what the reference draws); SVG 2 says the declaring element's, as Chromium and Firefox draw it.
+  Four rows that passed on the reference's reading are `ORACLE_SPLIT` on the standard's. The underline of vertical text was cut into a piece for each baseline its glyphs sit on.
+- An offset is shifted by its fraction of a pixel (Chromium, and the references' own drawings where the offset is fractional); it was rounded. Five `feTile` rows whose offset is 12.5
+  device pixels are Chromium's drawing exactly and are `ORACLE_AGREES`.
+- A filter finds its source only inside the target; the runner now draws over the filters' reach (`gshscene_filter_reach`), and `content-outside-the-canvas-2` is an `EDGE`.
+- What the lowering refused and now draws: the box of a `use` of a `symbol`, of a nested `svg` and of a `switch` (for a filter, a mask, a clip or a `transform-box`);
+  `lab()`, `lch()`, `oklab()`, `oklch()`, `color(xyz ...)`, `color-mix()` and relative colors with `currentcolor` in them, `alpha()`, `contrast-color()` and `device-cmyk()`;
+  `@media`, `@supports` and `@container` in a sheet, and an `@import` with a `media` or `supports` condition. None changes a corpus row: no case needed one.
+
+The rest of the audit found the rows' prose wrong in two places (a decoration's paint and the letter-spacing after a glyph, which Chromium and Firefox keep in the line) and confirmed the others.
+The score is **1,543 of 1,679 (91.90%)**: 589 `PASS`, 36 `ACCEPTED`, 762 `EDGE`, 156 `ORACLE_AGREES`; 115 `ORACLE_SPLIT`, no `DEFECT`, no `REFUSED`, no `NOT_LOADED`, 21 `EXCLUDED`.
+
+What the lowering still refuses, by reason (`refusals.md`): `foreignObject` and embedded media (not SVG, never lowered); a reference to something outside the document unless the caller's resolver
+supplies it (the gate for external references); the alternates of `font-variant` (`styleset()`, `swash()` and the others, which need `@font-feature-values`); a basic shape on a `clipPath`'s shape and
+a clip of a clip shape in the units of the bounding box; a system color other than `Canvas` and `CanvasText` (no user agent to give one a value); a `color()` space named by `@color-profile`.
+
