@@ -485,10 +485,9 @@ TEST(SvgStyleColor, AMixAndARelativeColorAreComputedAndCurrentColorInThemIsTheEl
 }
 
 TEST(SvgStyleColor, ASpaceOfAnotherNameIsRefusedAndReported) {
-  Styled s(Svg("", "<rect id=\"custom\" fill=\"color(--brand 0.2 0.3 0.4)\"/><rect id=\"sys\" fill=\"ButtonFace\"/><rect id=\"ok\" fill=\"red\"/>"));
+  Styled s(Svg("", "<rect id=\"custom\" fill=\"color(--brand 0.2 0.3 0.4)\"/><rect id=\"ok\" fill=\"red\"/>"));
   s.Get("custom", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
-  s.Get("sys", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
-  EXPECT_EQ(s.Count(GVEC_DIAG_UNSUPPORTED_COLOR_SPACE), 2u);
+  EXPECT_EQ(s.Count(GVEC_DIAG_UNSUPPORTED_COLOR_SPACE), 1u);
   const GVEC_Diagnostic * d = nullptr;
   for (size_t i = 0; i < s.diagnostics.count; i++) {
     if (s.diagnostics.items[i].code == GVEC_DIAG_UNSUPPORTED_COLOR_SPACE) {
@@ -521,7 +520,20 @@ TEST(SvgStyleColor, SystemColors) {
   EXPECT_EQ(FillOf(light, "t").kind, GVEC_SVG_COLOR_FOREGROUND);
   GVEC_Svg_Color canvas = FillOf(light, "c");
   EXPECT_EQ(canvas.color.rgba[0], 1.0);
-  light.Get("x", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
+  /* The other system colors are the table's (Chromium's), light and dark; a deprecated name is the color CSS Color 4 maps it to. */
+  GVEC_Svg_Color face = FillOf(light, "x");
+  EXPECT_NEAR(face.color.rgba[0], 0xef / 255.0, 1e-9);
+  EXPECT_NEAR(face.color.rgba[1], 0xef / 255.0, 1e-9);
+  Styled names(Svg("", "<rect id=\"a\" fill=\"AccentColor\"/><rect id=\"h\" fill=\"Highlight\"/><rect id=\"w\" fill=\"Window\"/>"
+                       "<rect id=\"f\" fill=\"ThreeDFace\"/><rect id=\"m\" fill=\"MenuText\"/>"));
+  EXPECT_NEAR(FillOf(names, "a").color.rgba[2], 1.0, 1e-9);
+  EXPECT_NEAR(FillOf(names, "a").color.rgba[0], 0.0, 1e-9);
+  EXPECT_NEAR(FillOf(names, "h").color.rgba[3], 0.8, 1e-9) << "Highlight is translucent";
+  EXPECT_EQ(FillOf(names, "w").color.rgba[0], 1.0) << "Window is Canvas";
+  EXPECT_NEAR(FillOf(names, "f").color.rgba[0], 0xef / 255.0, 1e-9);
+  EXPECT_EQ(FillOf(names, "m").kind, GVEC_SVG_COLOR_FOREGROUND) << "MenuText is CanvasText";
+  Styled name_dark(Svg("style=\"color-scheme: dark\"", "<rect id=\"x\" fill=\"ButtonFace\"/>"));
+  EXPECT_NEAR(FillOf(name_dark, "x").color.rgba[0], 0x6b / 255.0, 1e-9);
   /* The preference only matters to a document that says it supports the dark scheme (CSS Color Adjust 1). */
   Styled normal(Svg("", "<rect id=\"c\" fill=\"Canvas\"/><rect id=\"l\" fill=\"light-dark(red, blue)\"/>"), 0, 0, GVEC_COLOR_SCHEME_DARK);
   EXPECT_EQ(FillOf(normal, "c").color.rgba[0], 1.0);

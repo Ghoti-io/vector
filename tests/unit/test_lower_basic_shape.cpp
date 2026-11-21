@@ -137,6 +137,101 @@ TEST(LowerBasicShape, AnInsetIsTheBoxMovedInByEachSideWithRoundedCorners) {
   EXPECT_EQ(p.r[2].ry, 10.0);
 }
 
+TEST(LowerBasicShape, RectIsTheEdgesFromTheBoxsTopAndLeftAndAutoIsTheBoxsOwnEdge) {
+  Lowered l;
+  Lower("rect(10px 150px 120px 30px) fill-box", l);
+  ExpectBounds(l, 20 + 30, 20 + 10, 20 + 150, 20 + 120);
+  Lowered autos;
+  Lower("rect(auto 100px auto auto) fill-box", autos);
+  ExpectBounds(autos, 20, 20, 20 + 100, 180);
+  Lowered percent;
+  Lower("rect(25% 75% 75% 25%) fill-box", percent);
+  ExpectBounds(percent, 20 + 40, 20 + 40, 20 + 120, 20 + 120);
+  Lowered reversed;  // the right edge before the left: no area, nothing gets through
+  Lower("rect(10px 5px 20px 30px) fill-box", reversed);
+  EXPECT_EQ(Kinds(reversed), (std::vector<GSHSCENE_Item_Kind>{}));
+  EXPECT_EQ(reversed.Refusals(), (size_t) 0);
+  Lowered round;
+  Lower("rect(0 100% 100% 0 round 8px) fill-box", round);
+  GSHSCENE_Primitive p;
+  ASSERT_EQ(gshscene_resource_primitive(round.Item(0).resource, &p), GSHSCENE_OK);
+  EXPECT_EQ(p.kind, GSHSCENE_PRIMITIVE_ROUNDED_RECT);
+  EXPECT_EQ(p.r[1].rx, 8.0);
+}
+
+TEST(LowerBasicShape, XywhIsTheCornerAndTheSizeAndANegativeSizeIsAsIfNotSpecified) {
+  Lowered l;
+  Lower("xywh(10px 20px 50% 25%) fill-box", l);
+  ExpectBounds(l, 20 + 10, 20 + 20, 20 + 10 + 80, 20 + 20 + 40);
+  Lowered negative;
+  Lower("xywh(0 0 -5px 5px) fill-box", negative);
+  EXPECT_EQ(Kinds(negative), (std::vector<GSHSCENE_Item_Kind>{FILL}));
+  Lowered round;
+  Lower("xywh(0 0 100% 100% round 10px) fill-box", round);
+  ExpectBounds(round, 20, 20, 180, 180);
+}
+
+TEST(LowerBasicShape, ShapeIsTheCommandsFromTheBoxsCornerWhoseByIsRelativeAndWhoseCurveHasControlPoints) {
+  Lowered lines;
+  Lower("shape(from 0px 0px, line to 100px 0px, vline to 50px, close) fill-box", lines);
+  EXPECT_EQ(lines.Refusals(), (size_t) 0);
+  ExpectBounds(lines, 20, 20, 120, 70);
+  Lowered relative;
+  Lower("shape(from 10px 10px, hline by 50px, vline by 40px, close) fill-box", relative);
+  ExpectBounds(relative, 30, 30, 80, 70);
+  Lowered keyword;
+  Lower("shape(from 0% 0%, hline to right, vline to bottom, hline to left, close) fill-box", keyword);
+  ExpectBounds(keyword, 20, 20, 180, 180);
+  Lowered curve;
+  Lower("shape(from 0% 0%, curve to 100% 100% with 100% 0%, close) fill-box", curve);
+  EXPECT_EQ(curve.Refusals(), (size_t) 0);
+  ExpectBounds(curve, 20, 20, 180, 180);
+  Lowered cubic;
+  Lower("shape(from 0px 0px, curve to 100px 0px with 0px 50px / 100px 50px, close) fill-box", cubic);
+  EXPECT_EQ(cubic.Refusals(), (size_t) 0);
+  Lowered arc;
+  Lower("shape(evenodd from 10px 10px, hline to 100px, arc to 10px 90px of 40px cw large rotate 10deg, close) fill-box", arc);
+  EXPECT_EQ(arc.Refusals(), (size_t) 0);
+  EXPECT_EQ(arc.Item(0).fill_rule, GSHGEOM_FILL_EVEN_ODD);
+  Lowered bad;  // a command that is no command: as if the property were not specified
+  Lower("shape(from 0px 0px, jump to 5px 5px) fill-box", bad);
+  EXPECT_EQ(Kinds(bad), (std::vector<GSHSCENE_Item_Kind>{FILL}));
+}
+
+TEST(LowerBasicShape, AGroupAUseAndAnInnerSvgAreMeasuredByWhatTheyDraw) {
+  Lowered group;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<g style=\"clip-path: inset(0) fill-box\"><rect x=\"10\" y=\"10\" width=\"50\" height=\"40\"/></g>"), group);
+  EXPECT_EQ(group.Refusals(), (size_t) 0);
+  ExpectBounds(group, 10, 10, 60, 50);
+  Lowered stroked;  // the stroke box takes in the strokes of what the group draws
+  LowerSvg(Svg("width=\"200\" height=\"200\"",
+               "<g style=\"clip-path: inset(0) stroke-box\"><rect x=\"10\" y=\"10\" width=\"50\" height=\"40\" stroke=\"red\" stroke-width=\"4\"/></g>"),
+      stroked);
+  ExpectBounds(stroked, 8, 8, 62, 52);
+  Lowered use;
+  LowerSvg(Svg("width=\"200\" height=\"200\"",
+               "<defs><rect id=\"r\" width=\"30\" height=\"20\"/></defs><use href=\"#r\" x=\"5\" y=\"7\" style=\"clip-path: inset(0) fill-box\"/>"),
+      use);
+  EXPECT_EQ(use.Refusals(), (size_t) 0);
+  ExpectBounds(use, 5, 7, 35, 27);  // the box of a use takes in its x and y
+  Lowered foreign;  // what holds a foreignObject has a box that is not measured, and is refused whole
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<g style=\"clip-path: circle(50%)\"><foreignObject width=\"10\" height=\"10\"/></g>"), foreign);
+  EXPECT_NE(foreign.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+}
+
+TEST(LowerBasicShape, RectAndXywhTakeTheirPercentagesOfTheWidthAndOfTheHeight) {
+  // a box of 100 by 40, which is not square, so that a percentage taken of the wrong side is seen
+  Lowered r;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<rect width=\"100\" height=\"40\" style=\"clip-path: rect(25% 75% 75% 25%) fill-box\"/>"), r);
+  ExpectBounds(r, 25, 10, 75, 30);
+  Lowered autos;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<rect width=\"100\" height=\"40\" style=\"clip-path: rect(10px auto auto 20px) fill-box\"/>"), autos);
+  ExpectBounds(autos, 20, 10, 100, 40);
+  Lowered x;
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<rect width=\"100\" height=\"40\" style=\"clip-path: xywh(10% 10% 50% 50%) fill-box\"/>"), x);
+  ExpectBounds(x, 10, 4, 60, 24);
+}
+
 TEST(LowerBasicShape, CornersThatWouldOverlapAreScaledByOneFactor) {
   Lowered l;
   Lower("inset(0 round 160px 0 0 0) fill-box", l);  // a lone radius is as wide as the side: nothing to scale
@@ -198,14 +293,15 @@ TEST(LowerBasicShape, AShapeWithNoAreaLetsNothingThrough) {
   EXPECT_EQ(circle.Refusals(), (size_t) 0);
 }
 
-TEST(LowerBasicShape, WhatIsNotAShapeIsAsIfNotSpecifiedAndAGroupHasNoBoxToNameAndALineWithAStrokeIsRefused) {
+TEST(LowerBasicShape, WhatIsNotAShapeIsAsIfNotSpecifiedAGroupIsMeasuredByWhatItDrawsAndALineWithAStrokeIsRefused) {
   Lowered junk;
   Lower("circle(banana)", junk);
   EXPECT_EQ(Kinds(junk), (std::vector<GSHSCENE_Item_Kind>{FILL}));
   EXPECT_EQ(junk.Refusals(), (size_t) 0);
-  Lowered group;  // a group has no box of its own
-  LowerSvg(Svg("width=\"200\" height=\"200\"", "<g style=\"clip-path: circle(10px)\"><rect width=\"5\" height=\"5\"/></g>"), group);
-  EXPECT_NE(group.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+  Lowered group;  // a group is measured by the box of what it draws: the circle of 50% is the one of the box of the rect
+  LowerSvg(Svg("width=\"200\" height=\"200\"", "<g style=\"clip-path: circle(50%)\"><rect width=\"6\" height=\"6\"/></g>"), group);
+  EXPECT_EQ(group.Refusals(), (size_t) 0);
+  EXPECT_GT(group.Count(GSHSCENE_ITEM_FILL), (size_t) 0);
   Lowered line;  // a diagonal line's stroke reaches by its caps and its slope, which the half width does not
   LowerSvg(Svg("width=\"200\" height=\"200\"", "<line x2=\"50\" y2=\"30\" stroke=\"red\" stroke-width=\"6\" style=\"clip-path: circle()\"/>"), line);
   EXPECT_NE(line.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);

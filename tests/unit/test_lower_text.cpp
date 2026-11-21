@@ -679,11 +679,57 @@ TEST(LowerText, LetterSpacingSwitchesLigaturesOffUnlessTheTextAsksForThem) {
   EXPECT_EQ(GlyphsOf(f, "", "letter-spacing=\"5\" style=\"font-feature-settings: 'liga' 1, 'clig' 1\"", "fi"), (size_t) 1);
 }
 
-TEST(LowerText, TheAlternatesOfFontVariantAreRefusedNotDrawnWithoutThem) {
-  FeatureFonts f;
+namespace {
+
+/** The ids of the glyphs of the first run of `content`, as a string (each id and a comma). */
+std::string IdsOf(FeatureFonts & f, const std::string & head, const std::string & text_attributes, const std::string & content) {
+  GVEC_Lower_Options options;
+  memset(&options, 0, sizeof options);
+  options.fonts = f.fonts;
   Lowered l;
-  GlyphsOf(f, "", "style=\"font-variant: styleset(1)\"", "fi", &l);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_TEXT), nullptr);
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"Ghoti Fixture Layout GSUB\"",
+               head + "<text x=\"10\" y=\"100\" " + text_attributes + ">" + content + "</text>"), l, 0, 0, &options);
+  std::string ids;
+  for (size_t i = 0; i < l.Items(); i++) {
+    GSHSCENE_Glyph_Run run;
+    if (l.Item(i).kind == GSHSCENE_ITEM_FILL && gshscene_resource_glyph_run(l.Item(i).resource, &run) == GSHSCENE_OK) {
+      for (size_t g = 0; g < run.glyph_count; g++) {
+        ids += std::to_string(run.glyphs[g].id) + ",";
+      }
+    }
+  }
+  return ids;
+}
+
+}  // namespace
+
+TEST(LowerText, TheAlternatesOfFontVariantAreTheFeaturesTheFeatureValuesRulesNameForThem) {
+  FeatureFonts f;
+  const std::string rule =
+      "<style>@font-feature-values Ghoti Fixture Layout GSUB { @styleset { nice: 1; two: 2; both: 1 2; } @stylistic { alt: 1; } "
+      "@character-variant { variant: 1; } }</style>";
+  const std::string text = "abcdefghijklmnopqrstuvwxyz";
+  const std::string plain = IdsOf(f, "", "", text);
+  const std::string ss01 = IdsOf(f, "", "style=\"font-feature-settings: 'ss01'\"", text);
+  const std::string ss02 = IdsOf(f, "", "style=\"font-feature-settings: 'ss02'\"", text);
+  const std::string salt = IdsOf(f, "", "style=\"font-feature-settings: 'salt'\"", text);
+  const std::string cv01 = IdsOf(f, "", "style=\"font-feature-settings: 'cv01'\"", text);
+  EXPECT_NE(ss01, plain) << "the face's ss01 changes a glyph of the alphabet";
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant-alternates: styleset(nice)\"", text), ss01);
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant: styleset(two)\"", text), ss02) << "the shorthand";
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant-alternates: stylistic(alt)\"", text), salt);
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant-alternates: character-variant(variant)\"", text), cv01);
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant-alternates: styleset(both)\"", text),
+      IdsOf(f, "", "style=\"font-feature-settings: 'ss01', 'ss02'\"", text))
+      << "a name of two integers is two sets";
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant-alternates: styleset(nice, two)\"", text),
+      IdsOf(f, "", "style=\"font-feature-settings: 'ss01', 'ss02'\"", text))
+      << "and so are two names";
+  EXPECT_EQ(IdsOf(f, rule, "style=\"font-variant-alternates: styleset(unknown)\"", text), plain) << "a name no rule defines is ignored";
+  EXPECT_EQ(IdsOf(f, "", "style=\"font-variant-alternates: styleset(nice)\"", text), plain) << "and with no rule at all nothing is drawn differently";
+  Lowered l;
+  GlyphsOf(f, rule, "style=\"font-variant: styleset(nice)\"", "fi", &l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0) << "an alternate is no longer a refusal";
 }
 
 TEST(LowerText, ATextLengthAndAStartOffsetInFontRelativeUnitsAreTheSameLengthInPixels) {
@@ -865,6 +911,52 @@ TEST(LowerText, TextInAClipPathIsTheClipOfItsGlyphsOutlines) {
   EXPECT_EQ(l.Item(0).kind, GSHSCENE_ITEM_CLIP_PUSH);
   EXPECT_EQ(l.Item(1).kind, GSHSCENE_ITEM_FILL);
   EXPECT_EQ(l.Item(2).kind, GSHSCENE_ITEM_CLIP_POP);
+}
+
+namespace {
+
+/** The inner clips of the first member of the clip union the first push of `l` holds; -1 when it holds no union. */
+int InnerClipsOfFirstMember(const Lowered & l) {
+  if (l.Items() == 0 || l.Item(0).kind != GSHSCENE_ITEM_CLIP_PUSH || gshscene_resource_clip_union_count(l.Item(0).resource) == 0) {
+    return -1;
+  }
+  GSHSCENE_Clip_Member m;
+  if (gshscene_resource_clip_union_member(l.Item(0).resource, 0, &m) != GSHSCENE_OK) {
+    return -1;
+  }
+  return (int) m.inner_count;
+}
+
+}  // namespace
+
+TEST(LowerText, TextInAClipPathHasItsOwnClipPathAndSoDoesAUseOfText) {
+  Fonts f;
+  Lowered plain, own, shape, used, used_clip;
+  ASSERT_TRUE(LowerBody(f, "<clipPath id=\"c\"><text x=\"0\" y=\"80\">AB</text></clipPath><rect width=\"300\" height=\"100\" clip-path=\"url(#c)\"/>", plain));
+  EXPECT_EQ(InnerClipsOfFirstMember(plain), -1) << "plain text in a clip is a push of its outlines, not a union";
+  ASSERT_TRUE(LowerBody(f,
+      "<clipPath id=\"o\"><rect width=\"150\" height=\"100\"/></clipPath>"
+      "<clipPath id=\"c\"><text x=\"0\" y=\"80\" clip-path=\"url(#o)\">AB</text></clipPath><rect width=\"300\" height=\"100\" clip-path=\"url(#c)\"/>",
+      own));
+  EXPECT_EQ(own.Refusals(), (size_t) 0);
+  EXPECT_EQ(InnerClipsOfFirstMember(own), 1) << "the text's own clip is an inner clip of each of its pieces";
+  ASSERT_TRUE(LowerBody(f,
+      "<clipPath id=\"c\"><text x=\"0\" y=\"80\" style=\"clip-path: inset(10px) fill-box\">AB</text></clipPath><rect width=\"300\" height=\"100\" clip-path=\"url(#c)\"/>",
+      shape));
+  EXPECT_EQ(shape.Refusals(), (size_t) 0);
+  EXPECT_EQ(InnerClipsOfFirstMember(shape), 1) << "a basic shape on the text";
+  ASSERT_TRUE(LowerBody(f,
+      "<defs><text id=\"t\">AB</text></defs><clipPath id=\"c\"><use href=\"#t\" x=\"5\" y=\"80\"/></clipPath><rect width=\"300\" height=\"100\" clip-path=\"url(#c)\"/>",
+      used));
+  EXPECT_EQ(used.Refusals(), (size_t) 0) << "a use of text in a clipPath is the text's outlines";
+  ASSERT_GE(used.Items(), (size_t) 3);
+  EXPECT_EQ(used.Item(0).kind, GSHSCENE_ITEM_CLIP_PUSH);
+  ASSERT_TRUE(LowerBody(f,
+      "<defs><text id=\"t\">AB</text></defs><clipPath id=\"c\"><use href=\"#t\" x=\"5\" y=\"80\" style=\"clip-path: inset(10px) fill-box\"/></clipPath>"
+      "<rect width=\"300\" height=\"100\" clip-path=\"url(#c)\"/>",
+      used_clip));
+  EXPECT_EQ(used_clip.Refusals(), (size_t) 0);
+  EXPECT_EQ(InnerClipsOfFirstMember(used_clip), 1) << "the use's own clip, around the text it draws";
 }
 
 TEST(LowerText, EmAndExInAListOfPositionsAreTheFontSizeAndHalfOfIt) {

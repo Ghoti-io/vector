@@ -59,6 +59,7 @@ const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {
   {"font-stretch", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-width", NULL, NULL, NULL},
   {"font-style", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-style", NULL, NULL, NULL},
   {"font-variant", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant", NULL, NULL, NULL},
+  {"font-variant-alternates", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant-alternates", NULL, NULL, NULL},
   {"font-variant-caps", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant-caps", NULL, NULL, NULL},
   {"font-variant-east-asian", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant-east-asian", NULL, NULL, NULL},
   {"font-variant-ligatures", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant-ligatures", NULL, NULL, NULL},

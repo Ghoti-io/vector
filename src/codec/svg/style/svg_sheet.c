@@ -232,6 +232,15 @@ static GVEC_Result compile_text(sheet_frame * frame, const char * text, size_t l
   GTEXT_CSS_Sheet_Result result;
   memset(&result, 0, sizeof result);
   status = gtext_css_sheet_compile(tree, context->engine->reg.registry, &options, &sheet, &result);
+  if (context->atrules) {
+    /* The at-rules the style layer reads (`@font-feature-values`) are collected from the tree, after the sheets it imports (their trees were added while it compiled). */
+    GTEXT_CSS_Status collected = gtext_css_atrule_set_add_tree(context->atrules, tree);
+    if (collected == GTEXT_CSS_E_OOM) {
+      gtext_css_tree_free(tree);
+      gtext_css_sheet_free(sheet);
+      return GVEC_ERR_OOM;
+    }
+  }
   gtext_css_tree_free(tree);
   if (context->sheets_result != GVEC_OK) {
     gtext_css_sheet_free(sheet);
@@ -335,6 +344,13 @@ GVEC_Result gvec_svg_style_sheets(GVEC_Svg_Style_Context * context) {
         }
       }
       options.conditions = context->conditions;
+      GTEXT_CSS_Atrule_Set_Options atrule_options = gtext_css_atrule_set_options_default();
+      atrule_options.conditions = context->conditions;
+      GTEXT_CSS_Status set_made = gtext_css_atrule_set_new(context->engine->reg.registry, &atrule_options, &context->atrules);
+      if (set_made != GTEXT_CSS_OK) {
+        r = status_result(set_made);
+        break;
+      }
       GTEXT_CSS_Status status = gtext_css_rule_index_new(context->engine->reg.registry, &options, &index);
       if (status != GTEXT_CSS_OK) {
         r = status_result(status);
@@ -375,4 +391,19 @@ const GVEC_Svg_Element * gvec_svg_style_sheet_refused(const GVEC_Svg_Style_Conte
     *why = context->sheet_refused_why;
   }
   return context->sheet_refused;
+}
+
+const GTEXT_CSS_Feature_Values * gvec_svg_style_feature_values(GVEC_Svg_Style_Context * context, const char * family, size_t length) {
+  if (!context->atrules) {
+    return NULL;
+  }
+  if (!context->atrules_frozen) {
+    context->atrules_frozen = true;
+    if (gtext_css_atrule_set_freeze(context->atrules) != GTEXT_CSS_OK) {
+      return NULL;
+    }
+  }
+  char key[256];
+  size_t n = gtext_css_atrule_set_family_key(family, length, key, sizeof key);
+  return n ? gtext_css_atrule_set_feature_values(context->atrules, key, n) : NULL;
 }

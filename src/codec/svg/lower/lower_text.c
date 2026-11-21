@@ -48,6 +48,7 @@
 #include <ghoti.io/font/shape.h>
 
 #include "../svg_grammar.h"
+#include "../style/svg_style.h"
 #include "lower_internal.h"
 
 /* The most characters of one text this lowering shapes. */
@@ -288,23 +289,6 @@ static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Valu
   return gvec_lw_absolute_length(&l, out);
 }
 
-/* What this does not lower is refused, not drawn without it: the element is refused whole when any of these is not its initial value.
- * `*clear` is false when it was refused.  The alternates of `font-variant` (`styleset()`, `swash()` and the like, which name a set the
- * `@font-feature-values` rule defines) are the one thing of it that is not read. */
-static GVEC_Result unsupported(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * clear) {
-  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
-  *clear = false;
-  {
-    char value[128];
-    if ((chain_value(inst, "font-variant", true, true, value, sizeof value) && strchr(value, '(')) ||
-        (chain_value(inst, "font-variant-alternates", false, true, value, sizeof value) && strcmp(value, "normal") != 0)) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the alternates of font-variant are not lowered");
-    }
-  }
-  *clear = true;
-  return GVEC_OK;
-}
-
 //-----------------------------------------------------------------------------
 // The text's content: characters, each with the span it is in and the positions the lists give it
 //-----------------------------------------------------------------------------
@@ -524,6 +508,121 @@ static bool apply_variant_words(tstyle * st, const char * text) {
   return true;
 }
 
+/* The integers an `@font-feature-values` rule gives `name` of a feature type, for the first family of the span that defines it; NULL when none does
+ * (a name no rule defines is ignored, CSS Fonts 4, 6.4). */
+static const GTEXT_CSS_Feature_Value * feature_value(gvec_lw_ctx * ctx, const tstyle * st, GTEXT_CSS_Feature_Type type, const char * name, size_t length) {
+  for (size_t f = 0; f < st->family_count; f++) {
+    const GTEXT_CSS_Feature_Values * values = gvec_svg_style_feature_values(ctx->style, st->families[f], strlen(st->families[f]));
+    if (!values) {
+      continue;
+    }
+    for (size_t i = values->value_count[type]; i > 0; i--) {
+      const GTEXT_CSS_Feature_Value * v = &values->values[type][i - 1];
+      if (v->name.length == length && memcmp(v->name.data, name, length) == 0) {
+        return v;
+      }
+    }
+  }
+  return NULL;
+}
+
+/* The words of a computed `font-variant-alternates`: `historical-forms`, and `stylistic()`, `styleset()`, `character-variant()`, `swash()`,
+ * `ornaments()` and `annotation()` of the names an `@font-feature-values` rule defines, each turned into the feature it stands for. False when the
+ * span keeps no more features. */
+static bool apply_alternates(gvec_lw_ctx * ctx, tstyle * st, const char * text) {
+  const char * p = text;
+  while (*p) {
+    while (*p == ' ') {
+      p++;
+    }
+    const char * word = p;
+    while (*p && *p != ' ' && *p != '(') {
+      p++;
+    }
+    const size_t word_length = (size_t) (p - word);
+    if (word_length == 0) {
+      break;
+    }
+    if (*p != '(') {
+      if (word_length == 16 && strncmp(word, "historical-forms", 16) == 0 && !set_feature(st, "hist", 1u)) {
+        return false;
+      }
+      continue;
+    }
+    const char * args = p + 1;
+    const char * close = strchr(args, ')');
+    if (!close) {
+      break;
+    }
+    GTEXT_CSS_Feature_Type type;
+    const char * tag = NULL;
+    if (word_length == 9 && strncmp(word, "stylistic", 9) == 0) {
+      type = GTEXT_CSS_FEATURE_STYLISTIC, tag = "salt";
+    }
+    else if (word_length == 8 && strncmp(word, "styleset", 8) == 0) {
+      type = GTEXT_CSS_FEATURE_STYLESET;
+    }
+    else if (word_length == 17 && strncmp(word, "character-variant", 17) == 0) {
+      type = GTEXT_CSS_FEATURE_CHARACTER_VARIANT;
+    }
+    else if (word_length == 5 && strncmp(word, "swash", 5) == 0) {
+      type = GTEXT_CSS_FEATURE_SWASH, tag = "swsh";
+    }
+    else if (word_length == 9 && strncmp(word, "ornaments", 9) == 0) {
+      type = GTEXT_CSS_FEATURE_ORNAMENTS, tag = "ornm";
+    }
+    else if (word_length == 10 && strncmp(word, "annotation", 10) == 0) {
+      type = GTEXT_CSS_FEATURE_ANNOTATION, tag = "nalt";
+    }
+    else {
+      p = close + 1;
+      continue;
+    }
+    /* the names, separated by commas (a name may be quoted by the engine's writing; it is compared as the rule wrote it) */
+    const char * n = args;
+    while (n < close) {
+      while (n < close && (*n == ' ' || *n == ',')) {
+        n++;
+      }
+      const char * end = n;
+      while (end < close && *end != ' ' && *end != ',') {
+        end++;
+      }
+      if (end > n) {
+        const GTEXT_CSS_Feature_Value * v = feature_value(ctx, st, type, n, (size_t) (end - n));
+        if (v && v->value_count > 0) {
+          if (tag) {
+            if (!set_feature(st, tag, v->values[0])) {
+              return false;
+            }
+          }
+          else if (type == GTEXT_CSS_FEATURE_STYLESET) {
+            for (size_t k = 0; k < v->value_count; k++) {
+              if (v->values[k] >= 1 && v->values[k] <= 20) {
+                char name[5];
+                snprintf(name, sizeof name, "ss%02u", (unsigned) v->values[k]);
+                if (!set_feature(st, name, 1u)) {
+                  return false;
+                }
+              }
+            }
+          }
+          else if (v->values[0] >= 1 && v->values[0] <= 99) {
+            char name[5];
+            snprintf(name, sizeof name, "cv%02u", (unsigned) v->values[0]);
+            if (!set_feature(st, name, v->value_count > 1 ? v->values[1] : 1u)) {
+              return false;
+            }
+          }
+        }
+      }
+      n = end;
+    }
+    p = close + 1;
+  }
+  return true;
+}
+
 /* The OpenType features a span asks for, from the cascade: `font-kerning`, the `font-variant-*` longhands (which the `font-variant` shorthand
  * sets), then `font-feature-settings`, which has the last word. */
 static GVEC_Result read_features(tctx * t, const GVEC_Svg_Instance * inst, tstyle * st) {
@@ -561,6 +660,14 @@ static GVEC_Result read_features(tctx * t, const GVEC_Svg_Instance * inst, tstyl
     if (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
       fits = fits && apply_variant_words(st, v.keyword);
     }
+  }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_VARIANT_ALTERNATES, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  if (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword && strcmp(v.keyword, "normal") != 0) {
+    fits = fits && apply_alternates(ctx, st, v.keyword);
   }
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_FEATURE_SETTINGS, &v, &ok);
   if (r != GVEC_OK || !ok) {
@@ -1017,14 +1124,8 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
     t->refused = true;
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text's spans nest deeper than the lowering allows");
   }
-  bool clear;
-  GVEC_Result r = unsupported(ctx, inst, &clear);
-  if (r != GVEC_OK || !clear) {
-    t->refused = true;
-    return r;
-  }
   uint32_t style = 0;
-  r = span_style(t, inst, parent, &style);
+  GVEC_Result r = span_style(t, inst, parent, &style);
   if (r != GVEC_OK || t->refused) {
     return r;
   }

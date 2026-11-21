@@ -245,8 +245,10 @@ written, are converted with the `color` library's matrices to linear Rec. 2020; 
 `double`. `lab()`, `lch()` (D50), `oklab()`, `oklch()` and `color(xyz ...)` are converted exactly (CSS Color 4, 9) and Bradford-adapted
 to linear Rec. 2020 too, a color outside the gamut kept with a component beyond `[0, 1]` for the sink to map into its target. `color-mix()`, relative colors,
 `alpha()` and `contrast-color()` are computed by the engine to a color of one of these forms (with the element's `color` where `currentcolor` is written) and read
-from it; `device-cmyk()` is the naive conversion. What is refused is a system color other than `Canvas` and `CanvasText` (which has no value without a user
-agent) and a `color()` space named by `@color-profile`: reading one is `GVEC_ERR_UNSUPPORTED` and a `GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's
+from it; `device-cmyk()` is the naive conversion. The system colors are a table of the library's own (CSS Color 4 leaves their values to the user
+agent, and the two browsers differ): Chromium's values, light and dark, a deprecated name being the color CSS Color 4 maps it to; `Canvas` and
+`CanvasText` are the document's background and foreground. What is refused is a `color()` space named by `@color-profile` (no engine applies
+one) and a mix or relative color that holds a system color: reading one is `GVEC_ERR_UNSUPPORTED` and a `GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's
 location. `Canvas`, `CanvasText` and `light-dark()` follow the element's used color scheme: `color-scheme:
 normal` is light, and the preference of the load options decides only for an element that supports both.
 
@@ -491,19 +493,31 @@ uncut reference as a gradient's, and stops there.
 
 **H11 Several shapes.** The shapes of a `clipPath` with more than one that draws are one union clip of the waist: its members are
 the shapes' paths, each with its own `transform` and `clip-rule`, and the clip's map places them as a whole, as H9 says. The region
-is the union of the members, quantized once, so abutting shapes leave no seam; overlapping members are the sink's work. A
-`clip-path` on one shape of several clips that shape alone, which an intersection around the union cannot say, so it is refused,
-as is text in a `clipPath`, with `text`. A `use` child that names a shape is that shape, placed by the use's `transform` and its `x` and
+is the union of the members, quantized once, so abutting shapes leave no seam; overlapping members are the sink's work. What clips a
+member in turn is an **inner clip** of it: the `clip-path` of a shape, of a `use` child (in the use's space, its `transform` and not its
+`x` and `y`), of text, and of the `clipPath` itself (an intersection around the union) is a `clipPath` or a basic shape, and the
+region it makes is a union of its own, so that a shape cut by several unions is a member for each term of their product (up to a
+limit of terms, past which the element is refused). A clip in the units of the bounding box that clips a shape of a clipPath is
+placed on **that shape's** box (a `use`'s the use's), not on the box of the element the outer clip is applied to; and a basic shape on
+the `clipPath` itself is measured against the element the clipPath is applied to, as Chromium does (Firefox ignores one). Text in a
+`clipPath` is the outlines of its glyphs and the lines of its decorations, each piece with the `clip-rule` of the span it is of; a
+`use` of text is the same, placed by the use. A `use` child that names a shape or text is that shape or text, placed by the use's `transform` and its `x` and
 `y` (the shape's own `transform` comes after), and one that names anything else (a group, a `symbol`, nothing) is not a valid child and adds
-nothing, so a clip of only those lets nothing through; a `use` that has a `clip-path` of its own is refused.
+nothing, so a clip of only those lets nothing through.
 
-**H12 Basic shapes.** `clip-path: inset() | circle() | ellipse() | polygon() | path()`, with an optional geometry box, on an element
-is one clip region in that element's space (its `transform` moves it). The box is the fill box, the stroke box (the default, the
-fill box widened by half the stroke width; refused for geometry that is not a rectangle, circle or ellipse, whose stroke bounds are
-not exact), or the view box; an element that is not a shape, or a view box whose origin is not the viewport's, is refused. A
-circle with no radius is `closest-side` of the fill box and a percentage is of the normalized diagonal, as CSS Shapes says. `inset()`
-radii that overlap on a side are all scaled by one factor, as CSS Backgrounds does. A shape with no area lets nothing through. A
-basic shape on a `clipPath`'s shape is still refused.
+**H12 Basic shapes.** `clip-path: inset() | circle() | ellipse() | polygon() | path() | shape()`, with an optional geometry box, on an element
+is one clip region in that element's space (its `transform` moves it); `rect()` and `xywh()` are computed by the style engine to
+`inset()`, so they are the same. The box is the fill box, the stroke box (the default: the fill box widened by half the stroke width,
+which is exact for a rectangle, circle or ellipse; for a path, line, polyline or polygon a join or a cap reaches further and the box
+is refused), or the view box (whose origin must be the viewport's). A group, a `use`, a nested `svg`, a `switch` and text are measured
+by the box of what they draw (the stroke box takes in the strokes of what is inside); one that holds a `foreignObject`, whose box is
+not measured, is refused. A circle with no radius is `closest-side` of the fill box and a percentage is of the normalized diagonal, as
+CSS Shapes says; a percentage in `inset()` is of the width for the left and the right and of the height for the top and the bottom,
+whatever the number of values. `inset()` radii that overlap on a side are all scaled by one factor, as CSS Backgrounds does.
+`shape()` is read as the path data it stands for (`move`, `line`, `hline`, `vline`, `curve` with one or two control points, `smooth`,
+`arc` with its sweep, size and rotation, `close`; `to` is absolute and `by` relative, a curve's controls relative to the start of the
+command), its coordinates from the box's top left corner. A shape with no area lets nothing through. A basic shape on a clip's
+shapes is an inner clip (H11).
 
 **H13 Bounding boxes of groups, and context gradients.** A `clipPath` in `objectBoundingBox` units on a group is placed in the box of what
 the group draws: the union of the fill boxes of the shapes in it (and in the `g` and `a` inside it), each moved by its transforms; a

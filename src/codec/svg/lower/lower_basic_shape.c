@@ -21,12 +21,12 @@
 /**
  * @file lower_basic_shape.c
  *
- * `clip-path` written as a basic shape (H11): `circle()`, `ellipse()`, `inset()`, `polygon()` and `path()`, with a reference box. The
+ * `clip-path` written as a basic shape (H11): `circle()`, `ellipse()`, `inset()` (to which the style engine computes `rect()` and `xywh()`), `polygon()`, `path()` and `shape()`, with a reference box. The
  * value is read as text (the style layer keeps a basic shape as written), resolved against the reference box of the element in its
  * own space, and made an exact primitive or path of the waist: a circle is an ellipse, `inset()` a rounded rectangle whose corners
- * are scaled as CSS Backgrounds says when they would overlap, and `polygon()` and `path()` paths. The result is one clip region
+ * are scaled as CSS Backgrounds says when they would overlap, and `polygon()`, `path()` and `shape()` paths (a `shape()` is written as the path data it stands for). The result is one clip region
  * in the element's space; what this cannot read is told apart as invalid (the property is then as if not specified, CSS) or valid
- * and refused (`rect()`, `xywh()`, `shape()`, an `em` length that needs the font).
+ * and refused (an `em` length that needs the font, a stroke box this does not compute).
  *
  * The reference boxes: `fill-box` is the bounds of the element's geometry; `stroke-box` those bounds taken through the waist's stroke
  * widened by half the stroke when the element has one (a rectangle, circle or ellipse; no other geometry is refused for a box it cannot name); `view-box` the nearest viewport, which must start at the origin. `border-box` and `margin-box`
@@ -36,6 +36,8 @@
 
 #include <ghoti.io/vector/macros.h>
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/math/basic.h>
@@ -496,19 +498,13 @@ static void expand4(const double in[4], int count, double out[4]) {
   }
 }
 
-static parse_status inset(cur * c, const box * b, shape * out) {
-  double raw[4], sides[4];
-  int count;
-  /* top, right, bottom, left: the first and third are heights, the second and fourth widths. */
-  parse_status s = shorthand(c, b->h, b->w, raw, &count, false);
-  if (s != PARSE_OK) {
-    return s;
-  }
-  expand4(raw, count, sides);
+/* The rectangle x, y, w, h of the reference box `b`, with the corner radii after an optional `round` (`inset()`; the style engine computes `rect()` and `xywh()` to it). */
+static parse_status rounded_rect(cur * c, const box * b, double x, double y, double w, double h, shape * out) {
   double hr[4] = {0, 0, 0, 0}, vr[4] = {0, 0, 0, 0};
   if (next_is_word(c)) {
-    char w[16];
-    if (!word(c, w, sizeof w) || strcmp(w, "round")) {
+    char kw[16];
+    parse_status s;
+    if (!word(c, kw, sizeof kw) || strcmp(kw, "round")) {
       return PARSE_INVALID;
     }
     double h_raw[4], v_raw[4];
@@ -537,8 +533,9 @@ static parse_status inset(cur * c, const box * b, shape * out) {
   if (!at_end(c)) {
     return PARSE_INVALID;
   }
-  double x = b->x + sides[3], y = b->y + sides[0];
-  double w = b->w - sides[3] - sides[1], h = b->h - sides[0] - sides[2];
+  if (!at_end(c)) {
+    return PARSE_INVALID;
+  }
   if (!(w > 0) || !(h > 0)) {
     out->empty = true;
     return PARSE_OK;
@@ -572,6 +569,28 @@ static parse_status inset(cur * c, const box * b, shape * out) {
   out->primitive.kind = round_any ? GSHSCENE_PRIMITIVE_ROUNDED_RECT : GSHSCENE_PRIMITIVE_RECT;
   out->is_primitive = true;
   return PARSE_OK;
+}
+
+static parse_status inset(cur * c, const box * b, shape * out) {
+  double raw[4], sides[4];
+  int count;
+  /* top, right, bottom, left: the first and third are heights, the second and fourth widths. */
+  const cur start = *c;
+  parse_status s = shorthand(c, b->h, b->w, raw, &count, false);
+  if (s != PARSE_OK) {
+    return s;
+  }
+  expand4(raw, count, sides);
+  if (count == 1) {
+    /* One value is all four sides, and the left and the right take a percentage of the width, not of the height the first value was read against. */
+    cur again = start;
+    double across;
+    if (lp(&again, b->w, &across) != LP_OK) {
+      return PARSE_INVALID;
+    }
+    sides[1] = sides[3] = across;
+  }
+  return rounded_rect(c, b, b->x + sides[3], b->y + sides[0], b->w - sides[3] - sides[1], b->h - sides[0] - sides[2], out);
 }
 
 static bool fill_rule_word(cur * c, GSHGEOM_Fill_Rule * rule) {
@@ -635,6 +654,8 @@ static parse_status polygon(gvec_lw_ctx * ctx, cur * c, const box * b, shape * o
   return PARSE_OK;
 }
 
+static parse_status path_from_text(gvec_lw_ctx * ctx, const char * start, size_t n, const box * b, shape * out);
+
 static parse_status path_function(gvec_lw_ctx * ctx, cur * c, const box * b, shape * out) {
   out->rule = GSHGEOM_FILL_NONZERO;
   fill_rule_word(c, &out->rule);
@@ -658,6 +679,11 @@ static parse_status path_function(gvec_lw_ctx * ctx, cur * c, const box * b, sha
   if (!at_end(c)) {
     return PARSE_INVALID;
   }
+  return path_from_text(ctx, start, n, b, out);
+}
+
+/* Path data `text` (`n` bytes), its coordinates from the reference box's top left corner, as the shape's segments. */
+static parse_status path_from_text(gvec_lw_ctx * ctx, const char * start, size_t n, const box * b, shape * out) {
   gvec_svg_parse_context pc;
   memset(&pc, 0, sizeof pc);
   pc.arena = &ctx->arena;
@@ -678,6 +704,292 @@ static parse_status path_function(gvec_lw_ctx * ctx, cur * c, const box * b, sha
   out->ox = b->x;
   out->oy = b->y;
   return PARSE_OK;
+}
+
+/* The text of the number `v`, appended to `*w` (which has room), with a space before it. */
+static void put_number(char ** w, double v) {
+  *w += sprintf(*w, " %.9g", v);
+}
+
+/* `to` or `by`: true for `by` (relative). */
+static bool to_or_by(cur * c, bool * by, parse_status * bad) {
+  char w[8];
+  *bad = PARSE_OK;
+  if (!word(c, w, sizeof w) || (strcmp(w, "to") && strcmp(w, "by"))) {
+    *bad = PARSE_INVALID;
+    return false;
+  }
+  *by = !strcmp(w, "by");
+  return true;
+}
+
+/* A coordinate pair, the x along the box's width and the y along its height, appended as path data. */
+static parse_status pair(cur * c, const box * b, char ** w) {
+  double x, y;
+  lp_status s = lp(c, b->w, &x);
+  if (s == LP_OK) {
+    s = lp(c, b->h, &y);
+  }
+  if (s == LP_REFUSE) {
+    return PARSE_REFUSED;
+  }
+  if (s != LP_OK) {
+    return PARSE_INVALID;
+  }
+  put_number(w, x);
+  put_number(w, y);
+  return PARSE_OK;
+}
+
+/* An angle for `rotate`, in degrees. */
+static parse_status angle_deg(cur * c, double * out) {
+  ws(c);
+  const char * q = c->p;
+  while (q < c->end && !gvec_svg_is_wsp((unsigned char) *q) && *q != ',' && *q != ')') {
+    q++;
+  }
+  GVEC_Svg_Length angle;
+  gvec_svg_parse_error err;
+  if (q == c->p || gvec_svg_parse_angle(c->p, (size_t) (q - c->p), &angle, &err) != GVEC_SVG_PARSE_OK) {
+    return PARSE_INVALID;
+  }
+  *out = gvec_svg_angle_degrees(&angle);
+  c->p = q;
+  return PARSE_OK;
+}
+
+/* `shape([<fill-rule>] from <pair>, <command>, ...)` (CSS Shapes 2): written as the path data it stands for, with the coordinates from the
+ * reference box's top left corner. A `by` is a relative command, and a curve's control points are relative to the start of the command. */
+static parse_status shape_function(gvec_lw_ctx * ctx, cur * c, const box * b, shape * out) {
+  out->rule = GSHGEOM_FILL_NONZERO;
+  char word_buf[16];
+  cur save = *c;
+  if (next_is_word(c) && word(c, word_buf, sizeof word_buf)) {
+    if (!strcmp(word_buf, "nonzero") || !strcmp(word_buf, "evenodd")) {
+      out->rule = !strcmp(word_buf, "evenodd") ? GSHGEOM_FILL_EVEN_ODD : GSHGEOM_FILL_NONZERO;
+    }
+    else {
+      *c = save;
+    }
+  }
+  if (!word(c, word_buf, sizeof word_buf) || strcmp(word_buf, "from")) {
+    return PARSE_INVALID;
+  }
+  size_t room = (size_t) (c->end - c->p) * 40 + 64;
+  char * text = gvec_arena_alloc(&ctx->arena, room, 1);
+  if (!text) {
+    return PARSE_REFUSED;
+  }
+  char * w = text;
+  *w++ = 'M';
+  parse_status st = pair(c, b, &w);
+  if (st != PARSE_OK) {
+    return st;
+  }
+  while (!at_end(c)) {
+    if (!eat(c, ',')) {
+      return PARSE_INVALID;
+    }
+    char cmd[8];
+    if (!word(c, cmd, sizeof cmd)) {
+      return PARSE_INVALID;
+    }
+    bool by = false;
+    if (!strcmp(cmd, "close")) {
+      *w++ = 'Z';
+      continue;
+    }
+    if (!to_or_by(c, &by, &st)) {
+      return st;
+    }
+    if (!strcmp(cmd, "move") || !strcmp(cmd, "line")) {
+      *w++ = !strcmp(cmd, "move") ? (by ? 'm' : 'M') : (by ? 'l' : 'L');
+      st = pair(c, b, &w);
+    }
+    else if (!strcmp(cmd, "hline") || !strcmp(cmd, "vline")) {
+      const bool horizontal = !strcmp(cmd, "hline");
+      double v;
+      char keyword[12];
+      cur peek = *c;
+      if (next_is_word(c) && word(c, keyword, sizeof keyword)) {
+        const char * lows = horizontal ? "left" : "top";
+        const char * highs = horizontal ? "right" : "bottom";
+        const double span = horizontal ? b->w : b->h;
+        if (!strcmp(keyword, lows) || !strcmp(keyword, horizontal ? "x-start" : "y-start")) {
+          v = 0;
+        }
+        else if (!strcmp(keyword, "center")) {
+          v = span / 2;
+        }
+        else if (!strcmp(keyword, highs) || !strcmp(keyword, horizontal ? "x-end" : "y-end")) {
+          v = span;
+        }
+        else {
+          return PARSE_INVALID;
+        }
+        if (by) {
+          return PARSE_INVALID; /* a keyword is a position, and `by` is a distance */
+        }
+      }
+      else {
+        *c = peek;
+        lp_status ls = lp(c, horizontal ? b->w : b->h, &v);
+        if (ls == LP_REFUSE) {
+          return PARSE_REFUSED;
+        }
+        if (ls != LP_OK) {
+          return PARSE_INVALID;
+        }
+      }
+      *w++ = horizontal ? (by ? 'h' : 'H') : (by ? 'v' : 'V');
+      put_number(&w, v);
+      st = PARSE_OK;
+    }
+    else if (!strcmp(cmd, "curve")) {
+      char * mark = w;
+      *w++ = by ? 'c' : 'C'; /* rewritten to a quadratic when there is one control point */
+      char * coords = w;
+      st = pair(c, b, &w); /* the end point: moved after the controls below */
+      if (st != PARSE_OK) {
+        return st;
+      }
+      char * end_text = gvec_arena_alloc(&ctx->arena, (size_t) (w - coords) + 1, 1);
+      if (!end_text) {
+        return PARSE_REFUSED;
+      }
+      memcpy(end_text, coords, (size_t) (w - coords));
+      end_text[w - coords] = 0;
+      w = coords;
+      if (!word(c, word_buf, sizeof word_buf) || strcmp(word_buf, "with")) {
+        return PARSE_INVALID;
+      }
+      st = pair(c, b, &w);
+      if (st != PARSE_OK) {
+        return st;
+      }
+      if (eat(c, '/')) {
+        st = pair(c, b, &w);
+        if (st != PARSE_OK) {
+          return st;
+        }
+      }
+      else {
+        *mark = by ? 'q' : 'Q';
+      }
+      w += sprintf(w, "%s", end_text);
+      st = PARSE_OK;
+    }
+    else if (!strcmp(cmd, "smooth")) {
+      char * mark = w;
+      *w++ = by ? 't' : 'T';
+      char * coords = w;
+      st = pair(c, b, &w);
+      if (st != PARSE_OK) {
+        return st;
+      }
+      cur look = *c;
+      if (next_is_word(&look) && word(&look, word_buf, sizeof word_buf) && !strcmp(word_buf, "with")) {
+        *c = look;
+        char * end_text = gvec_arena_alloc(&ctx->arena, (size_t) (w - coords) + 1, 1);
+        if (!end_text) {
+          return PARSE_REFUSED;
+        }
+        memcpy(end_text, coords, (size_t) (w - coords));
+        end_text[w - coords] = 0;
+        w = coords;
+        *mark = by ? 's' : 'S';
+        st = pair(c, b, &w);
+        if (st != PARSE_OK) {
+          return st;
+        }
+        w += sprintf(w, "%s", end_text);
+      }
+      st = PARSE_OK;
+    }
+    else if (!strcmp(cmd, "arc")) {
+      char * coords = w + 1;
+      *w++ = by ? 'a' : 'A';
+      char * pair_start = w;
+      st = pair(c, b, &w);
+      if (st != PARSE_OK) {
+        return st;
+      }
+      (void) coords;
+      char * end_text = gvec_arena_alloc(&ctx->arena, (size_t) (w - pair_start) + 1, 1);
+      if (!end_text) {
+        return PARSE_REFUSED;
+      }
+      memcpy(end_text, pair_start, (size_t) (w - pair_start));
+      end_text[w - pair_start] = 0;
+      w = pair_start;
+      if (!word(c, word_buf, sizeof word_buf) || strcmp(word_buf, "of")) {
+        return PARSE_INVALID;
+      }
+      const double diagonal = sqrt((b->w * b->w + b->h * b->h) / 2);
+      double rx, ry;
+      lp_status ls = lp(c, diagonal, &rx);
+      if (ls == LP_REFUSE) {
+        return PARSE_REFUSED;
+      }
+      if (ls != LP_OK || rx < 0) {
+        return PARSE_INVALID;
+      }
+      cur before = *c;
+      ls = lp(c, diagonal, &ry);
+      if (ls == LP_REFUSE) {
+        return PARSE_REFUSED;
+      }
+      if (ls != LP_OK) {
+        *c = before;
+        ry = rx;
+      }
+      else if (ry < 0) {
+        return PARSE_INVALID;
+      }
+      int sweep = 0, large = 0;
+      double rotate = 0;
+      while (!at_end(c) && next_is_word(c)) {
+        cur here = *c;
+        word(c, word_buf, sizeof word_buf);
+        if (!strcmp(word_buf, "cw")) {
+          sweep = 1;
+        }
+        else if (!strcmp(word_buf, "ccw")) {
+          sweep = 0;
+        }
+        else if (!strcmp(word_buf, "large")) {
+          large = 1;
+        }
+        else if (!strcmp(word_buf, "small")) {
+          large = 0;
+        }
+        else if (!strcmp(word_buf, "rotate")) {
+          st = angle_deg(c, &rotate);
+          if (st != PARSE_OK) {
+            return st;
+          }
+        }
+        else {
+          *c = here;
+          return PARSE_INVALID;
+        }
+      }
+      put_number(&w, rx);
+      put_number(&w, ry);
+      put_number(&w, rotate);
+      w += sprintf(w, " %d %d", large, sweep);
+      w += sprintf(w, "%s", end_text);
+      st = PARSE_OK;
+    }
+    else {
+      return PARSE_INVALID;
+    }
+    if (st != PARSE_OK) {
+      return st;
+    }
+  }
+  *w = 0;
+  return path_from_text(ctx, text, (size_t) (w - text), b, out);
 }
 
 //-----------------------------------------------------------------------------
@@ -741,7 +1053,28 @@ static box_status reference_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     return BOX_OK;
   }
   if (!is_geometry(gvec_svg_element_kind(e))) {
-    return BOX_REFUSED;
+    /* A group, a `use`, a nested `svg`, a `switch`, a `text`: the box of what it draws, with the strokes when the keyword says the stroke box. */
+    GSHGEOM_Bounds inner;
+    bool known;
+    inner.empty = 1;
+    const bool saved = ctx->box_stroke;
+    ctx->box_stroke = kind == BOX_STROKE;
+    *result = gvec_lw_inner_box(ctx, inst, &inner, &known);
+    ctx->box_stroke = saved;
+    if (*result != GVEC_OK) {
+      return BOX_ERROR;
+    }
+    if (!known) {
+      return BOX_REFUSED; /* it holds what is not measured (a foreignObject) */
+    }
+    if (inner.empty) {
+      return BOX_NONE;
+    }
+    out->x = inner.min.x;
+    out->y = inner.min.y;
+    out->w = inner.max.x - inner.min.x;
+    out->h = inner.max.y - inner.min.y;
+    return BOX_OK;
   }
   gvec_lw_geometry geometry;
   const GSHSCENE_Resource * resource = NULL;
@@ -880,7 +1213,7 @@ GVEC_Result gvec_lw_basic_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   if (!fn) {
     return GVEC_OK;
   }
-  enum { F_CIRCLE, F_ELLIPSE, F_INSET, F_POLYGON, F_PATH } which;
+  enum { F_CIRCLE, F_ELLIPSE, F_INSET, F_POLYGON, F_PATH, F_SHAPE } which;
   if (fn_length == 6 && !strncmp(fn, "circle", 6)) {
     which = F_CIRCLE;
   }
@@ -896,8 +1229,8 @@ GVEC_Result gvec_lw_basic_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   else if (fn_length == 4 && !strncmp(fn, "path", 4)) {
     which = F_PATH;
   }
-  else if ((fn_length == 4 && (!strncmp(fn, "rect", 4) || !strncmp(fn, "xywh", 4))) || (fn_length == 5 && !strncmp(fn, "shape", 5))) {
-    return refused("a clip-path of rect(), xywh() or shape() is not lowered", out);
+  else if (fn_length == 5 && !strncmp(fn, "shape", 5)) {
+    which = F_SHAPE;
   }
   else {
     return GVEC_OK;
@@ -930,6 +1263,9 @@ GVEC_Result gvec_lw_basic_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     break;
   case F_INSET:
     ps = inset(&a, &ref, &s);
+    break;
+  case F_SHAPE:
+    ps = shape_function(ctx, &a, &ref, &s);
     break;
   case F_POLYGON:
     ps = polygon(ctx, &a, &ref, &s);

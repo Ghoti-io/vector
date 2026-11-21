@@ -298,6 +298,59 @@ static bool is_name(const GTEXT_CSS_Color * c, const char * name) {
   return c->name.length == strlen(name) && memcmp(c->name.data, name, c->name.length) == 0;
 }
 
+/* The system colors (CSS Color 4, 6.2), whose values the user agent chooses. They are Chromium's, light and dark (the two browsers differ from each
+ * other, Firefox's being a different set; measured by drawing each name in both): a scheme is the one `used_scheme_is_dark` says. A deprecated name
+ * is the system color CSS Color 4 maps it to. Canvas and CanvasText are handled where they are used. */
+typedef struct system_color {
+  const char * name;
+  uint32_t light, dark; ///< 0xRRGGBBAA
+} system_color;
+
+static const system_color system_colors[] = {
+    {"accentcolor", 0x0075ffffu, 0x0075ffffu},
+    {"accentcolortext", 0xffffffffu, 0xffffffffu},
+    {"activetext", 0xff0000ffu, 0xff0000ffu},
+    {"buttonborder", 0x000000ffu, 0xffffffffu},
+    {"buttonface", 0xefefefffu, 0x6b6b6bffu},
+    {"buttontext", 0x000000ffu, 0xffffffffu},
+    {"field", 0xffffffffu, 0x3b3b3bffu},
+    {"fieldtext", 0x000000ffu, 0xffffffffu},
+    {"graytext", 0x808080ffu, 0x808080ffu},
+    {"highlight", 0x0041c6ccu, 0x0041c6ccu},
+    {"highlighttext", 0xffffffffu, 0xffffffffu},
+    {"linktext", 0x0000eeffu, 0x9e9effffu},
+    {"mark", 0xffff00ffu, 0xffff00ffu},
+    {"marktext", 0x000000ffu, 0x000000ffu},
+    {"selecteditem", 0x1967d2ffu, 0x99c8ffffu},
+    {"selecteditemtext", 0xffffffffu, 0x3b3b3bffu},
+    {"visitedtext", 0x551a8bffu, 0xd0adf0ffu},
+    /* the deprecated names, as CSS Color 4 maps them */
+    {"activeborder", 0x000000ffu, 0xffffffffu},
+    {"buttonhighlight", 0xefefefffu, 0x6b6b6bffu},
+    {"buttonshadow", 0xefefefffu, 0x6b6b6bffu},
+    {"inactiveborder", 0x000000ffu, 0xffffffffu},
+    {"inactivecaptiontext", 0x808080ffu, 0x808080ffu},
+    {"threeddarkshadow", 0x000000ffu, 0xffffffffu},
+    {"threedface", 0xefefefffu, 0x6b6b6bffu},
+    {"threedhighlight", 0x000000ffu, 0xffffffffu},
+    {"threedlightshadow", 0x000000ffu, 0xffffffffu},
+    {"threedshadow", 0x000000ffu, 0xffffffffu},
+    {"windowframe", 0x000000ffu, 0xffffffffu},
+};
+
+/* Canvas as the deprecated names say it (a window, a menu, a caption), and CanvasText likewise. */
+static const char * const canvas_names[] = {"activecaption", "appworkspace", "background", "infobackground", "menu", "scrollbar", "window"};
+static const char * const canvas_text_names[] = {"captiontext", "infotext", "menutext", "windowtext"};
+
+static bool one_of(const GTEXT_CSS_Color * c, const char * const * names, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    if (is_name(c, names[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static void foreground(GVEC_Svg_Color * out, double alpha) {
   memset(out, 0, sizeof *out);
   out->kind = GVEC_SVG_COLOR_FOREGROUND;
@@ -572,11 +625,21 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
     }
     case GTEXT_CSS_COLOR_KW_SYSTEM:
     case GTEXT_CSS_COLOR_KW_DEPRECATED:
-      if (is_name(c, "canvastext")) {
+      if (is_name(c, "canvastext") || one_of(c, canvas_text_names, sizeof canvas_text_names / sizeof *canvas_text_names)) {
         foreground(out, 1.0);
         return GVEC_OK;
       }
-      if (is_name(c, "canvas")) {
+      for (size_t i = 0; i < sizeof system_colors / sizeof *system_colors; i++) {
+        if (is_name(c, system_colors[i].name)) {
+          const uint32_t v = used_scheme_is_dark(context, instance) ? system_colors[i].dark : system_colors[i].light;
+          for (int k = 0; k < 4; k++) {
+            rgba[k] = (double) ((v >> (24 - 8 * k)) & 0xffu) / 255.0;
+          }
+          solid(out, rgba, GCOL_PRIMARIES_SRGB, GCOL_TRANSFER_SRGB, 0);
+          return GVEC_OK;
+        }
+      }
+      if (is_name(c, "canvas") || one_of(c, canvas_names, sizeof canvas_names / sizeof *canvas_names)) {
         /* The document's background: opaque white in the light scheme, opaque black in the dark, the scheme being the one the element's
          * `color-scheme` and the load options' preference make (CSS Color Adjust 1). */
         double v = used_scheme_is_dark(context, instance) ? 0.0 : 1.0;
@@ -585,7 +648,7 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
         solid(out, rgba, GCOL_PRIMARIES_SRGB, GCOL_TRANSFER_SRGB, 0);
         return GVEC_OK;
       }
-      return refuse(context, where, 0, "a system color other than Canvas and CanvasText has no value without a user agent");
+      return refuse(context, where, 0, "a color keyword this library does not know");
     case GTEXT_CSS_COLOR_KW_NONE:
       break;
     }

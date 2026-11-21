@@ -155,6 +155,8 @@ struct GVEC_Svg_Style_Context {
   GTEXT_CSS_Rule_Index * rules;     ///< The rules of the document's `style` elements, frozen; NULL when it has none or before gvec_svg_style_sheets().
   GTEXT_CSS_Conditions * conditions; ///< What `@media`, `@supports` and `@container` of those rules are answered by: the engine's environment, a screen of the viewport's size.
   GTEXT_CSS_Selector_Match_Context * match; ///< The match context of `rules` over the document's tree.
+  GTEXT_CSS_Atrule_Set * atrules;   ///< The at-rules of the same sheets (`@font-feature-values`), in cascade order; frozen at the first find. NULL when there are no sheets.
+  bool atrules_frozen;
   bool sheets_ready;                ///< gvec_svg_style_sheets() ran.
   GVEC_Result sheets_result;        ///< What it returned.
   const GVEC_Svg_Element * sheet_refused; ///< The first `style` element whose sheet could not be applied (an `@import`, a conditional rule), else NULL.
@@ -182,6 +184,9 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_document_instances(GVEC_Svg_Style_Context
 GVEC_INTERNAL_API bool gvec_svg_once_first(GVEC_Svg_Style_Context * context, gvec_svg_once kind, const GVEC_Svg_Element * element);
 
 /** A diagnostic of the style layer, located at the attribute when there is one, else at the element. */
+/** The `@font-feature-values` of the family `family` (a name as written), merged in cascade order over the document's sheets; NULL when it has none. */
+GVEC_INTERNAL_API const GTEXT_CSS_Feature_Values * gvec_svg_style_feature_values(GVEC_Svg_Style_Context * context, const char * family, size_t length);
+
 GVEC_INTERNAL_API GVEC_Result gvec_svg_style_diag(GVEC_Svg_Style_Context * context, GVEC_Diag_Severity severity, GVEC_Diag_Code code,
     uint32_t detail, const GVEC_Svg_Element * element, const GVEC_Svg_Attribute * attribute, const char * message);
 
