@@ -37,7 +37,7 @@ TEST(LowerRefusals, EveryReasonIsLocatedNamedAndRefusesTheElementWhole) {
       {"mask", GVEC_LOWER_MASK, "\n<path d=\"M0 0H4V4H0Z\" mask=\"url(other.svg#k)\"/>", "path", 2, 0},
       {"filter", GVEC_LOWER_FILTER, "\n<path d=\"M0 0H4V4H0Z\" filter=\"url(other.svg#f)\"/>", "path", 2, 0},
       {"text", GVEC_LOWER_TEXT, "\n<text>hello</text>", "text", 2, 0},
-      {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/>", "path", 2, 0},
+      {"color space", GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "\n<path d=\"M0 0H4V4H0Z\" fill=\"color(--brand 1 0 0)\"/>", "path", 2, 0},
       {"foreignObject", GVEC_LOWER_FOREIGN_OBJECT, "\n<foreignObject width=\"4\" height=\"4\"/>", "foreignObject", 2, 0},
       {"external reference", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<use href=\"other.svg#x\"/>", "use", 2, 0},
       {"external image", GVEC_LOWER_EXTERNAL_REFERENCE, "\n<image width=\"4\" height=\"4\" href=\"https://example.com/a.png\"/>", "image", 2, 0},

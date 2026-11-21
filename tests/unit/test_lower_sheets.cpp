@@ -154,11 +154,20 @@ TEST(LowerSheets, AnImportIsNeverFetchedAndRefusesTheSheetsElement) {
   EXPECT_EQ(l.Items(), (size_t) 1);  // the shape is drawn as the document has it; the refusal says its sheet was not applied
 }
 
-TEST(LowerSheets, AConditionalRuleRefusesTheSheetsElement) {
-  Lowered l;
-  LowerSvg(Svg("width=\"20\" height=\"20\"", Style("@media screen { path { fill: green } }") + Shape("fill=\"red\"")), l);
-  EXPECT_EQ(l.Refusals(), (size_t) 1);
-  EXPECT_EQ(l.Items(), (size_t) 1);  // the shape is drawn as the document has it; the refusal says its sheet was not applied
+TEST(LowerSheets, AConditionalRuleIsAnsweredByTheScreenTheViewportIsAndAppliesOrNot) {
+  Lowered on, off, supports, unsupported, container;
+  ASSERT_TRUE(FirstFill(Style("@media screen { path { fill: green } }") + Shape("fill=\"red\""), on));
+  EXPECT_TRUE(IsGreen(on));
+  EXPECT_EQ(on.Refusals(), (size_t) 0);
+  ASSERT_TRUE(FirstFill(Style("@media print { path { fill: green } }") + Shape("fill=\"red\""), off));
+  EXPECT_FALSE(IsGreen(off));
+  EXPECT_EQ(off.Refusals(), (size_t) 0);
+  ASSERT_TRUE(FirstFill(Style("@supports (fill: green) { path { fill: green } }") + Shape("fill=\"red\""), supports));
+  EXPECT_TRUE(IsGreen(supports));
+  ASSERT_TRUE(FirstFill(Style("@supports not (fill: green) { path { fill: green } }") + Shape("fill=\"red\""), unsupported));
+  EXPECT_FALSE(IsGreen(unsupported));
+  ASSERT_TRUE(FirstFill(Style("@container (min-width: 1px) { path { fill: green } }") + Shape("fill=\"red\""), container));
+  EXPECT_FALSE(IsGreen(container)) << "no element is a container";
 }
 
 TEST(LowerSheets, ASheetOfOnlyWhiteSpaceOrCommentsChangesNothing) {

@@ -424,12 +424,24 @@ TEST(LowerClip, AGroupInTheUnitsOfTheBoundingBoxIsPlacedInTheBoxOfWhatItDraws) {
       used);
   EXPECT_EQ(used.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
   EXPECT_EQ(used.Refusals(), (size_t) 0);
-  Lowered unboxed;  // a group that holds a use of a viewport is still refused
+  Lowered viewport;  // a use of a symbol is boxed by the symbol's content through its viewBox (SVG 2, 8.10): the clip lands in the 5 by 5 it draws
   Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath>"
         "<symbol id=\"s\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></symbol></defs>"
-        "<g clip-path=\"url(#c)\"><use href=\"#s\" width=\"5\" height=\"5\"/></g>",
-      unboxed);
-  EXPECT_NE(unboxed.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+        "<g clip-path=\"url(#c)\"><use href=\"#s\" x=\"3\" width=\"10\" height=\"10\"/></g>",
+      viewport);
+  EXPECT_EQ(viewport.Refusals(), (size_t) 0);
+  ASSERT_EQ(Kinds(viewport).front(), PUSH);
+  EXPECT_NEAR(viewport.Item(0).map.m[0][0], 10.0, 1e-6);  // the viewBox's scale of 2 puts the 5 by 5 at 10 by 10
+  EXPECT_NEAR(viewport.Item(0).map.t[0], 3.0, 1e-6);      // moved by the use's x
+  Lowered nested;  // a nested svg is boxed the same way, its own x and y and viewBox in it
+  Lower("<defs><clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"1\" height=\"1\"/></clipPath></defs>"
+        "<g clip-path=\"url(#c)\"><svg x=\"4\" y=\"6\" width=\"20\" height=\"20\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></svg></g>",
+      nested);
+  EXPECT_EQ(nested.Refusals(), (size_t) 0);
+  ASSERT_EQ(Kinds(nested).front(), PUSH);
+  EXPECT_NEAR(nested.Item(0).map.m[0][0], 20.0, 1e-6);
+  EXPECT_NEAR(nested.Item(0).map.t[0], 4.0, 1e-6);
+  EXPECT_NEAR(nested.Item(0).map.t[1], 6.0, 1e-6);
 }
 
 int main(int argc, char ** argv) {

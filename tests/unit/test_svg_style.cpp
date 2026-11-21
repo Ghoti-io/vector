@@ -435,15 +435,60 @@ TEST(SvgStyleColor, WideGamutsAreCarriedAsTheyAre) {
   EXPECT_LT(pro.color.rgba[0], 0.5);
 }
 
-TEST(SvgStyleColor, SpacesTheWaistCannotCarryAreRefusedAndReported) {
-  Styled s(Svg("", "<rect id=\"lab\" fill=\"lab(50% 40 59)\"/><rect id=\"oklch\" fill=\"oklch(60% 0.15 50)\"/>"
-                   "<rect id=\"mix\" fill=\"color-mix(in oklab, red, blue)\"/><rect id=\"xyz\" fill=\"color(xyz 0.2 0.3 0.4)\"/>"
-                   "<rect id=\"ok\" fill=\"red\"/>"));
-  EXPECT_EQ(s.Get("lab", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED).kind, GVEC_SVG_STYLE_PAINT);
-  s.Get("oklch", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
-  s.Get("mix", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
-  s.Get("xyz", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
-  EXPECT_EQ(s.Count(GVEC_DIAG_UNSUPPORTED_COLOR_SPACE), 4u);
+namespace {
+// Linear Rec. 2020 to sRGB 8-bit, the conversion the sink makes to an sRGB target, for comparing a converted color with what a browser draws.
+void Rec2020LinearToSrgb8(const GVEC_Svg_Color & c, int out[3]) {
+  // Rec. 2020 (D65) linear to linear sRGB, the exact matrices of CSS Color 4 section 10
+  const double m[3][3] = {{1.6604910021084345, -0.5876411387885495, -0.0728498633198850},
+      {-0.1245504745429420, 1.1328998971259603, -0.0083494225830183}, {-0.0181507633549053, -0.1005788980080960, 1.1187296613630013}};
+  for (int i = 0; i < 3; i++) {
+    double v = m[i][0] * c.color.rgba[0] + m[i][1] * c.color.rgba[1] + m[i][2] * c.color.rgba[2];
+    v = v < 0 ? 0 : v > 1 ? 1 : v;
+    v = v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1 / 2.4) - 0.055;
+    out[i] = (int) std::lround(v * 255);
+  }
+}
+}  // namespace
+
+TEST(SvgStyleColor, CieAndPerceptualColorsAreConvertedToRec2020) {
+  // the sRGB values are what Chromium and Firefox draw for the same colors
+  Styled s(Svg("", "<rect id=\"lab\" fill=\"lab(50 40 30)\"/><rect id=\"lch\" fill=\"lch(60 50 200)\"/><rect id=\"oklab\" fill=\"oklab(0.6 0.1 0.1)\"/>"
+                   "<rect id=\"oklch\" fill=\"oklch(0.7 0.1 30)\"/><rect id=\"xyz\" fill=\"color(xyz 0.3 0.4 0.3)\"/>"
+                   "<rect id=\"xyz50\" fill=\"color(xyz-d50 0.3 0.3 0.2)\"/><rect id=\"white\" fill=\"lab(100 0 0)\"/>"));
+  const struct {
+    const char * id;
+    int rgb[3];
+  } want[] = {{"lab", {187, 88, 70}}, {"lch", {0, 166, 173}}, {"oklab", {195, 96, 46}}, {"oklch", {213, 134, 121}}, {"xyz", {126, 183, 138}},
+      {"xyz50", {161, 146, 133}}, {"white", {255, 255, 255}}};
+  for (const auto & w : want) {
+    GVEC_Svg_Color c = FillOf(s, w.id);
+    EXPECT_EQ(c.color.space.primaries, GCOL_PRIMARIES_BT2020) << w.id;
+    int got[3];
+    Rec2020LinearToSrgb8(c, got);
+    for (int i = 0; i < 3; i++) {
+      EXPECT_NEAR(got[i], w.rgb[i], 1) << w.id << " channel " << i;
+    }
+  }
+}
+
+TEST(SvgStyleColor, AMixAndARelativeColorAreComputedAndCurrentColorInThemIsTheElementsColor) {
+  Styled s(Svg("color=\"green\"", "<rect id=\"a\" fill=\"color-mix(in srgb, currentColor, blue)\"/>"
+                   "<rect id=\"b\" fill=\"rgb(from currentColor r g 200)\"/><rect id=\"c\" fill=\"color-mix(in oklab, red, blue)\"/>"));
+  GVEC_Svg_Color a = FillOf(s, "a");
+  EXPECT_NEAR(a.color.rgba[0], 0.0, 1e-6);  // the engine writes a computed color to six places
+  EXPECT_NEAR(a.color.rgba[1], 128.0 / 255.0 / 2, 1e-6);  // half of green, in sRGB's own encoding
+  EXPECT_NEAR(a.color.rgba[2], 0.5, 1e-6);
+  GVEC_Svg_Color b = FillOf(s, "b");
+  EXPECT_NEAR(b.color.rgba[1], 128.0 / 255.0, 1e-6);
+  EXPECT_NEAR(b.color.rgba[2], 200.0 / 255.0, 1e-6);
+  FillOf(s, "c");
+}
+
+TEST(SvgStyleColor, ASpaceOfAnotherNameIsRefusedAndReported) {
+  Styled s(Svg("", "<rect id=\"custom\" fill=\"color(--brand 0.2 0.3 0.4)\"/><rect id=\"sys\" fill=\"ButtonFace\"/><rect id=\"ok\" fill=\"red\"/>"));
+  s.Get("custom", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
+  s.Get("sys", GVEC_SVG_PROP_FILL, GVEC_ERR_UNSUPPORTED);
+  EXPECT_EQ(s.Count(GVEC_DIAG_UNSUPPORTED_COLOR_SPACE), 2u);
   const GVEC_Diagnostic * d = nullptr;
   for (size_t i = 0; i < s.diagnostics.count; i++) {
     if (s.diagnostics.items[i].code == GVEC_DIAG_UNSUPPORTED_COLOR_SPACE) {
@@ -455,6 +500,20 @@ TEST(SvgStyleColor, SpacesTheWaistCannotCarryAreRefusedAndReported) {
   EXPECT_STREQ(d->element, "rect");
   EXPECT_GT(d->line, 0u);
   FillOf(s, "ok");
+}
+
+TEST(SvgStyleSheets, AMediaConditionIsAnsweredByTheViewportAndTheSchemeOfTheDocument) {
+  const std::string body = "<style>#r { fill: red } @media (prefers-color-scheme: dark) { #r { fill: green } }"
+                           "@media (min-width: 150px) { #w { fill: green } } @media (max-width: 299px) { #n { fill: green } }"
+                           "@media (min-width: 300px) { #x { fill: green } }</style>"
+                           "<rect id=\"r\"/><rect id=\"w\" fill=\"red\"/><rect id=\"n\" fill=\"red\"/><rect id=\"x\" fill=\"red\"/>";
+  Styled light(Svg("", body), 200, 200);
+  Styled dark(Svg("", body), 200, 200, GVEC_COLOR_SCHEME_DARK);
+  EXPECT_EQ(FillOf(light, "r").color.rgba[1], 0.0) << "red in the light scheme";
+  EXPECT_NEAR(FillOf(dark, "r").color.rgba[1], 128.0 / 255.0, 1e-9) << "green in the dark";
+  EXPECT_NEAR(FillOf(light, "w").color.rgba[1], 128.0 / 255.0, 1e-9) << "a viewport of 200 is at least 150";
+  EXPECT_NEAR(FillOf(light, "n").color.rgba[1], 128.0 / 255.0, 1e-9) << "and at most 299";
+  EXPECT_EQ(FillOf(light, "x").color.rgba[1], 0.0) << "and not 300";
 }
 
 TEST(SvgStyleColor, SystemColors) {

@@ -353,6 +353,15 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_gradient_paint_in(gvec_lw_ctx * ctx, const
 /** The box of the drawing under the outermost `svg`, strokes included, in its user space; *known false when it holds what is not boxed. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, GSHGEOM_Bounds * box, bool * known);
 /** The bounding box of the element of `inst` in its own user space (inside its `transform`), as a clip or a mask in the units of the box takes it. */
+/**
+ * The viewport of an `svg` or a `symbol` instance: its place `x`, `y`, its size `w`, `h` and `inner`, the map of its content to the space of
+ * the element (the translation to the viewport, then the viewBox's map, a symbol's reference point in it). `*state` is 0 when it is made, 1 when
+ * the viewport or the viewBox has no size (the element draws nothing), 2 when a number is past the range the waist carries (`*why` says which) and
+ * 3 when a property of it cannot be read (the style layer has said so). What the box of such an element is, and what is drawn, both start here.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_viewport_inner(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, double * x, double * y, double * w, double * h,
+    GSHGEOM_Map * inner, int * state, const char ** why);
+
 GVEC_INTERNAL_API GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, GSHGEOM_Bounds * box, bool * known);
 /**
  * The map of a `transform` whose percentages are of a bounding box (`transform-box` other than `view-box`): the box is that of what the element

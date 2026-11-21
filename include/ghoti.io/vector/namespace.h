@@ -193,6 +193,7 @@
 #define gvec_lw_trace_fill GHOTIIO_VECTOR(gvec_lw_trace_fill)
 #define gvec_lw_unit_length GHOTIIO_VECTOR(gvec_lw_unit_length)
 #define gvec_lw_viewbox_map GHOTIIO_VECTOR(gvec_lw_viewbox_map)
+#define gvec_lw_viewport_inner GHOTIIO_VECTOR(gvec_lw_viewport_inner)
 #define gvec_lw_walk GHOTIIO_VECTOR(gvec_lw_walk)
 #define gvec_lw_wrap_enter GHOTIIO_VECTOR(gvec_lw_wrap_enter)
 #define gvec_lw_wrap_leave GHOTIIO_VECTOR(gvec_lw_wrap_leave)

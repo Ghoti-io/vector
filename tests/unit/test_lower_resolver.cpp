@@ -777,12 +777,12 @@ TEST(LowerResolverStyle, AChainOfImportsPastTheDepthLimitIsRefused) {
   EXPECT_EQ(deep.Refusals(), (size_t) 0);
 }
 
-TEST(LowerResolverStyle, AnImportedSheetWithConditionalRulesOrTooManyBytesIsRefused) {
+TEST(LowerResolverStyle, AnImportedSheetWithConditionalRulesIsAppliedAndOneOfTooManyBytesIsRefused) {
   Fake fake;
   fake.Put("m.css", "@media screen { #a { fill: green } }");
   Lowered l;
   Lower(Doc(Style("@import \"m.css\"") + Shape()), l, fake);
-  EXPECT_NE(l.Refusal(GVEC_LOWER_STYLESHEET), nullptr);
+  EXPECT_EQ(l.Refusal(GVEC_LOWER_STYLESHEET), nullptr);
   Fake big;
   Answer a;
   a.status = GVEC_RESOURCE_OK;

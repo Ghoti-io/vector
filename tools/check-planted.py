@@ -236,8 +236,8 @@ PLANTS = [
      "paint-order is not applied"),
     ("K6", W, "    else if (order[i] == GVEC_LW_PART_MARKERS) {", "    else if (0) {", "markers are not drawn"),
     ("P4", W, "        x -= at.x;", "        x += at.x;", "a symbol's reference point is placed on the wrong side of its position"),
-    ("P4", W, "      if (!attribute || gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(attribute, &length)) {\n        continue;",
-     "      if (!attribute || gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(attribute, &length)) {\n        length.value = 0;\n        length.unit = GVEC_SVG_UNIT_NONE;",
+    ("P4", W, "      if (!ref_attribute || gvec_svg_attribute_class(ref_attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(ref_attribute, &length)) {\n        continue;",
+     "      if (!ref_attribute || gvec_svg_attribute_class(ref_attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(ref_attribute, &length)) {\n        length.value = 0;\n        length.unit = GVEC_SVG_UNIT_NONE;",
      "a symbol reference point that is not given is taken as zero"),
     ("H1", GR, "  if (cache->bounding_box) {\n    GSHGEOM_Bounds box;", "  if (!cache->bounding_box) {\n    GSHGEOM_Bounds box;",
      "a gradient in user-space units is placed in the bounding box"),
@@ -732,8 +732,17 @@ PLANTS = [
      'an import does not count its own level'),
     ('RS24', 'src/codec/svg/style/svg_sheet.c', '    if (f->url && strcmp(f->url, entry->url) == 0) {', '    if (f->url && strcmp(f->url, entry->url) == 0 && 0) {',
      'a sheet that imports itself is not a cycle'),
-    ('RS25', 'src/codec/svg/style/svg_sheet.c', '  if (gtext_css_sheet_condition_count(sheet) > 0) {\n    frame->failed = true;', '  if (gtext_css_sheet_condition_count(sheet) > 1000000) {\n    frame->failed = true;',
-     'an imported sheet with conditional rules is applied for every environment'),
+    ('RS25', 'src/codec/svg/style/svg_sheet.c', 'media.prefers_color_scheme = context->color_scheme == GVEC_COLOR_SCHEME_DARK ? GTEXT_CSS_MQ_SCHEME_DARK : GTEXT_CSS_MQ_SCHEME_LIGHT;', 'media.prefers_color_scheme = GTEXT_CSS_MQ_SCHEME_LIGHT;',
+     'a media condition on the color scheme is answered as light whatever the document prefers'),
+    ('RS30', 'src/codec/svg/style/svg_sheet.c', 'gtext_css_media_environment_default(&context->engine->env);', 'gtext_css_media_environment_default(NULL);',
+     'a media condition is answered for a 1280 by 800 screen whatever the viewport is'),
+    ('CL1', 'src/codec/svg/style/svg_color.c', '  xyz[0] = x * 0.3457 / 0.3585;', '  xyz[0] = x;', 'CIE Lab is not taken to the D50 white'),
+    ('CL2', 'src/codec/svg/style/svg_color.c', '  xyz[0] = 1.2268798758459243 * lms[0] - 0.5578149944602171 * lms[1]', '  xyz[0] = 1.2268798758459243 * lms[0] + 0.5578149944602171 * lms[1]', 'Oklab is taken to XYZ with a wrong sign'),
+    ('CL3', 'src/codec/svg/style/svg_color.c', '    v2 = chroma * gmath_sin(h);', '    v2 = chroma * gmath_cos(h);', 'a polar color takes its b from the cosine'),
+    ('CL4', 'src/codec/svg/style/svg_color.c', '  s.current = v && v->kind == GTEXT_CSS_VAL_COLOR ? v->color : NULL;', '  s.current = NULL;', 'currentcolor inside a mix is not the color of the element'),
+    ('CL5', 'src/codec/svg/style/svg_color.c', '  const GTEXT_CSS_Color * replaced;\n  if (!subst_color(&s, c, 0, &replaced)) {', '  const GTEXT_CSS_Color * replaced = c;\n  if (false && !subst_color(&s, c, 0, &replaced)) {', 'currentcolor in a mix is left in it'),
+    ('BX1', 'src/codec/svg/lower/lower_clip.c', 'const GVEC_Svg_Element * chosen = switch_leaf ? gvec_svg_element_switch_selected(child) : NULL;', 'const GVEC_Svg_Element * chosen = NULL;', 'the box of a switch takes in every child, not the one it draws'),
+    ('BX2', 'src/codec/svg/lower/lower_clip.c', '  if (state != 0 || !gvec_lw_compose(placed, &inner, &moved)) {', '  if (state != 0 || !gvec_lw_compose(placed, placed, &moved)) {', 'the box of a viewport leaves out its viewBox map'),
     ('RS26', 'src/codec/svg/style/svg_sheet.c', '  sheet_frame inner = {frame, context, frame->element, entry->url, frame->depth + 1, false};', '  sheet_frame inner = {frame, context, frame->element, NULL, frame->depth + 1, false};',
      'an imported sheet does not know its own url'),
     ('RS27', 'src/codec/svg/style/svg_sheet.c', '  case GVEC_RES_TOO_BIG:\n    why = "an imported style sheet is longer than the limit allows";\n    break;', '  case GVEC_RES_TOO_BIG:\n    break;',
@@ -980,9 +989,32 @@ def build_and_test(work, edits):
     return ("fail" if failed else "pass"), "\n".join(log)
 
 
+def stale_anchors(cases):
+    """The plants whose text is not in the source exactly once: a stale anchor found now, not hours into a run."""
+    stale = []
+    cache = {}
+    for rule, edits, _ in cases:
+        for path, old, _new in edits:
+            if path not in cache:
+                with open(os.path.join(ROOT, path)) as h:
+                    cache[path] = h.read()
+            count = cache[path].count(old)
+            if count != 1:
+                stale.append("%s: %s occurs %d times" % (rule, path, count))
+    return stale
+
+
 def main():
     work = env("PLANT_WORK")
     shutil.rmtree(work, ignore_errors=True)
+    everything = [(rule, [(path, old, new)], what) for rule, path, old, new, what in PLANTS] + PAIRED
+    stale = stale_anchors(everything)
+    if stale:
+        print("check-planted: %d plants name text that is not in the source exactly once:\n  %s" % (len(stale), "\n  ".join(stale)), file=sys.stderr)
+        return 1
+    if os.environ.get("PLANT_ANCHORS_ONLY"):
+        print("check-planted: all %d plants name text that is in the source exactly once" % len(everything))
+        return 0
     if not os.environ.get("PLANT_BUILD_ONLY"):
         status, log = build_and_test(os.path.join(work, "control"), [])
         if status != "pass":

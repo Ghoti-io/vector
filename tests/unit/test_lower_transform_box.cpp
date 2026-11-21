@@ -73,6 +73,28 @@ TEST(LowerTransformBox, TheBoxOfAGroupIsTheUnionOfWhatItsChildrenDrawEachUnderIt
       "a group: (10, 10) to (80, 60), centre (45, 35)");
 }
 
+TEST(LowerTransformBox, TheBoxOfAUseOfASymbolAndOfANestedSvgIsTheirContentThroughTheViewBox) {
+  // the symbol's 5 by 5 in a 10 by 10 viewport at the use's x of 3: the box is (3, 0) to (13, 10), centre (8, 5)
+  ExpectSame("<defs><symbol id=\"s\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></symbol></defs>"
+             "<g style=\"transform-box:fill-box;transform-origin:center;transform:rotate(90deg)\"><use href=\"#s\" x=\"3\" width=\"10\" height=\"10\"/></g>",
+      "<defs><symbol id=\"s\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></symbol></defs>"
+      "<g transform=\"rotate(90 8 5)\"><use href=\"#s\" x=\"3\" width=\"10\" height=\"10\"/></g>",
+      "a use of a symbol");
+  // a nested svg at (4, 6), 20 by 20, its 5 by 5 viewBox scaled by 4: the box is (4, 6) to (24, 26), centre (14, 16)
+  ExpectSame("<g style=\"transform-box:fill-box;transform-origin:center;transform:rotate(90deg)\">"
+             "<svg x=\"4\" y=\"6\" width=\"20\" height=\"20\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></svg></g>",
+      "<g transform=\"rotate(90 14 16)\"><svg x=\"4\" y=\"6\" width=\"20\" height=\"20\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></svg></g>",
+      "a nested svg");
+}
+
+TEST(LowerTransformBox, TheBoxOfASwitchIsTheBoxOfTheChildItDraws) {
+  // the first child's condition fails, so the second, (20, 20) to (70, 70) with centre (45, 45), is the one boxed
+  ExpectSame("<g style=\"transform-box:fill-box;transform-origin:center;transform:rotate(45deg)\"><switch><rect width=\"50\" height=\"50\" systemLanguage=\"xx\"/>"
+             "<rect x=\"20\" y=\"20\" width=\"50\" height=\"50\"/></switch></g>",
+      "<g transform=\"rotate(45 45 45)\"><switch><rect width=\"50\" height=\"50\" systemLanguage=\"xx\"/><rect x=\"20\" y=\"20\" width=\"50\" height=\"50\"/></switch></g>",
+      "a switch");
+}
+
 TEST(LowerTransformBox, TheChildOfAClipPathAndAnElementWithAFilterTakeTheirBoxToo) {
   const std::string boxed = "style=\"transform-box:fill-box;transform-origin:center;transform:rotate(45deg)\"";
   ExpectSame("<defs><clipPath id=\"c\"><rect x=\"10\" y=\"20\" width=\"40\" height=\"10\" " + boxed + "/></clipPath></defs>"

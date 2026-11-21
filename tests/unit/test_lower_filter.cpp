@@ -306,6 +306,27 @@ TEST(LowerFilter, TurbulenceAndTheLightingsAreLowered) {
   EXPECT_EQ(bad.Refusals(), (size_t) 0);
 }
 
+TEST(LowerFilter, AFilterInTheUnitsOfTheBoxOfAUseOfASymbolOrANestedSvgIsPlacedInTheirBox) {
+  Lowered symbol, nested, direct;
+  const std::string filter = "<filter id=\"f\"><feOffset dx=\"1\"/></filter>";
+  const std::string attrs = "width=\"40\" height=\"40\"";
+  LowerSvg(Svg(attrs, "<defs>" + filter + "<symbol id=\"s\" viewBox=\"0 0 5 5\"><rect width=\"5\" height=\"5\"/></symbol></defs>"
+      "<g filter=\"url(#f)\"><use href=\"#s\" x=\"3\" width=\"10\" height=\"10\"/></g>"), symbol);
+  LowerSvg(Svg(attrs, "<defs>" + filter + "</defs><g filter=\"url(#f)\"><svg x=\"3\" width=\"10\" height=\"10\" viewBox=\"0 0 5 5\">"
+      "<rect width=\"5\" height=\"5\"/></svg></g>"), nested);
+  LowerSvg(Svg(attrs, "<defs>" + filter + "</defs><g filter=\"url(#f)\"><rect x=\"3\" width=\"10\" height=\"10\"/></g>"), direct);
+  EXPECT_EQ(symbol.Refusals(), (size_t) 0);
+  EXPECT_EQ(nested.Refusals(), (size_t) 0);
+  GSHSCENE_Filter a, b, c;
+  ASSERT_TRUE(FilterOf(symbol, &a));
+  ASSERT_TRUE(FilterOf(nested, &c));
+  ASSERT_TRUE(FilterOf(direct, &b));
+  for (int i = 0; i < 4; i++) {
+    EXPECT_DOUBLE_EQ(a.region[i], b.region[i]) << "the symbol's 10 by 10 at x 3 has the region of a rect there, side " << i;
+    EXPECT_DOUBLE_EQ(c.region[i], b.region[i]) << "so does the nested svg, side " << i;
+  }
+}
+
 TEST(LowerFilter, WhatNoSinkDrawsYetIsRefusedWhole) {
   Lowered other;
   LowerSvg(Doc("", "<rect width=\"10\" height=\"10\" filter=\"url(other.svg#f)\"/>"), other);

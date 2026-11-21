@@ -1637,34 +1637,40 @@ static GVEC_Result read_length(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   return GVEC_OK;
 }
 
-static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+/* The viewport of an `svg` or a `symbol` instance: its place `x`, `y`, its size `w`, `h`, and `inner`, the map of its content to the space of the
+ * element (the translation to the viewport and the viewBox's map, a symbol's reference point included).  *state is 0 when it is made, 1 when the
+ * viewport or the viewBox has no size (the element is not rendered), 2 when the numbers pass the range the waist carries (*why says which). */
+GVEC_Result gvec_lw_viewport_inner(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, double * out_x, double * out_y, double * out_w, double * out_h,
+    GSHGEOM_Map * out_inner, int * state, const char ** why) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
-  common c;
-  GVEC_Result r = prepare(ctx, inst, frame, false, &c);
-  if (r != GVEC_OK || !c.draw) {
-    return r;
-  }
+  *state = 0;
+  *why = NULL;
   bool outermost = gvec_svg_instance_parent(inst) == NULL;
   double vw, vh;
   gvec_svg_instance_viewport(inst, &vw, &vh);
   double x = 0, y = 0, w = vw, h = vh;
   bool usable;
+  GVEC_Result r;
   if (!outermost) {
     r = read_length(ctx, inst, GVEC_SVG_PROP_X, 0, &x, &usable);
     if (r != GVEC_OK || !usable) {
+      *state = 3;
       return r;
     }
     r = read_length(ctx, inst, GVEC_SVG_PROP_Y, 0, &y, &usable);
     if (r != GVEC_OK || !usable) {
+      *state = 3;
       return r;
     }
   }
   r = read_length(ctx, inst, GVEC_SVG_PROP_WIDTH, vw, &w, &usable);
   if (r != GVEC_OK || !usable) {
+    *state = 3;
     return r;
   }
   r = read_length(ctx, inst, GVEC_SVG_PROP_HEIGHT, vh, &h, &usable);
   if (r != GVEC_OK || !usable) {
+    *state = 3;
     return r;
   }
   bool has_w, has_h;
@@ -1683,10 +1689,9 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     has_box = gvec_svg_attribute_view_box(attribute, &box);
   }
   if (!(w > 0) || !(h > 0) || (has_box && (!(box.width > 0) || !(box.height > 0)))) {
-    return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_RENDERING_DISABLED, 0, e->node.line, e->node.column,
-        e->node.offset, e->name, "a viewport or viewBox of no size disables the rendering of the element");
+    *state = 1;
+    return GVEC_OK;
   }
-  mark_rendered(ctx, inst);
   GSHGEOM_Map view;
   bool has_view = false;
   if (has_box) {
@@ -1696,7 +1701,9 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       gvec_svg_attribute_preserve_aspect_ratio(p, &par);
     }
     if (!gvec_lw_viewbox_map(&box, &par, w, h, &view)) {
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewBox is past the range the waist can carry");
+      *state = 2;
+      *why = "the viewBox is past the range the waist can carry";
+      return GVEC_OK;
     }
     has_view = true;
   }
@@ -1704,9 +1711,9 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     /* A symbol's reference point is placed at its x, y instead of the corner of its viewport; one that is not given moves
      * nothing in its direction (SVG 2, 5.5.1). The point is in the content's coordinates, after the viewBox. */
     for (int axis = 0; axis < 2; axis++) {
-      const GVEC_Svg_Attribute * attribute = gvec_svg_element_find_attribute(e, axis ? "refY" : "refX");
+      const GVEC_Svg_Attribute * ref_attribute = gvec_svg_element_find_attribute(e, axis ? "refY" : "refX");
       GVEC_Svg_Length length;
-      if (!attribute || gvec_svg_attribute_class(attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(attribute, &length)) {
+      if (!ref_attribute || gvec_svg_attribute_class(ref_attribute) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_length(ref_attribute, &length)) {
         continue;
       }
       double v;
@@ -1716,13 +1723,15 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         v = origin + extent * length.value / 100.0;
       }
       else {
-        bool usable;
-        GVEC_Result ur = gvec_lw_unit_length(ctx, e, &length, &v, &usable);
+        bool unit_usable;
+        GVEC_Result ur = gvec_lw_unit_length(ctx, e, &length, &v, &unit_usable);
         if (ur != GVEC_OK) {
           return ur;
         }
-        if (!usable) {
-          return gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLE, "a symbol reference point is in a unit the lowering does not know");
+        if (!unit_usable) {
+          *state = 2;
+          *why = "a symbol reference point is in a unit the lowering does not know";
+          return GVEC_OK;
         }
       }
       GSHGEOM_Point at, ref;
@@ -1731,7 +1740,9 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       ref.y = axis ? v : 0;
       if (has_view) {
         if (gshgeom_map_apply_point(&view, ref, &at) != GSHGEOM_OK) {
-          return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the reference point is past the range the waist can carry");
+          *state = 2;
+          *why = "the reference point is past the range the waist can carry";
+          return GVEC_OK;
         }
       }
       else {
@@ -1747,11 +1758,47 @@ static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   GSHGEOM_Map inner;
   if (gshgeom_map_translate(2, x, y, 0, &inner) != GSHGEOM_OK) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewport is past the range the waist can carry");
+    *state = 2;
+    *why = "the viewport is past the range the waist can carry";
+    return GVEC_OK;
   }
   if (has_view && !gvec_lw_compose(&inner, &view, &inner)) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewBox is past the range the waist can carry");
+    *state = 2;
+    *why = "the viewBox is past the range the waist can carry";
+    return GVEC_OK;
   }
+  *out_x = x;
+  *out_y = y;
+  *out_w = w;
+  *out_h = h;
+  *out_inner = inner;
+  return GVEC_OK;
+}
+
+static GVEC_Result lw_viewport(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame, gvec_lw_node * parent) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  common c;
+  GVEC_Result r = prepare(ctx, inst, frame, false, &c);
+  if (r != GVEC_OK || !c.draw) {
+    return r;
+  }
+  double x, y, w, h;
+  GSHGEOM_Map inner;
+  int state;
+  const char * why;
+  r = gvec_lw_viewport_inner(ctx, inst, &x, &y, &w, &h, &inner, &state, &why);
+  if (r != GVEC_OK || state == 3) {
+    return r;
+  }
+  if (state == 1) {
+    return gvec_diag_add(ctx->diagnostics, GVEC_DIAG_NOTICE, GVEC_DIAG_RENDERING_DISABLED, 0, e->node.line, e->node.column,
+        e->node.offset, e->name, "a viewport or viewBox of no size disables the rendering of the element");
+  }
+  mark_rendered(ctx, inst);
+  if (state == 2) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, why);
+  }
+  bool usable;
   GSHGEOM_Map children_frame;
   if (!gvec_lw_compose(&c.local, &inner, &children_frame)) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the viewport is past the range the waist can carry");

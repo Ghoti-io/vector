@@ -242,10 +242,12 @@ resolved against the element that uses it.
 **C8 Colors** are straight `double` components and the color space of the waist, never 8 bits. sRGB, linear sRGB, Display P3,
 linear Display P3 and Adobe RGB (1998) are carried as they are; Rec. 2020 and ProPhoto RGB, which the waist cannot carry as
 written, are converted with the `color` library's matrices to linear Rec. 2020; `hsl()` and `hwb()` are converted in
-`double`. `lab()`, `lch()`, `oklab()`, `oklch()`, `color(xyz ...)`, `color-mix()`, relative colors and system colors other
-than `Canvas` and `CanvasText` are kept by the engine and refused here: reading one is `GVEC_ERR_UNSUPPORTED` and a
-`GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's location, because converting them would approximate a color the
-waist cannot yet carry. `Canvas`, `CanvasText` and `light-dark()` follow the element's used color scheme: `color-scheme:
+`double`. `lab()`, `lch()` (D50), `oklab()`, `oklch()` and `color(xyz ...)` are converted exactly (CSS Color 4, 9) and Bradford-adapted
+to linear Rec. 2020 too, a color outside the gamut kept with a component beyond `[0, 1]` for the sink to map into its target. `color-mix()`, relative colors,
+`alpha()` and `contrast-color()` are computed by the engine to a color of one of these forms (with the element's `color` where `currentcolor` is written) and read
+from it; `device-cmyk()` is the naive conversion. What is refused is a system color other than `Canvas` and `CanvasText` (which has no value without a user
+agent) and a `color()` space named by `@color-profile`: reading one is `GVEC_ERR_UNSUPPORTED` and a `GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's
+location. `Canvas`, `CanvasText` and `light-dark()` follow the element's used color scheme: `color-scheme:
 normal` is light, and the preference of the load options decides only for an element that supports both.
 
 **C9 Other used values.** `transform` is the list of its functions, the origin and the box; with the initial
@@ -506,8 +508,8 @@ basic shape on a `clipPath`'s shape is still refused.
 **H13 Bounding boxes of groups, and context gradients.** A `clipPath` in `objectBoundingBox` units on a group is placed in the box of what
 the group draws: the union of the fill boxes of the shapes in it (and in the `g` and `a` inside it), each moved by its transforms; a
 rotated or skewed shape is boxed by its segments, one with an arc by its box, `display` takes a shape out and `visibility` and `opacity`
-do not. A group that holds a `use`, text, an image or a nested viewport is refused with `clip-path`, as is a transform that needs a box of
-its own. A gradient that `context-fill` or `context-stroke` names is placed in the box of the context element, in that element's user
+do not. The box also takes in text, an image, a `use`, a `switch` (the child it draws) and a nested `svg` or a `symbol` drawn by a `use` (their content through the
+viewBox, the clip of the viewport not shortening it, SVG 2, 8.10); a group that holds a `foreignObject` has no box and is refused. A gradient that `context-fill` or `context-stroke` names is placed in the box of the context element, in that element's user
 space: for a marker, the shape the marker is on (the picture's placement and the drawn shape's own map are undone), for a `use`, what its
 referent draws, moved by `x` and `y`. A paint a shape takes from an outer context stays refused, and so does a pattern one.
 
@@ -546,8 +548,10 @@ interface (the parent, siblings, `id`, the words of `class`, attributes, order),
 `defs > path` matches the path whichever way it is drawn. The cascade is `text`'s: a rule beats a presentation attribute, the `style` attribute beats a
 rule, and importance, specificity and order of appearance decide between rules. A rule or declaration that is not valid is dropped and reported as a
 warning at its `style` element. A sheet that cannot be applied whole is not applied, and the lowering refuses its `style` element (GVEC_LOWER_STYLESHEET)
-so that the document is not drawn half styled: an `@import` the caller's resolver does not supply (the Resources section; the library never fetches), an `@import` with a `media`, `supports` or `scope` condition, and a conditional rule (`@media`, `@supports`, `@container`,
-`@when`), for which this layer has no evaluator of the environment. Geometry given in style (`height: 160px` on a `rect`) is read as SVG 2 reads it.
+so that the document is not drawn half styled: an `@import` the caller's resolver does not supply (the Resources section; the library never fetches), or an imported sheet
+that cannot be had. A conditional rule (`@media`, `@supports`, `@container`, `@when`) and an `@import` with a condition are answered by the engine's evaluator, in an environment
+that is a screen of the viewport's size at 1 dppx, in the document's color scheme; no element is a container, so a container query is false, and `@supports` answers for the
+properties of the engine's registry (what the renderer draws is not asked). Geometry given in style (`height: 160px` on a `rect`) is read as SVG 2 reads it.
 
 **H19 Masks.** A `mask` naming a `mask` element is a group of the waist with a soft mask. The mask's picture is the `mask` element's content drawn in the
 masked element's own user space (its frame and its `transform`), under a clip to the region `x`, `y`, `width` and `height` (default `-10%`, `-10%`,
@@ -556,8 +560,8 @@ masked element's own user space (its frame and its `transform`), under a clip to
 the luminance is taken in while the picture is blended as it is, which is what the reference engines do. A box with no area, a region of no size and a
 mask with nothing in it hide the element. A `mask` on the `mask` element is a mask of its picture; if the `mask` properties followed from a mask come back
 to it, that mask has no mask of its own (as in the browsers and `resvg`), and a child of a mask that names a mask being made is drawn unmasked. A `mask`
-naming nothing, or what is no `mask`, is as if it were not specified. A mask in the units of the box of an element that holds more than shapes and groups
-of them, and a mask of another document, are refused (GVEC_LOWER_MASK). Equal masks of equal boxes are one resource.
+naming nothing, or what is no `mask`, is as if it were not specified. A mask in the units of the box of an element that holds a `foreignObject`,
+and a mask of another document, are refused (GVEC_LOWER_MASK). Equal masks of equal boxes are one resource.
 
 **H20 Blend modes and isolation.** `mix-blend-mode` (read in a style, never as a presentation attribute) is the composite operator of the group the
 element is drawn in: one group carries the element's opacity and its blend, so the element is blended as a whole (fill, stroke and markers together),
@@ -803,7 +807,7 @@ import depth: the library's callback resolves the URL against the sheet that nam
 the cascade where the `@import` stands. A rule after the import is later than it, and an import in a later `style` element is later than an earlier element's rules.
 `layer` and `layer(name)` are the engine's. An import with `media`, `supports` or `scope` is refused as a sheet that cannot be applied whole (the library has no evaluator
 of the environment, S4 of the style layer's rule above, and a scope's root would be the document's) and is not asked for. A sheet that imports itself, directly or
-through others, is a cycle and is refused; so is an imported sheet with conditional rules, one that is too long, one that cannot be had, or one past `max_resource_depth`
+through others, is a cycle and is refused; so is an imported sheet that is too long, one that cannot be had, or one past `max_resource_depth`
 (the whole chain is not applied, the `style` element is refused with the reason, and the rest of the document is drawn as it has it).
 
 **S7 `use` of an element of another document.** `href="other.svg#id"` asks for a `document`, loads it once for the lowering in the viewport of the document that names it,

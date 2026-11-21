@@ -189,6 +189,75 @@ static bool prophoto_to_rec2020(const double in[3], double out[3]) {
   return true;
 }
 
+/* CIE XYZ to linear Rec. 2020 (D65): taken from the white point `white` of the XYZ (D50 for CIE Lab and the xyz-d50 space, D65 otherwise) by the
+ * Bradford adaptation, then by the inverse of Rec. 2020's matrix. Rec. 2020 is the widest gamut the shape waist carries beside ProPhoto, and a
+ * color outside it is carried with a component out of [0, 1], not clipped (the waist's conversion to a smaller target does that). */
+static bool xyz_to_rec2020(const double xyz[3], GCOL_Primaries white_of, double out[3]) {
+  GCOL_Gamut from, rec;
+  double adapt[9], from_xyz[9];
+  if (!gcol_gamut_named(white_of, &from) || !gcol_gamut_named(GCOL_PRIMARIES_BT2020, &rec) ||
+      gcol_chromatic_adapt(from.white, rec.white, GCOL_CAT_BRADFORD, adapt) != GCOL_OK || gcol_xyz_to_gamut(&rec, from_xyz) != GCOL_OK) {
+    return false;
+  }
+  double adapted[3];
+  for (int i = 0; i < 3; i++) {
+    adapted[i] = adapt[3 * i] * xyz[0] + adapt[3 * i + 1] * xyz[1] + adapt[3 * i + 2] * xyz[2];
+  }
+  for (int i = 0; i < 3; i++) {
+    out[i] = from_xyz[3 * i] * adapted[0] + from_xyz[3 * i + 1] * adapted[1] + from_xyz[3 * i + 2] * adapted[2];
+  }
+  return true;
+}
+
+/* CSS Color 4, 9.1 and 9.3: CIE Lab (D50) to XYZ (D50). */
+static void lab_to_xyz_d50(double l, double a, double b, double xyz[3]) {
+  const double eps = 216.0 / 24389.0, kappa = 24389.0 / 27.0;
+  const double fy = (l + 16.0) / 116.0, fx = a / 500.0 + fy, fz = fy - b / 200.0;
+  const double x = fx * fx * fx > eps ? fx * fx * fx : (116.0 * fx - 16.0) / kappa;
+  const double y = l > kappa * eps ? fy * fy * fy : l / kappa;
+  const double z = fz * fz * fz > eps ? fz * fz * fz : (116.0 * fz - 16.0) / kappa;
+  xyz[0] = x * 0.3457 / 0.3585;  /* the D50 white of CSS Color 4: x 0.3457, y 0.3585 */
+  xyz[1] = y;
+  xyz[2] = z * (1.0 - 0.3457 - 0.3585) / 0.3585;
+}
+
+/* CSS Color 4, 9.4: Oklab to XYZ (D65). */
+static void oklab_to_xyz_d65(double l, double a, double b, double xyz[3]) {
+  const double lp = l + 0.3963377773761749 * a + 0.2158037573099136 * b;
+  const double mp = l - 0.1055613458156586 * a - 0.0638541728258133 * b;
+  const double sp = l - 0.0894841775298119 * a - 1.2914855480194092 * b;
+  const double lms[3] = {lp * lp * lp, mp * mp * mp, sp * sp * sp};
+  xyz[0] = 1.2268798758459243 * lms[0] - 0.5578149944602171 * lms[1] + 0.2813910456659647 * lms[2];
+  xyz[1] = -0.0405757452148008 * lms[0] + 1.1122868032803170 * lms[1] - 0.0717110580655164 * lms[2];
+  xyz[2] = -0.0763729366746601 * lms[0] - 0.4214933324022432 * lms[1] + 1.5869240198367816 * lms[2];
+}
+
+/* lab(), lch(), oklab() and oklch(): the three channels as the grammar gives them (the references of a percentage are 100 and 125 for Lab,
+ * 100 and 150 for LCH, 1 and 0.4 for Oklab, 1 and 0.4 for Oklch), to linear Rec. 2020. */
+static bool cie_color(GTEXT_CSS_Color_Function fn, const GTEXT_CSS_Color * c, double rgb[3]) {
+  const bool ok_space = fn == GTEXT_CSS_COLOR_FN_OKLAB || fn == GTEXT_CSS_COLOR_FN_OKLCH;
+  const bool polar = fn == GTEXT_CSS_COLOR_FN_LCH || fn == GTEXT_CSS_COLOR_FN_OKLCH;
+  double v0, v1, v2;
+  if (!channel(&c->components[0], ok_space ? 1.0 : 100.0, &v0) || !channel(&c->components[1], polar ? (ok_space ? 0.4 : 150.0) : (ok_space ? 0.4 : 125.0), &v1) ||
+      !channel(&c->components[2], polar ? 360.0 : (ok_space ? 0.4 : 125.0), &v2)) {
+    return false;
+  }
+  v0 = v0 < 0 ? 0 : v0 > (ok_space ? 1.0 : 100.0) ? (ok_space ? 1.0 : 100.0) : v0;
+  if (polar) {
+    const double h = gmath_fmod(v2, 360.0) * 3.14159265358979323846264338327950288 / 180.0;
+    const double chroma = v1 < 0 ? 0 : v1;
+    v1 = chroma * gmath_cos(h);
+    v2 = chroma * gmath_sin(h);
+  }
+  double xyz[3];
+  if (ok_space) {
+    oklab_to_xyz_d65(v0, v1, v2, xyz);
+    return xyz_to_rec2020(xyz, GCOL_PRIMARIES_SRGB, rgb);  /* sRGB's white is D65 */
+  }
+  lab_to_xyz_d50(v0, v1, v2, xyz);
+  return xyz_to_rec2020(xyz, GCOL_PRIMARIES_PROPHOTO, rgb); /* ProPhoto's white is D50 */
+}
+
 /* The keywords of a `color-scheme` value, which the engine nests in the lists of its grammar. */
 static void scan_scheme(const GTEXT_CSS_Value * v, bool * light, bool * dark, unsigned depth) {
   if (depth > 8) {
@@ -247,8 +316,228 @@ static void solid(GVEC_Svg_Color * out, const double rgba[4], GCOL_Primaries pri
   set_space(&out->color, primaries, transfer, gamma);
 }
 
+/* A color of a `color-mix()`, `light-dark()`, `contrast-color()`, `alpha()` or a relative color that holds `currentcolor` (which the engine cannot
+ * compute from the color alone) is made from the color with the element's own `color` in the place of each `currentcolor`; the engine writes the
+ * color it computes to (`color(srgb 0.5 0 0.5)`, `lch(...)`), and that text is read back as the color it is. */
+typedef struct subst {
+  GTEXT_CSS_Color pool[8];
+  size_t used;
+  const GTEXT_CSS_Color * ptrs[16];
+  size_t pused;
+  const GTEXT_CSS_Color * current;
+} subst;
+
+static bool subst_color(subst * s, const GTEXT_CSS_Color * c, unsigned depth, const GTEXT_CSS_Color ** out) {
+  if (depth > 6) {
+    return false;
+  }
+  if (c->kind == GTEXT_CSS_COLOR_KEYWORD && c->keyword == GTEXT_CSS_COLOR_KW_CURRENTCOLOR) {
+    *out = s->current;
+    return s->current != NULL;
+  }
+  if (!c->origin && c->item_count == 0) {
+    *out = c;
+    return true;
+  }
+  if (s->used >= sizeof s->pool / sizeof s->pool[0]) {
+    return false;
+  }
+  GTEXT_CSS_Color * copy = &s->pool[s->used++];
+  *copy = *c;
+  if (c->origin && !subst_color(s, c->origin, depth + 1, &copy->origin)) {
+    return false;
+  }
+  if (c->item_count) {
+    if (s->pused + c->item_count > sizeof s->ptrs / sizeof s->ptrs[0]) {
+      return false;
+    }
+    const GTEXT_CSS_Color ** items = &s->ptrs[s->pused];
+    s->pused += c->item_count;
+    for (size_t i = 0; i < c->item_count; i++) {
+      if (!subst_color(s, c->items[i], depth + 1, &items[i])) {
+        return false;
+      }
+    }
+    copy->items = (const GTEXT_CSS_Color * const *) items;
+  }
+  *out = copy;
+  return true;
+}
+
+/* A decimal number as the engine writes one (an optional sign, digits, a fraction, an exponent), without the locale: the part of `*text` read,
+ * advanced past it; false when none is there. */
+static bool read_number(const char ** text, double * out) {
+  const char * p = *text;
+  double sign = 1;
+  if (*p == '-' || *p == '+') {
+    sign = *p == '-' ? -1 : 1;
+    p++;
+  }
+  double mantissa = 0;
+  int exponent = 0;
+  bool digits = false;
+  for (; *p >= '0' && *p <= '9'; p++) {
+    digits = true;
+    if (mantissa < 1e17) {
+      mantissa = mantissa * 10 + (*p - '0');
+    }
+    else {
+      exponent++;
+    }
+  }
+  if (*p == '.') {
+    for (p++; *p >= '0' && *p <= '9'; p++) {
+      digits = true;
+      if (mantissa < 1e17) {
+        mantissa = mantissa * 10 + (*p - '0');
+        exponent--;
+      }
+    }
+  }
+  if (!digits) {
+    return false;
+  }
+  if ((*p == 'e' || *p == 'E') && (p[1] == '-' || p[1] == '+' || (p[1] >= '0' && p[1] <= '9'))) {
+    int sign_e = p[1] == '-' ? -1 : 1;
+    const char * q = p + ((p[1] == '-' || p[1] == '+') ? 2 : 1);
+    int e = 0;
+    for (; *q >= '0' && *q <= '9'; q++) {
+      e = e * 10 + (*q - '0');
+      if (e > 400) {
+        e = 400;
+      }
+    }
+    exponent += sign_e * e;
+    p = q;
+  }
+  *out = sign * mantissa * gmath_pow(10.0, (double) exponent);
+  *text = p;
+  return true;
+}
+
+/* The color the engine wrote (`function(args)` or `color(space args)`, `none` for a missing channel, `/ alpha`) as a color of this library's
+ * reading: the function, the space and three numbers. false for what is not one of these. */
+static bool read_computed(const char * text, GTEXT_CSS_Color * c, GTEXT_CSS_Color_Component comps[3]) {
+  static const struct {
+    const char * name;
+    GTEXT_CSS_Color_Function fn;
+  } functions[] = {{"rgb", GTEXT_CSS_COLOR_FN_RGB}, {"hsl", GTEXT_CSS_COLOR_FN_HSL}, {"hwb", GTEXT_CSS_COLOR_FN_HWB}, {"lab", GTEXT_CSS_COLOR_FN_LAB},
+      {"lch", GTEXT_CSS_COLOR_FN_LCH}, {"oklab", GTEXT_CSS_COLOR_FN_OKLAB}, {"oklch", GTEXT_CSS_COLOR_FN_OKLCH}, {"color", GTEXT_CSS_COLOR_FN_COLOR}};
+  const char * open = strchr(text, '(');
+  if (!open) {
+    return false;
+  }
+  memset(c, 0, sizeof *c);
+  c->kind = GTEXT_CSS_COLOR_FUNCTION;
+  bool found = false;
+  for (size_t i = 0; i < sizeof functions / sizeof functions[0]; i++) {
+    if ((size_t)(open - text) == strlen(functions[i].name) && memcmp(text, functions[i].name, open - text) == 0) {
+      c->function = functions[i].fn;
+      found = true;
+    }
+  }
+  if (!found) {
+    return false;
+  }
+  const char * p = open + 1;
+  while (*p == ' ') {
+    p++;
+  }
+  if (c->function == GTEXT_CSS_COLOR_FN_COLOR) {
+    const char * end = p;
+    while (*end && *end != ' ') {
+      end++;
+    }
+    bool space_found = false;
+    for (int sp = 0; sp < (int) GTEXT_CSS_SPACE_CUSTOM; sp++) {
+      const char * name = gtext_css_color_space_name((GTEXT_CSS_Color_Space) sp);
+      if (name && strlen(name) == (size_t)(end - p) && memcmp(name, p, end - p) == 0) {
+        c->space = (GTEXT_CSS_Color_Space) sp;
+        space_found = true;
+        break;
+      }
+    }
+    if (!space_found) {
+      return false;
+    }
+    p = end;
+  }
+  c->components = comps;
+  c->component_count = 3;
+  for (int i = 0; i < 4; i++) {
+    while (*p == ' ') {
+      p++;
+    }
+    if (i == 3) {
+      if (*p == '/') {
+        p++;
+        while (*p == ' ') {
+          p++;
+        }
+        c->alpha_written = true;
+      }
+      else {
+        break;
+      }
+    }
+    GTEXT_CSS_Color_Component * k = i == 3 ? &c->alpha : &comps[i];
+    memset(k, 0, sizeof *k);
+    if (strncmp(p, "none", 4) == 0) {
+      k->kind = GTEXT_CSS_COMP_NONE;
+      p += 4;
+      continue;
+    }
+    double v;
+    if (!read_number(&p, &v)) {
+      return false;
+    }
+    k->kind = GTEXT_CSS_COMP_NUMBER;
+    k->value = v;
+    if (*p == '%') {
+      k->kind = GTEXT_CSS_COMP_PERCENT;
+      p++;
+    }
+    else if (strncmp(p, "deg", 3) == 0) {
+      k->kind = GTEXT_CSS_COMP_ANGLE;
+      p += 3;
+    }
+  }
+  return true;
+}
+
 /* A computed colour of `inst`, one level deep: `currentColor` is the element's `color`, which is never itself `currentColor` (computed
  * `color: currentcolor` is `inherit`). */
+static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Color * c,
+    const GVEC_Svg_Element * where, bool allow_current, GVEC_Svg_Color * out);
+
+/* The color of `c` through the text the engine computes it to, with the element's own color where `currentcolor` is written. */
+static GVEC_Result computed_color(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Color * c,
+    const GVEC_Svg_Element * where, GVEC_Svg_Color * out) {
+  subst s;
+  memset(&s, 0, sizeof s);
+  const GTEXT_CSS_Value * v = NULL;
+  GVEC_Result r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_COLOR, NULL, &v);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  s.current = v && v->kind == GTEXT_CSS_VAL_COLOR ? v->color : NULL;
+  const GTEXT_CSS_Color * replaced;
+  if (!subst_color(&s, c, 0, &replaced)) {
+    return refuse(context, where, 0, "a color holds a currentcolor, a system color or too much nesting for it to be computed");
+  }
+  char text[GTEXT_CSS_COLOR_COMPUTED_TEXT_MAX + 1];
+  size_t length = 0;
+  if (gtext_css_color_compute_text(replaced, used_scheme_is_dark(context, instance), NULL, text, &length) != GTEXT_CSS_OK || length == 0) {
+    return refuse(context, where, 0, "a color cannot be computed from itself (a system color, a custom space, a unit that needs an element)");
+  }
+  GTEXT_CSS_Color synthetic;
+  GTEXT_CSS_Color_Component comps[3];
+  if (!read_computed(text, &synthetic, comps)) {
+    return refuse(context, where, 0, "the color the engine computes is of a form this library does not read");
+  }
+  return color_of(context, instance, &synthetic, where, false, out);
+}
+
 static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Color * c,
     const GVEC_Svg_Element * where, bool allow_current, GVEC_Svg_Color * out) {
   double alpha;
@@ -312,6 +601,9 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
     solid(out, rgba, GCOL_PRIMARIES_SRGB, GCOL_TRANSFER_SRGB, 0);
     return GVEC_OK;
   case GTEXT_CSS_COLOR_FUNCTION: {
+    if (c->has_unresolved && c->origin) {
+      return computed_color(context, instance, c, where, out);
+    }
     if (c->has_unresolved || !alpha_of(c, &alpha)) {
       return refuse(context, where, (uint32_t) c->space, "a color channel needs an environment and could not be computed");
     }
@@ -398,22 +690,62 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
         solid(out, rgba, GCOL_PRIMARIES_BT2020, GCOL_TRANSFER_LINEAR, 0);
         return GVEC_OK;
       }
+      case GTEXT_CSS_SPACE_XYZ_D50:
+      case GTEXT_CSS_SPACE_XYZ_D65: {
+        double conv[3];
+        if (!xyz_to_rec2020(ch, c->space == GTEXT_CSS_SPACE_XYZ_D50 ? GCOL_PRIMARIES_PROPHOTO : GCOL_PRIMARIES_SRGB, conv)) {
+          return refuse(context, where, (uint32_t) c->space, "the conversion from CIE XYZ is not available");
+        }
+        memcpy(rgba, conv, sizeof conv);
+        solid(out, rgba, GCOL_PRIMARIES_BT2020, GCOL_TRANSFER_LINEAR, 0);
+        return GVEC_OK;
+      }
       default:
-        return refuse(context, where, (uint32_t) c->space,
-            "a color() space the shape waist cannot carry (a CIE or perceptual space, or a custom one); not converted, because that would approximate it");
+        return refuse(context, where, (uint32_t) c->space, "a color() space the shape waist cannot carry (a custom one, named by a `@color-profile`)");
       }
     }
+    case GTEXT_CSS_COLOR_FN_LAB:
+    case GTEXT_CSS_COLOR_FN_LCH:
+    case GTEXT_CSS_COLOR_FN_OKLAB:
+    case GTEXT_CSS_COLOR_FN_OKLCH: {
+      double conv[3];
+      if (!cie_color(c->function, c, conv)) {
+        return refuse(context, where, (uint32_t) c->space, "a color channel needs an environment and could not be computed");
+      }
+      memcpy(rgba, conv, sizeof conv);
+      rgba[3] = alpha;
+      solid(out, rgba, GCOL_PRIMARIES_BT2020, GCOL_TRANSFER_LINEAR, 0);
+      return GVEC_OK;
+    }
     default:
-      return refuse(context, where, (uint32_t) c->space,
-          "lab(), lch(), oklab() and oklch() are colors the shape waist cannot carry; not converted, because that would approximate them");
+      return refuse(context, where, (uint32_t) c->space, "a color function this library does not know");
     }
   }
   case GTEXT_CSS_COLOR_MIX:
   case GTEXT_CSS_COLOR_LIGHT_DARK:
   case GTEXT_CSS_COLOR_CONTRAST:
   case GTEXT_CSS_COLOR_ALPHA:
-  case GTEXT_CSS_COLOR_DEVICE_CMYK:
-    return refuse(context, where, 0, "color-mix(), relative colors and the other colors that need a conversion are not carried by the shape waist");
+    return computed_color(context, instance, c, where, out);
+  case GTEXT_CSS_COLOR_DEVICE_CMYK: {
+    /* CSS Color 5, 5.1: no color management is assumed, so the conversion is the naive one: each of red, green and blue is one less the cyan,
+     * magenta or yellow, which black darkens. */
+    double cmyk[4];
+    if (c->component_count != 4 || !alpha_of(c, &alpha)) {
+      return refuse(context, where, 0, "device-cmyk() of another number of channels");
+    }
+    for (int i = 0; i < 4; i++) {
+      if (!channel(&c->components[i], 1.0, &cmyk[i])) {
+        return refuse(context, where, 0, "a color channel needs an environment and could not be computed");
+      }
+      cmyk[i] = clamp01(cmyk[i]);
+    }
+    for (int i = 0; i < 3; i++) {
+      rgba[i] = 1.0 - (cmyk[i] * (1.0 - cmyk[3]) + cmyk[3] < 1.0 ? cmyk[i] * (1.0 - cmyk[3]) + cmyk[3] : 1.0);
+    }
+    rgba[3] = alpha;
+    solid(out, rgba, GCOL_PRIMARIES_SRGB, GCOL_TRANSFER_SRGB, 0);
+    return GVEC_OK;
+  }
   }
   return refuse(context, where, 0, "a color this library does not know");
 }

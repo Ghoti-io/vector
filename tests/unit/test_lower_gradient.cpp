@@ -321,7 +321,7 @@ TEST(LowerGradient, LinearRgbInterpolationNamesLinearLightAsTheInterpolationSpac
 TEST(LowerGradient, AGradientWhoseStopColorCannotBeCarriedRefusesTheElement) {
   Lowered l;
   LowerSvg(Svg("width=\"200\" height=\"200\"",
-               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/>"),
+               "<defs><linearGradient id=\"g\"><stop stop-color=\"color(--brand 1 0 0)\"/></linearGradient></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/>"),
       l);
   EXPECT_EQ(l.Items(), (size_t) 0);
   EXPECT_NE(l.Refusal(GVEC_LOWER_GRADIENT), nullptr);

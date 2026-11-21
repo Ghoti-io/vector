@@ -68,7 +68,7 @@ TEST(LowerPaint, AWideGamutColorKeepsItsSpace) {
 
 TEST(LowerPaint, AColorTheWaistCannotCarryRefusesTheElement) {
   Lowered l;
-  LowerSvg(Svg("width=\"20\" height=\"20\"", "<path d=\"M0 0H4V4H0Z\" fill=\"lab(50% 40 59)\"/><path d=\"M0 0H4V4H0Z\"/>"), l);
+  LowerSvg(Svg("width=\"20\" height=\"20\"", "<path d=\"M0 0H4V4H0Z\" fill=\"color(--brand 1 0 0)\"/><path d=\"M0 0H4V4H0Z\"/>"), l);
   EXPECT_EQ(l.Items(), (size_t) 1);
   ASSERT_NE(l.Refusal(GVEC_LOWER_UNSUPPORTED_COLOR_SPACE), nullptr);
   EXPECT_EQ(l.Refusals(), (size_t) 1);
@@ -143,7 +143,7 @@ TEST(LowerPaint, AnInvalidForegroundIsRefusedBeforeAnythingIsDone) {
 TEST(LowerPaint, AGradientPaintThatCannotBeUsedRefusesTheElementWhole) {
   Lowered l;
   LowerSvg(Svg("width=\"20\" height=\"20\"",
-               "<defs><linearGradient id=\"g\"><stop stop-color=\"lab(50% 40 59)\"/></linearGradient></defs>"
+               "<defs><linearGradient id=\"g\"><stop stop-color=\"color(--brand 1 0 0)\"/></linearGradient></defs>"
                "<path d=\"M0 0H4V4H0Z\" fill=\"url(#g)\"/>"),
       l);
   EXPECT_EQ(l.Items(), (size_t) 0);

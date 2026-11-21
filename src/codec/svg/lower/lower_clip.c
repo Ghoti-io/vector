@@ -933,6 +933,32 @@ static GVEC_Result text_leaf_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
 
 static GVEC_Result element_box_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * outer, GSHGEOM_Bounds * box,
     bool * known);
+static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused, const GVEC_Svg_Element * group, const GVEC_Svg_Instance * ginst,
+    const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * known, int depth, const GVEC_Svg_Element * only);
+
+/* The box of an `svg` or a `symbol` viewport (SVG 2, 8.10: the clip of its viewport does not shorten it): the box of its content, put in the space
+ * `placed` leads to through the viewport's own map. A viewport with no size draws nothing and adds nothing. */
+static GVEC_Result viewport_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * placed, GSHGEOM_Bounds * box, bool * known) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+  double x, y, w, h;
+  GSHGEOM_Map inner, moved;
+  int state;
+  const char * why;
+  *known = false;
+  GVEC_Result r = gvec_lw_viewport_inner(ctx, inst, &x, &y, &w, &h, &inner, &state, &why);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (state == 1) {
+    *known = true;
+    return GVEC_OK;
+  }
+  if (state != 0 || !gvec_lw_compose(placed, &inner, &moved)) {
+    return GVEC_OK;
+  }
+  *known = true;
+  return group_box(ctx, e, e, inst, &moved, box, known, 0, NULL);
+}
 
 /* The box of what a `use` draws, in the space `placed` leads to (the use's own transform already in it): the box of the instance of its
  * referent, moved by the use's `x` and `y`.  A `use` of nothing, or of an element `display` removes, draws nothing and adds nothing. */
@@ -985,17 +1011,22 @@ static GVEC_Result use_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, co
 }
 
 static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused, const GVEC_Svg_Element * group, const GVEC_Svg_Instance * ginst,
-    const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * known, int depth) {
+    const GSHGEOM_Map * map, GSHGEOM_Bounds * box, bool * known, int depth, const GVEC_Svg_Element * only) {
   if (depth > 32) {
     *known = false;
     return GVEC_OK;
   }
   for (const GVEC_Svg_Element * child = gvec_svg_element_first_child(group); child; child = gvec_svg_element_next_sibling(child)) {
+    if (only && child != only) {
+      continue;
+    }
     GVEC_Svg_Kind ck = gvec_svg_element_kind(child);
     bool shape = is_shape(ck), container = ck == GVEC_SVG_KIND_G || ck == GVEC_SVG_KIND_A, text_leaf = ck == GVEC_SVG_KIND_TEXT;
     const bool image_leaf = ck == GVEC_SVG_KIND_IMAGE;
     const bool use_leaf = ck == GVEC_SVG_KIND_USE;
-    if (!shape && !container && !text_leaf && !image_leaf && !use_leaf) {
+    const bool viewport_leaf = ck == GVEC_SVG_KIND_SVG;
+    const bool switch_leaf = ck == GVEC_SVG_KIND_SWITCH;
+    if (!shape && !container && !text_leaf && !image_leaf && !use_leaf && !viewport_leaf && !switch_leaf) {
       switch (ck) {
       case GVEC_SVG_KIND_DEFS: case GVEC_SVG_KIND_DESC: case GVEC_SVG_KIND_TITLE: case GVEC_SVG_KIND_METADATA:
       case GVEC_SVG_KIND_LINEAR_GRADIENT: case GVEC_SVG_KIND_RADIAL_GRADIENT: case GVEC_SVG_KIND_CLIP_PATH: case GVEC_SVG_KIND_MASK:
@@ -1031,9 +1062,23 @@ static GVEC_Result group_box(gvec_lw_ctx * ctx, const GVEC_Svg_Element * refused
       *known = false;
       return GVEC_OK;
     }
-    if (container) {
-      r = group_box(ctx, refused, child, ci, &inner, box, known, depth + 1);
+    if (container || switch_leaf) {
+      /* A switch draws the first of its children whose conditions hold, and no other: only that one is boxed. */
+      const GVEC_Svg_Element * chosen = switch_leaf ? gvec_svg_element_switch_selected(child) : NULL;
+      if (switch_leaf && !chosen) {
+        continue;
+      }
+      r = group_box(ctx, refused, child, ci, &inner, box, known, depth + 1, chosen);
       if (r != GVEC_OK || !*known) {
+        return r;
+      }
+      continue;
+    }
+    if (viewport_leaf) {
+      bool ok;
+      r = viewport_box(ctx, ci, &inner, box, &ok);
+      if (r != GVEC_OK || !ok) {
+        *known = false;
         return r;
       }
       continue;
@@ -1137,7 +1182,14 @@ static GVEC_Result element_box_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
     return use_box(ctx, inst, &own, box, known);
   }
   if (kind == GVEC_SVG_KIND_G || kind == GVEC_SVG_KIND_A) {
-    return group_box(ctx, e, e, inst, &own, box, known, 0);
+    return group_box(ctx, e, e, inst, &own, box, known, 0, NULL);
+  }
+  if (kind == GVEC_SVG_KIND_SVG || kind == GVEC_SVG_KIND_SYMBOL) {
+    return viewport_box(ctx, inst, &own, box, known);
+  }
+  if (kind == GVEC_SVG_KIND_SWITCH) {
+    const GVEC_Svg_Element * chosen = gvec_svg_element_switch_selected(e);
+    return chosen ? group_box(ctx, e, e, inst, &own, box, known, 0, chosen) : GVEC_OK;
   }
   if (kind == GVEC_SVG_KIND_TEXT) {
     bool ok;
@@ -1220,7 +1272,7 @@ GVEC_Result gvec_lw_inner_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
       return GVEC_ERR_INTERNAL;
     }
-    return group_box(ctx, e, e, inst, &identity, box, known, 0);
+    return group_box(ctx, e, e, inst, &identity, box, known, 0, gvec_svg_element_kind(e) == GVEC_SVG_KIND_SWITCH ? gvec_svg_element_switch_selected(e) : NULL);
   }
   gvec_lw_geometry geometry;
   const GSHSCENE_Resource * path = NULL;
@@ -1262,7 +1314,7 @@ GVEC_Result gvec_lw_content_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * roo
     return GVEC_OK;
   }
   ctx->box_stroke = true;
-  GVEC_Result r = group_box(ctx, e, e, root, &identity, box, known, 0);
+  GVEC_Result r = group_box(ctx, e, e, root, &identity, box, known, 0, NULL);
   ctx->box_stroke = false;
   return r;
 }
@@ -1340,7 +1392,7 @@ static GVEC_Result add_clip(chain * c, const GVEC_Svg_Element * clip_path, const
         r = gvec_lw_image_leaf_box(ctx, c->inst, &identity, &box, &known); /* an image's box is its viewport */
       }
       else {
-        r = group_box(ctx, e, e, c->inst, &identity, &box, &known, 0);
+        r = group_box(ctx, e, e, c->inst, &identity, &box, &known, 0, NULL);
       }
       if (r != GVEC_OK) {
         return r;

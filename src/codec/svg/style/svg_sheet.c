@@ -178,12 +178,6 @@ static GTEXT_CSS_Sheet * import_sheet(void * user, const GTEXT_CSS_Import_Reques
     gtext_css_sheet_free(sheet);
     return NULL;
   }
-  if (gtext_css_sheet_condition_count(sheet) > 0) {
-    frame->failed = true;
-    gtext_css_sheet_free(sheet);
-    refuse(context, frame->element, "an imported style sheet has conditional rules, which are not applied");
-    return NULL;
-  }
   return sheet;
 }
 
@@ -292,13 +286,7 @@ static GVEC_Result add_sheet(GVEC_Svg_Style_Context * context, const GVEC_Svg_El
     gtext_css_sheet_free(sheet);
     return GVEC_OK;
   }
-  /* A conditional rule (`@media`, `@supports`, `@container`, `@when`) needs an evaluator for its environment; this layer has none, so a sheet
-   * that holds one is not applied: guessing its conditions would be drawing a picture the document does not describe. */
-  if (gtext_css_sheet_condition_count(sheet) > 0) {
-    gtext_css_sheet_free(sheet);
-    refuse(context, e, "a style sheet has conditional rules, which are not applied");
-    return GVEC_OK;
-  }
+  /* A conditional rule (`@media`, `@supports`, `@container`, `@when`) is answered by the conditions of the context (see gvec_svg_style_sheets()). */
   GTEXT_CSS_Sheet_Registration registration;
   memset(&registration, 0, sizeof registration);
   registration.origin = GTEXT_CSS_ORIGIN_AUTHOR;
@@ -332,6 +320,21 @@ GVEC_Result gvec_svg_style_sheets(GVEC_Svg_Style_Context * context) {
     if (!index) {
       GTEXT_CSS_Rule_Index_Options options = gtext_css_rule_index_options_default();
       options.allocator = context->style_options.parse.allocator;
+      if (!context->conditions) {
+        /* The environment of the rules' conditions is a screen of the viewport's size (the engine's own environment, which the lengths in vw
+         * and vh are read against), in the document's color scheme; no element is a container, so a container query is false. */
+        GTEXT_CSS_Media_Environment media = gtext_css_media_environment_default(&context->engine->env);
+        media.prefers_color_scheme = context->color_scheme == GVEC_COLOR_SCHEME_DARK ? GTEXT_CSS_MQ_SCHEME_DARK : GTEXT_CSS_MQ_SCHEME_LIGHT;
+        GTEXT_CSS_Conditions_Options conditions_options = gtext_css_conditions_options_default();
+        conditions_options.allocator = context->style_options.parse.allocator;
+        conditions_options.media = &media;
+        GTEXT_CSS_Status made = gtext_css_conditions_new(context->engine->reg.registry, &conditions_options, &context->conditions);
+        if (made != GTEXT_CSS_OK) {
+          r = status_result(made);
+          break;
+        }
+      }
+      options.conditions = context->conditions;
       GTEXT_CSS_Status status = gtext_css_rule_index_new(context->engine->reg.registry, &options, &index);
       if (status != GTEXT_CSS_OK) {
         r = status_result(status);
