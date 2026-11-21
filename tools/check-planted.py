@@ -678,8 +678,6 @@ PLANTS = [
      'a group that holds an image has no box'),
     ('IM27', CL, '  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_IMAGE) {\n    GSHGEOM_Map identity;\n    bool ok;\n', '  if (false) {\n    GSHGEOM_Map identity;\n    bool ok;\n',
      'an image has no box of its own for a mask or a filter'),
-    ('IM28', BS, '  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_IMAGE) {\n    /* The fill box', '  if (false) {\n    /* The fill box',
-     'an image has no reference box for a basic shape'),
     ('IM29', 'src/codec/svg/style/svg_prop_tables.c', 'auto | optimizeSpeed | optimizeQuality | smooth | high-quality | crisp-edges | pixelated', 'auto | smooth | high-quality | crisp-edges | pixelated',
      'the SVG keywords of image-rendering are not read'),
     ('RS1', 'src/codec/svg/svg_resource.c', "            while (k > 0 && b.path[k - 1] != '/') {\n              k--;\n            }", "            while (k > 0 && b.path[k - 1] != '/' && 0) {\n              k--;\n            }",

@@ -269,6 +269,7 @@
 #define gvec_svg_scan_number GHOTIIO_VECTOR(gvec_svg_scan_number)
 #define gvec_svg_style_context_new_with_fonts GHOTIIO_VECTOR(gvec_svg_style_context_new_with_fonts)
 #define gvec_svg_style_diag GHOTIIO_VECTOR(gvec_svg_style_diag)
+#define gvec_svg_style_feature_values GHOTIIO_VECTOR(gvec_svg_style_feature_values)
 #define gvec_svg_style_sheet_refused GHOTIIO_VECTOR(gvec_svg_style_sheet_refused)
 #define gvec_svg_style_sheets GHOTIIO_VECTOR(gvec_svg_style_sheets)
 #define gvec_svg_ua_declarations GHOTIIO_VECTOR(gvec_svg_ua_declarations)

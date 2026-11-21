@@ -1147,6 +1147,21 @@ TEST(LowerImage, AClipPathAMaskAndAFilterOnAnImageAreTheGroupsOfAnyOtherElement)
   EXPECT_DOUBLE_EQ(f.region[3], 9.6);
 }
 
+TEST(LowerImage, TheReferenceBoxOfABasicShapeOnAnImageIsItsViewport) {
+  Lowered clip;  // inset(25%) of the viewport (4, 6, 8 by 8) leaves x 6 to 10, y 8 to 12
+  LowerSvg(Doc(Image("x=\"4\" y=\"6\" width=\"8\" height=\"8\" style=\"clip-path: inset(25%)\"", Data("rgb-3x2.png"))), clip);
+  EXPECT_EQ(clip.Refusals(), (size_t) 0);
+  ASSERT_EQ(clip.Item(0).kind, GSHSCENE_ITEM_CLIP_PUSH);
+  GSHGEOM_Bounds b;
+  GSHGEOM_Map m = clip.Item(0).map;
+  ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(clip.Item(0).resource), &b), GSHGEOM_OK);
+  auto lo = Apply(m, b.min.x, b.min.y), hi = Apply(m, b.max.x, b.max.y);
+  EXPECT_EQ(lo.first, 6.0);
+  EXPECT_EQ(lo.second, 8.0);
+  EXPECT_EQ(hi.first, 10.0);
+  EXPECT_EQ(hi.second, 12.0);
+}
+
 TEST(LowerImage, TheBoxOfAnImageIsItsViewportForClipsMasksAndFiltersInTheUnitsOfTheBox) {
   Lowered clip;
   LowerSvg(Doc("<clipPath id=\"c\" clipPathUnits=\"objectBoundingBox\"><rect width=\"0.5\" height=\"1\"/></clipPath>" +

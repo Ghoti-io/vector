@@ -1026,34 +1026,8 @@ static box_status reference_box(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     out->h = h;
     return BOX_OK;
   }
-  if (gvec_svg_element_kind(e) == GVEC_SVG_KIND_IMAGE) {
-    /* The fill box and the stroke box of an image are its viewport: it is never stroked. */
-    GSHGEOM_Map identity;
-    GSHGEOM_Bounds viewport;
-    bool known;
-    viewport.empty = 1;
-    if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
-      *result = GVEC_ERR_INTERNAL;
-      return BOX_ERROR;
-    }
-    *result = gvec_lw_image_leaf_box(ctx, inst, &identity, &viewport, &known);
-    if (*result != GVEC_OK) {
-      return BOX_ERROR;
-    }
-    if (!known) {
-      return BOX_REFUSED;
-    }
-    if (viewport.empty) {
-      return BOX_NONE;
-    }
-    out->x = viewport.min.x;
-    out->y = viewport.min.y;
-    out->w = viewport.max.x - viewport.min.x;
-    out->h = viewport.max.y - viewport.min.y;
-    return BOX_OK;
-  }
   if (!is_geometry(gvec_svg_element_kind(e))) {
-    /* A group, a `use`, a nested `svg`, a `switch`, a `text`: the box of what it draws, with the strokes when the keyword says the stroke box. */
+    /* A group, a `use`, a nested `svg`, a `switch`, a `text`, an image (its viewport; it is never stroked): the box of what it draws, with the strokes when the keyword says the stroke box. */
     GSHGEOM_Bounds inner;
     bool known;
     inner.empty = 1;

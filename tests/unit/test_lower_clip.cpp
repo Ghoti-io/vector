@@ -378,6 +378,28 @@ TEST(LowerClip, ABasicShapeOnAClipPathIsMeasuredAgainstTheElementTheClipIsApplie
   EXPECT_TRUE(found);
 }
 
+TEST(LowerClip, ABasicShapeOnAClipPathUsedByAMemberOfAClipIsMeasuredAgainstThatMember) {
+  Lowered l;  // circle(25%) of the 40 by 40 member is a radius of 10 about (50, 50): the clip is that circle, not a quarter of the clipPath's own 200 by 200 rect
+  Lower("<defs><clipPath id=\"d\" style=\"clip-path: circle(25%) fill-box\"><rect width=\"200\" height=\"200\"/></clipPath>"
+        "<clipPath id=\"c\"><rect x=\"30\" y=\"30\" width=\"40\" height=\"40\" clip-path=\"url(#d)\"/><rect x=\"90\" y=\"90\" width=\"4\" height=\"4\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#c)\"/>",
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  bool found = false;
+  for (const auto & m : Members(l)) {
+    for (size_t k = 0; k < m.inner_count; k++) {
+      GSHSCENE_Primitive p;
+      if (gshscene_resource_primitive(m.inner[k].resource, &p) == GSHSCENE_OK && p.kind == GSHSCENE_PRIMITIVE_ELLIPSE) {
+        found = true;
+        EXPECT_EQ(p.rx, 10.0);
+        EXPECT_EQ(p.cx + m.inner[k].map.t[0], 50.0);
+        EXPECT_EQ(p.cy + m.inner[k].map.t[1], 50.0);
+      }
+    }
+  }
+  EXPECT_TRUE(found);
+}
+
 TEST(LowerClip, AClipInTheUnitsOfTheBoxOnAClipsShapeIsPlacedOnThatShapesBox) {
   Lowered l;
   Lower("<defs><clipPath id=\"u\" clipPathUnits=\"objectBoundingBox\"><rect width=\"0.5\" height=\"1\"/></clipPath>"
