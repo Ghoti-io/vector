@@ -318,6 +318,7 @@ GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC
     ctx->style->res = ctx->res;
     ctx->style->base = ctx->base;
     ctx->style->res_depth = ctx->res_depth;
+    gvec_svg_style_set_external(ctx->style, gvec_lw_external_property, ctx);
     r = gvec_svg_style_resolve_references(ctx->style);
   }
   if (r != GVEC_OK) {
@@ -370,6 +371,7 @@ void gvec_lw_end(gvec_lw_ctx * ctx) {
 
 GVEC_Result gvec_lw_refuse(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, GVEC_Lower_Reason reason, const char * message) {
   uint32_t bit = UINT32_C(1) << (unsigned) reason;
+  ctx = gvec_lw_ctx_of(ctx, element); /* its marks are by its document's order */
   if (ctx->refused[element->order] & bit) {
     return GVEC_OK;
   }

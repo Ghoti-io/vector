@@ -240,7 +240,7 @@ static GVEC_Result make_mask(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
     return r;
   }
   if (nested_kind == -1) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names another document is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names an element the resolver does not supply is not lowered");
   }
   const GSHSCENE_Resource * nested = NULL;
   bool loops = false;
@@ -402,7 +402,7 @@ GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   if (kind == -1) {
     *state = GVEC_LW_MASK_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names another document is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names an element the resolver does not supply is not lowered");
   }
   if (kind == 0 || in_stack(ctx, mask)) {
     return GVEC_OK; /* A reference to nothing, or one that comes back to a mask being made, draws the element unmasked. */

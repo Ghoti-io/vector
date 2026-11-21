@@ -86,13 +86,14 @@ static GVEC_Result place_instance(gvec_lw_ctx * ctx, const GVEC_Svg_Element * el
   for (const GVEC_Svg_Element * a = element; a; a = gvec_svg_element_parent(a)) {
     chain[--i] = a;
   }
-  const GVEC_Svg_Instance * inst = gvec_svg_instance_root(ctx->style);
+  gvec_lw_ctx * owner = gvec_lw_ctx_of(ctx, element); /* a marker of another document is made down from that document's root */
+  const GVEC_Svg_Instance * inst = gvec_svg_instance_root(owner->style);
   if (!inst || gvec_svg_instance_element(inst) != chain[0]) {
     return inst ? GVEC_ERR_INTERNAL : GVEC_ERR_OOM;
   }
   for (i = 1; i < depth; i++) {
     const GVEC_Svg_Instance * next = NULL;
-    GVEC_Result r = gvec_svg_instance_child(ctx->style, inst, chain[i], &next);
+    GVEC_Result r = gvec_svg_instance_child(owner->style, inst, chain[i], &next);
     if (r != GVEC_OK) {
       return r;
     }

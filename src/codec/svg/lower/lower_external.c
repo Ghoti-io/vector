@@ -221,3 +221,136 @@ void gvec_lw_external_done(gvec_lw_ctx * ctx, gvec_lw_ctx * nested) {
   ctx->image_decoded = nested->image_decoded;
   ctx->marker_instances = nested->marker_instances;
 }
+
+/* Whether the document of `c` holds `e`. */
+static bool holds(const gvec_lw_ctx * c, const GVEC_Svg_Element * e) {
+  return e->order < c->document->element_count && c->document->elements[e->order] == e;
+}
+
+static gvec_lw_ctx * find_owner(gvec_lw_ctx * c, const GVEC_Svg_Element * e) {
+  if (holds(c, e)) {
+    return c;
+  }
+  for (size_t i = 0; i < c->nested_count; i++) {
+    gvec_lw_ctx * found = find_owner(c->nested[i], e);
+    if (found) {
+      return found;
+    }
+  }
+  return NULL;
+}
+
+gvec_lw_ctx * gvec_lw_ctx_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e) {
+  if (holds(ctx, e)) {
+    return ctx;
+  }
+  gvec_lw_ctx * root = ctx;
+  while (root->parent) {
+    root = root->parent;
+  }
+  gvec_lw_ctx * found = find_owner(root, e);
+  return found ? found : ctx;
+}
+
+/* The context kept for a document a property's `url()` names, one for each document of the lowering (they hang on its outermost context). */
+static gvec_lw_ctx * held_context(gvec_lw_ctx * root, const GVEC_Doc * doc) {
+  for (size_t i = 0; i < root->nested_count; i++) {
+    if (root->nested[i]->external_doc == doc && root->nested[i]->external_use == NULL) {
+      return root->nested[i];
+    }
+  }
+  return NULL;
+}
+
+GVEC_Result gvec_lw_external_property(void * user, const char * reference, const GVEC_Svg_Element ** target) {
+  gvec_lw_ctx * ctx = user;
+  *target = NULL;
+  size_t before = 0;
+  const char * fragment = gvec_res_fragment(reference, &before);
+  if (!fragment || !fragment[0] || before == 0 || !gvec_res_enabled(ctx->res)) {
+    return GVEC_OK;
+  }
+  gvec_res_state * res = ctx->res;
+  gvec_res_outcome outcome;
+  gvec_res_entry * entry = NULL;
+  GVEC_Result r = gvec_res_fetch(res, GVEC_RESOURCE_DOCUMENT, ctx->base, reference, ctx->document->limits.max_input_bytes, ctx->res_depth + 1, &outcome, &entry);
+  if (r != GVEC_OK || outcome != GVEC_RES_OK) {
+    return r; /* what the resolver does not give names nothing: the property that names it says so */
+  }
+  if (!entry->document && !entry->document_tried) {
+    entry->document_tried = true;
+    GVEC_Doc * doc = NULL;
+    GVEC_Result problem;
+    r = gvec_lw_load_document(ctx, entry->bytes, entry->size, ctx->document->viewport_width, ctx->document->viewport_height, &doc, &problem);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    entry->document = doc;
+  }
+  if (!entry->document) {
+    return GVEC_OK;
+  }
+  const GVEC_Doc * doc = entry->document;
+  const GVEC_Svg_Document * svg = gvec_svg_document(doc);
+  if (!svg) {
+    return GVEC_OK;
+  }
+  bool oom = false;
+  char * id = fragment_id(ctx->allocator, fragment, &oom);
+  if (oom) {
+    return GVEC_ERR_OOM;
+  }
+  const GVEC_Svg_Element * found = id ? gvec_svg_find_by_id(svg, id) : NULL;
+  gvec_free(ctx->allocator, id);
+  if (!found) {
+    return GVEC_OK;
+  }
+  gvec_lw_ctx * root = ctx;
+  while (root->parent) {
+    root = root->parent;
+  }
+  if (!held_context(root, doc)) {
+    if (res->instantiations >= res->max_instances) {
+      return GVEC_OK;
+    }
+    gvec_lw_ctx * n = gvec_alloc(ctx->allocator, sizeof *n);
+    if (!n) {
+      return GVEC_ERR_OOM;
+    }
+    if (root->nested_count == root->nested_capacity) {
+      size_t capacity = root->nested_capacity ? root->nested_capacity * 2 : 4, bytes;
+      void * fresh = gcu_safe_mul_size(capacity, sizeof *root->nested, &bytes) ? gvec_realloc(ctx->allocator, root->nested, bytes) : NULL;
+      if (!fresh) {
+        gvec_free(ctx->allocator, n);
+        return GVEC_ERR_OOM;
+      }
+      root->nested = fresh;
+      root->nested_capacity = capacity;
+    }
+    r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, entry->url);
+    if (r != GVEC_OK) {
+      gvec_free(ctx->allocator, n);
+      return r;
+    }
+    root->nested[root->nested_count++] = n;
+    res->instantiations++;
+    n->parent = root;
+    n->external_doc = doc;
+    n->external_use = NULL;
+    n->image_nesting = ctx->image_nesting;
+    r = gvec_svg_style_sheets(n->style);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    const char * why = NULL;
+    const GVEC_Svg_Element * refused = gvec_svg_style_sheet_refused(n->style, &why);
+    if (refused) {
+      r = gvec_lw_refuse(n, refused, GVEC_LOWER_STYLESHEET, why);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+  }
+  *target = found;
+  return GVEC_OK;
+}

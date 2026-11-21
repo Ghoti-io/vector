@@ -57,6 +57,27 @@ GVEC_Result gvec_svg_resolve_url(GVEC_Svg_Style_Context * context, const GTEXT_C
   *out_id = NULL;
   *out_target = NULL;
   if (url->length < 2 || url->data[0] != '#') {
+    /* An element of another document, when the caller's resolver supplies it: the reference is then as local as any (its element is in the context
+     * of its own document, which an instance of it is read through). */
+    const char * hash = url->length ? memchr(url->data, '#', url->length) : NULL;
+    if (context->external_find && hash && hash + 1 < url->data + url->length && hash != url->data) {
+      char * text = gvec_arena_alloc(&context->arena, url->length + 1, 1);
+      if (!text) {
+        return GVEC_ERR_OOM;
+      }
+      memcpy(text, url->data, url->length);
+      text[url->length] = 0;
+      const GVEC_Svg_Element * found = NULL;
+      GVEC_Result r = context->external_find(context->external_user, text, &found);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      if (found) {
+        *out_local = true;
+        *out_id = text + (hash - url->data) + 1;
+        *out_target = found;
+      }
+    }
     return GVEC_OK;
   }
   char * id = gvec_arena_alloc(&context->arena, url->length, 1);
@@ -111,6 +132,7 @@ static bool keyword_is(const GTEXT_CSS_Value * v, const char * word) {
 
 GVEC_Result gvec_svg_used_paint(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * v,
     GVEC_Svg_Paint * out) {
+  context = gvec_svg_owner(context, instance);
   memset(out, 0, sizeof *out);
   const GVEC_Svg_Element * where = instance->element;
   if (keyword_is(v, "none")) {
@@ -235,6 +257,7 @@ static GVEC_Result reference_item(GVEC_Svg_Style_Context * context, const GVEC_S
 
 GVEC_Result gvec_svg_used_references(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * v,
     GVEC_Svg_Style_Value * out) {
+  context = gvec_svg_owner(context, instance);
   out->kind = GVEC_SVG_STYLE_REFERENCES;
   if (keyword_is(v, "none")) {
     return GVEC_OK;
@@ -265,4 +288,11 @@ GVEC_Result gvec_svg_used_references(GVEC_Svg_Style_Context * context, const GVE
   out->references = refs;
   out->reference_count = n;
   return GVEC_OK;
+}
+
+void gvec_svg_style_set_external(GVEC_Svg_Style_Context * context, gvec_svg_external_fn fn, void * user) {
+  if (context) {
+    context->external_find = fn;
+    context->external_user = user;
+  }
 }

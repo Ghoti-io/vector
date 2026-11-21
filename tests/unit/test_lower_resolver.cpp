@@ -1326,6 +1326,183 @@ TEST(LowerResolverProfile, AProfileThatCannotBeHadRefusesTheElementAndSaysWhy) {
   EXPECT_NE(nothing.Refusal(GVEC_LOWER_UNSUPPORTED_COLOR_SPACE), nullptr);
 }
 
+//-----------------------------------------------------------------------------
+// Clips, masks, filters and paint servers of another document
+//-----------------------------------------------------------------------------
+
+namespace {
+
+std::string Other(const std::string & body) {
+  return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\">" + body + "</svg>";
+}
+
+size_t Count(const Lowered & l, GSHSCENE_Item_Kind kind) {
+  std::vector<GSHSCENE_Item> all;
+  Collect(l.list, all);
+  size_t n = 0;
+  for (const GSHSCENE_Item & item : all) {
+    n += item.kind == kind;
+  }
+  return n;
+}
+
+}  // namespace
+
+TEST(LowerResolverProperty, AClipPathOfAnotherDocumentClipsTheElement) {
+  Fake fake;
+  fake.Put("c.svg", Other("<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/></clipPath>"));
+  Lowered l;
+  Lower(Doc("<rect width=\"20\" height=\"20\" clip-path=\"url(c.svg#c)\"/>"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(Count(l, GSHSCENE_ITEM_CLIP_PUSH), (size_t) 1);
+  ASSERT_GE(fake.seen.size(), (size_t) 1);
+  EXPECT_EQ(fake.seen[0].kind, GVEC_RESOURCE_DOCUMENT);
+  EXPECT_EQ(fake.seen[0].url, "c.svg");
+}
+
+TEST(LowerResolverProperty, TheSameMarkupInTwoDocumentsIsTwoClips) {
+  // a clipPath of the same id and shape in the document and in the other one, differing only in size: neither may be taken for the other
+  Fake fake;
+  fake.Put("c.svg", Other("<clipPath id=\"c\"><rect width=\"5\" height=\"5\"/></clipPath>"));
+  Lowered l;
+  Lower(Doc("<clipPath id=\"c\"><rect width=\"9\" height=\"9\"/></clipPath><rect width=\"20\" height=\"20\" clip-path=\"url(#c)\"/>"
+            "<rect width=\"20\" height=\"20\" clip-path=\"url(c.svg#c)\"/>"),
+      l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  std::vector<GSHSCENE_Item> all;
+  Collect(l.list, all);
+  std::vector<double> widths;
+  for (const GSHSCENE_Item & item : all) {
+    GSHGEOM_Bounds b;
+    if (item.kind == GSHSCENE_ITEM_CLIP_PUSH && gshscene_resource_path(item.resource) &&
+        gshgeom_path_bounds(gshscene_resource_path(item.resource), &b) == GSHGEOM_OK) {
+      widths.push_back(b.max.x - b.min.x);
+    }
+  }
+  ASSERT_EQ(widths.size(), (size_t) 2);
+  EXPECT_EQ(widths[0], 9.0);
+  EXPECT_EQ(widths[1], 5.0);
+}
+
+TEST(LowerResolverProperty, TheSameMaskMarkupInTwoDocumentsIsTwoMasksInTheEdit) {
+  // the nodes of a mask are kept in the edit under keys made from the element's key: the same markup in two documents must not be the same node
+  Fake fake;
+  fake.Put("m.svg", Other("<mask id=\"m\"><rect width=\"20\" height=\"20\" fill=\"white\"/></mask>"));
+  Lowered l;
+  Lower(Doc("<mask id=\"m\"><rect width=\"20\" height=\"20\" fill=\"white\"/></mask><rect width=\"10\" height=\"10\" mask=\"url(#m)\"/>"
+            "<rect x=\"10\" width=\"10\" height=\"10\" mask=\"url(m.svg#m)\"/>"),
+      l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  size_t masked = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    masked += l.Item(i).kind == GSHSCENE_ITEM_GROUP_PUSH && l.Item(i).group.soft_mask;
+  }
+  EXPECT_EQ(masked, (size_t) 2);
+  size_t from_edit = 0;
+  for (size_t i = 0; l.emitted && i < gshscene_list_count(l.emitted); i++) {
+    const GSHSCENE_Item * item = nullptr;
+    ASSERT_EQ(gshscene_list_item(l.emitted, i, &item), GSHSCENE_OK);
+    from_edit += item->kind == GSHSCENE_ITEM_GROUP_PUSH && item->group.soft_mask;
+  }
+  EXPECT_EQ(from_edit, (size_t) 2) << "the published edit holds both";
+}
+
+TEST(LowerResolverProperty, AGradientAndAPatternOfAnotherDocumentPaint) {
+  Fake fake;
+  fake.Put("g.svg", Other("<linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"/><stop offset=\"1\" stop-color=\"blue\"/></linearGradient>"
+                           "<pattern id=\"p\" width=\"4\" height=\"4\" patternUnits=\"userSpaceOnUse\"><rect width=\"2\" height=\"2\" fill=\"green\"/></pattern>"));
+  Lowered l;
+  Lower(Doc("<rect width=\"10\" height=\"10\" fill=\"url(g.svg#g)\"/><rect width=\"10\" height=\"10\" fill=\"url(g.svg#p)\"/>"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  ASSERT_EQ(Fills(l), (size_t) 2);
+  EXPECT_NE(FillOf(l, 0).kind, GSHSCENE_PAINT_SOLID) << "a gradient";
+  EXPECT_NE(FillOf(l, 1).kind, GSHSCENE_PAINT_SOLID) << "a pattern";
+  EXPECT_EQ(fake.Calls("g.svg"), (size_t) 1) << "the document is asked once";
+}
+
+TEST(LowerResolverProperty, AMaskAndAFilterOfAnotherDocumentApply) {
+  Fake fake;
+  fake.Put("m.svg", Other("<mask id=\"m\"><rect width=\"20\" height=\"20\" fill=\"white\"/></mask><filter id=\"f\"><feOffset dx=\"2\"/></filter>"));
+  Lowered masked, filtered;
+  Lower(Doc("<rect width=\"10\" height=\"10\" mask=\"url(m.svg#m)\"/>"), masked, fake);
+  EXPECT_EQ(masked.Refusals(), (size_t) 0);
+  bool soft = false;
+  std::vector<GSHSCENE_Item> all;
+  Collect(masked.list, all);
+  for (const GSHSCENE_Item & item : all) {
+    soft = soft || (item.kind == GSHSCENE_ITEM_GROUP_PUSH && item.group.soft_mask);
+  }
+  EXPECT_TRUE(soft);
+  Lower(Doc("<rect width=\"10\" height=\"10\" filter=\"url(m.svg#f)\"/>"), filtered, fake);
+  EXPECT_EQ(filtered.Refusals(), (size_t) 0);
+  bool filter = false;
+  Collect(filtered.list, all = {});
+  for (const GSHSCENE_Item & item : all) {
+    filter = filter || (item.kind == GSHSCENE_ITEM_GROUP_PUSH && item.group.filter);
+  }
+  EXPECT_TRUE(filter);
+}
+
+TEST(LowerResolverProperty, AnElementOfAnotherDocumentReadsItsOwnReferencesAndItsOwnStyle) {
+  // the other document's clipPath is clipped by another of its own, and is styled by its own sheet: neither is the document's
+  Fake fake;
+  fake.Put("c.svg", Other("<style>#inner rect { }</style><clipPath id=\"inner\"><rect width=\"3\" height=\"3\"/></clipPath>"
+                          "<clipPath id=\"c\" clip-path=\"url(#inner)\"><rect width=\"5\" height=\"5\"/></clipPath>"));
+  Lowered l;
+  Lower(Doc("<rect width=\"20\" height=\"20\" clip-path=\"url(c.svg#c)\"/>"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(Count(l, GSHSCENE_ITEM_CLIP_PUSH), (size_t) 2) << "the clipPath and the clip of the clipPath";
+}
+
+TEST(LowerResolverProperty, AMarkerOfAnotherDocumentIsDrawnAtTheVertices) {
+  Fake fake;
+  fake.Put("m.svg", Other("<marker id=\"m\" markerWidth=\"4\" markerHeight=\"4\" markerUnits=\"userSpaceOnUse\" orient=\"0\"><path d=\"M0 0H4V4H0Z\"/></marker>"));
+  Lowered l;
+  Lower(Doc("<path d=\"M2 2L18 2\" fill=\"none\" stroke=\"black\" marker-start=\"url(m.svg#m)\" marker-end=\"url(m.svg#m)\"/>"), l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  size_t instances = 0, strokes = 0;
+  for (size_t i = 0; i < l.Items(); i++) {
+    instances += l.Item(i).kind == GSHSCENE_ITEM_INSTANCE;
+  }
+  EXPECT_EQ(instances, (size_t) 2) << "a marker at the start and one at the end";
+  strokes = Count(l, GSHSCENE_ITEM_STROKE);
+  EXPECT_EQ(strokes, (size_t) 1) << "the path's own stroke; the marker's path has a fill";
+  Lowered local;  // the same marker in the document draws the same
+  Lower(Doc("<marker id=\"m\" markerWidth=\"4\" markerHeight=\"4\" markerUnits=\"userSpaceOnUse\" orient=\"0\"><path d=\"M0 0H4V4H0Z\"/></marker>"
+            "<path d=\"M2 2L18 2\" fill=\"none\" stroke=\"black\" marker-start=\"url(#m)\" marker-end=\"url(#m)\"/>"),
+      local, fake);
+  size_t local_instances = 0;
+  for (size_t i = 0; i < local.Items(); i++) {
+    local_instances += local.Item(i).kind == GSHSCENE_ITEM_INSTANCE;
+  }
+  EXPECT_EQ(instances, local_instances);
+}
+
+TEST(LowerResolverProperty, AReferenceTheResolverDoesNotGiveIsRefusedAsBefore) {
+  for (GVEC_Resource_Status status : {GVEC_RESOURCE_REFUSED, GVEC_RESOURCE_NOT_FOUND, GVEC_RESOURCE_FAILED}) {
+    Fake fake;
+    fake.Status("c.svg", status);
+    Lowered l;
+    Lower(Doc("<rect width=\"20\" height=\"20\" clip-path=\"url(c.svg#c)\"/>"), l, fake);
+    EXPECT_NE(l.Refusal(GVEC_LOWER_CLIP_PATH), nullptr) << "status " << (int) status;
+  }
+  Fake none;  // the document has no such element
+  none.Put("c.svg", Other("<clipPath id=\"other\"/>"));
+  Lowered l;
+  Lower(Doc("<rect width=\"20\" height=\"20\" clip-path=\"url(c.svg#c)\"/>"), l, none);
+  EXPECT_NE(l.Refusal(GVEC_LOWER_CLIP_PATH), nullptr);
+}
+
+TEST(LowerResolverProperty, DocumentsThatNameEachOtherThroughClipsEndAndAreRefusedOrDrawnOnce) {
+  Fake fake;
+  fake.Put("a.svg", Other("<clipPath id=\"a\" clip-path=\"url(b.svg#b)\"><rect width=\"5\" height=\"5\"/></clipPath>"));
+  fake.Put("b.svg", Other("<clipPath id=\"b\" clip-path=\"url(a.svg#a)\"><rect width=\"6\" height=\"6\"/></clipPath>"));
+  Lowered l;
+  Lower(Doc("<rect width=\"20\" height=\"20\" clip-path=\"url(a.svg#a)\"/>"), l, fake);
+  EXPECT_LE(fake.seen.size(), (size_t) 8) << "the documents are asked once each however they name one another";
+  SUCCEED();
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

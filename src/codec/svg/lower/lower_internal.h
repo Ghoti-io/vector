@@ -702,6 +702,16 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_external_target(gvec_lw_ctx * ctx, const G
     gvec_lw_ctx ** nested, const GVEC_Svg_Element ** target, bool * ready);
 
 /** Give `nested` the state of `ctx` for the walk of what a `use` instantiates: the keys' chain, the levels and the depths, the context paints. */
+/**
+ * The element of another document that a property's `url()` names (a clip, a mask, a filter, a paint server, a marker): the document is asked of the
+ * resolver once and kept, and its elements are read through a context of its own (gvec_lw_ctx_of). `*target` is NULL when the resolver does not give
+ * it or it has no such element, which the property then reads as naming nothing. It is what a style context calls (gvec_svg_style_set_external).
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_external_property(void * user, const char * reference, const GVEC_Svg_Element ** target);
+
+/** The context of the document that holds `e`: `ctx` for an element of its own document, else the one kept for the document it is in. */
+GVEC_INTERNAL_API gvec_lw_ctx * gvec_lw_ctx_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e);
+
 GVEC_INTERNAL_API void gvec_lw_external_sync(gvec_lw_ctx * ctx, gvec_lw_ctx * nested);
 
 /** Take back what `nested` used up that is the whole lowering's (the bytes of images decoded). */

@@ -40,6 +40,7 @@ const char * gvec_svg_pool_string(GVEC_Svg_Style_Context * context, const char *
 
 GVEC_Result gvec_svg_computed(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, GVEC_Svg_Property property,
     const GTEXT_CSS_Computed_Style ** out_style, const GTEXT_CSS_Value ** out_value) {
+  context = gvec_svg_owner(context, instance);
   const GTEXT_CSS_Computed_Style * style = NULL;
   GVEC_Result r = gvec_svg_instance_style(context, instance, &style);
   if (r != GVEC_OK) {
@@ -143,6 +144,7 @@ bool gvec_svg_length_of_value(const GTEXT_CSS_Value * v, double basis, double * 
 
 GVEC_Result gvec_svg_used_length(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, GVEC_Svg_Property property,
     double * out, bool * out_auto) {
+  context = gvec_svg_owner(context, instance);
   const GTEXT_CSS_Value * v = NULL;
   GVEC_Result r = gvec_svg_computed(context, instance, property, NULL, &v);
   if (r != GVEC_OK) {
@@ -177,6 +179,7 @@ static GVEC_Result serialize_value(GVEC_Svg_Style_Context * context, const GTEXT
 
 GVEC_Result gvec_svg_get(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, GVEC_Svg_Property property,
     GVEC_Svg_Style_Value * out_value) {
+  context = gvec_svg_owner(context, instance);
   if (!context || !instance || !out_value || (unsigned) property >= GVEC_SVG_PROP_COUNT) {
     return GVEC_ERR_INVALID;
   }
@@ -246,6 +249,7 @@ GVEC_Result gvec_svg_get(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instan
 
 GVEC_Result gvec_svg_get_specified(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, GVEC_Svg_Property property,
     GVEC_Svg_Style_Specified * out_specified) {
+  context = gvec_svg_owner(context, instance);
   if (!context || !instance || !out_specified || (unsigned) property >= GVEC_SVG_PROP_COUNT) {
     return GVEC_ERR_INVALID;
   }

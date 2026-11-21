@@ -75,7 +75,10 @@ static GVEC_Result url_target(GVEC_Svg_Style_Context * context, const GTEXT_CSS_
   bool local;
   const char * id;
   const GVEC_Svg_Element * target;
+  gvec_svg_external_fn external = context->external_find; /* what is in another document is no edge of this document's graph (and is not fetched here) */
+  context->external_find = NULL;
   GVEC_Result r = gvec_svg_resolve_url(context, &v->text, &local, &id, &target);
+  context->external_find = external;
   if (r != GVEC_OK || !target) {
     return r;
   }
@@ -487,17 +490,25 @@ bool gvec_svg_reference_cut(const GVEC_Svg_Style_Context * context, const GVEC_S
   if (!context || !context->component || !from || !to) {
     return false;
   }
+  const GVEC_Svg_Document * doc = context->document;
+  if (from->order >= doc->element_count || to->order >= doc->element_count || doc->elements[from->order] != from || doc->elements[to->order] != to) {
+    return false; /* an element of another document is on no cycle of this one's graph */
+  }
   uint32_t c = context->component[from->order];
   return c != 0 && c == context->component[to->order];
 }
 
 bool gvec_svg_marker_reference_cut(const GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GVEC_Svg_Element * to) {
+  context = gvec_svg_owner((GVEC_Svg_Style_Context *) context, instance);
   if (!context || !instance || !to || context->marker_cut_count == 0) {
     return false;
   }
   for (const GVEC_Svg_Instance * i = instance; i; i = i->parent) {
     if (i->element->kind != GVEC_SVG_KIND_MARKER) {
       continue;
+    }
+    if (to->order >= context->document->element_count || context->document->elements[to->order] != to) {
+      return false; /* a marker of another document is on no walk of this one */
     }
     for (size_t k = 0; k < context->marker_cut_count; k++) {
       if (context->marker_cut[2 * k] == i->element->order && context->marker_cut[2 * k + 1] == to->order) {

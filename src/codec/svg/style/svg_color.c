@@ -909,6 +909,7 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
 
 GVEC_Result gvec_svg_used_color(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * value,
     const GVEC_Svg_Element * where, GVEC_Svg_Color * out) {
+  context = gvec_svg_owner(context, instance);
   /* A property whose value is `currentColor` computes to the keyword, not to the color: it is the element's `color`. */
   if (value && value->kind == GTEXT_CSS_VAL_KEYWORD && value->text.length == strlen("currentcolor") &&
       strncasecmp(value->text.data, "currentcolor", value->text.length) == 0) {

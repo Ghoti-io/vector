@@ -454,6 +454,7 @@ static GVEC_Result make_instance(GVEC_Svg_Style_Context * context, const GVEC_Sv
   instance->element = element;
   instance->parent = parent;
   instance->use = use;
+  instance->owner = context;
   instance->viewport_width = vw;
   instance->viewport_height = vh;
   instance->depth = parent ? parent->depth + 1 : 0;
@@ -569,6 +570,7 @@ GVEC_Result gvec_svg_instance_child(GVEC_Svg_Style_Context * context, const GVEC
   if (!context || !parent || !element || !out_instance || gvec_svg_element_parent(element) != parent->element) {
     return GVEC_ERR_INVALID;
   }
+  context = gvec_svg_owner(context, parent);
   double w, h;
   GVEC_Result r = children_viewport(context, parent, &w, &h);
   if (r != GVEC_OK) {
@@ -631,6 +633,7 @@ GVEC_Result gvec_svg_instance_use(
   if (!target) {
     return GVEC_ERR_INVALID;
   }
+  context = gvec_svg_owner(context, use_instance);
   return gvec_svg_instance_use_in(context, context, use_instance, target, out_instance);
 }
 
@@ -825,6 +828,7 @@ static GVEC_Result compute_one(GVEC_Svg_Style_Context * context, GVEC_Svg_Instan
 
 void gvec_svg_instance_release(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance) {
   GVEC_Svg_Instance * i = (GVEC_Svg_Instance *) instance;
+  context = gvec_svg_owner(context, instance);
   if (!context || !i || !i->style) {
     return;
   }
@@ -837,6 +841,7 @@ void gvec_svg_instance_release(GVEC_Svg_Style_Context * context, const GVEC_Svg_
 GVEC_Result gvec_svg_instance_style(
     GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Computed_Style ** out) {
   GVEC_Svg_Instance * top = (GVEC_Svg_Instance *) instance;
+  context = gvec_svg_owner(context, instance);
   if (top->style) {
     *out = top->style;
     return GVEC_OK;
@@ -867,7 +872,7 @@ GVEC_Result gvec_svg_instance_style(
   while (n > 0 && r == GVEC_OK) {
     GVEC_Svg_Instance * i = chain[--n];
     const GTEXT_CSS_Computed_Style * parent = i->parent ? i->parent->style : NULL;
-    r = compute_one(context, i, parent);
+    r = compute_one(gvec_svg_owner(context, i), i, parent);
     if (r != GVEC_OK && r != GVEC_ERR_OOM) {
       i->style_failed = true;
       i->style_result = r;

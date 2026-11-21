@@ -659,7 +659,7 @@ static GVEC_Result basic_terms(chain * c, const GVEC_Svg_Instance * inst, const 
   }
   if (!text) {
     *refused = true;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clip-path that names another document is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clip-path that names an element the resolver does not supply is not lowered");
   }
   gvec_lw_shape shape;
   r = gvec_lw_basic_shape(ctx, box_inst, text, &shape);
@@ -1710,7 +1710,7 @@ static GVEC_Result basic_shape_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
   }
   if (!text) {
     *state = GVEC_LW_CLIP_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clip-path that names another document is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_CLIP_PATH, "a clip-path that names an element the resolver does not supply is not lowered");
   }
   *state = GVEC_LW_CLIP_REFUSED;
   gvec_lw_shape shape;

@@ -69,6 +69,7 @@ static size_t count_leaves(const GTEXT_CSS_Value * v) {
 
 GVEC_Result gvec_svg_used_dasharray(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * v,
     GVEC_Svg_Style_Value * out) {
+  context = gvec_svg_owner(context, instance);
   out->kind = GVEC_SVG_STYLE_NUMBER_LIST;
   if (v->kind == GTEXT_CSS_VAL_KEYWORD) {
     return GVEC_OK; /* `none` */

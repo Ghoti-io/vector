@@ -580,7 +580,7 @@ the luminance is taken in while the picture is blended as it is, which is what t
 mask with nothing in it hide the element. A `mask` on the `mask` element is a mask of its picture; if the `mask` properties followed from a mask come back
 to it, that mask has no mask of its own (as in the browsers and `resvg`), and a child of a mask that names a mask being made is drawn unmasked. A `mask`
 naming nothing, or what is no `mask`, is as if it were not specified. A mask in the units of the box of an element that holds a `foreignObject`,
-and a mask of another document, are refused (GVEC_LOWER_MASK). Equal masks of equal boxes are one resource.
+and a mask of a document the resolver does not supply (S9), are refused (GVEC_LOWER_MASK). Equal masks of equal boxes are one resource.
 
 **H20 Blend modes and isolation.** `mix-blend-mode` (read in a style, never as a presentation attribute) is the composite operator of the group the
 element is drawn in: one group carries the element's opacity and its blend, so the element is blended as a whole (fill, stroke and markers together),
@@ -847,6 +847,16 @@ document, so the element is refused (`context-paint`). A document that does not 
 **S8 Cycles.** A `use` that is instantiated inside its own instantiation is a cycle across documents (found by the `use` elements the nested contexts were made for, so a
 document that names itself through others is found at the second visit, not the depth limit) and is refused (`external-reference`); what lies outside the cycle is drawn.
 Internal cycles are the document's own rule (P8) inside each context.
+
+**S9 Clips, masks, filters, paint servers and markers of another document.** `clip-path`, `mask`, `filter`, `fill`, `stroke` and `marker-*` may name an element of another
+document (`url(other.svg#id)`): the style layer asks the lowering's resolver for the document (kind `document`, once, as for a `use`), finds the element by its id, and the
+reference is then as local as any, its `target` an element of that document. Each document is held by a context of its own (on the outermost one), and everything that reads
+an element goes through the context of its document: an instance records its owner, the style entry points use it (`gvec_svg_owner`), `gvec_lw_instance_of` and the marker's
+placement make an element's instances through its document's context, and a refusal marks the element in its own document's table. So a clip, a mask, a filter or a paint server
+reads its own `url(#inner)` and its own style sheets, inherits from its own ancestors, and is measured against the element it is applied to. The reference graph (cycles, the walk of the
+markers) is a document's own and leaves out what is in another; documents that name one another through these properties are bounded by the resolver's limits (`max_resources`,
+`max_resource_depth`, `max_resource_instances`) and end at the element a chain repeats. A reference the resolver does not supply (no resolver, refused, not found, a document that
+is not SVG, an id it does not have) names nothing here, so the property is refused with its own reason as before (`clip-path`, `mask`, `filter`) or reads as the paint's fallback or none.
 
 **S9 Hostile input.** A resolver may answer anything: bytes that are not XML, CSS made of braces, a document that names itself, a thousand documents that name one another, a
 size that is a lie, a media type that does not end, a refusal where it said yes before. None of it crashes or runs without bound: the byte, count, depth and instance limits

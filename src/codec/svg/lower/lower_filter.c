@@ -2111,7 +2111,7 @@ GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     const GVEC_Svg_Style_Reference * ref = &v.references[steps[k].first];
     if (!ref->local) {
       *state = GVEC_LW_FILTER_REFUSED;
-      return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter of another document is not lowered");
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_FILTER, "a filter that names an element the resolver does not supply is not lowered");
     }
     const GVEC_Svg_Element * target = ref->target;
     if (!target && ref->cut && ref->id) {

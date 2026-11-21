@@ -120,12 +120,20 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_engine_acquire(const GVEC_Allocator * all
 /** Give up a reference; the last one frees an engine that is not in the cache. */
 GVEC_INTERNAL_API void gvec_svg_engine_release(gvec_svg_engine * engine);
 
+/** What finds the element a `url()` names in another document (the lowering's resolver): `reference` is the url as written (`other.svg#id`); *element is
+ * NULL when there is none. GVEC_OK or GVEC_ERR_OOM. */
+typedef GVEC_Result (*gvec_svg_external_fn)(void * user, const char * reference, const GVEC_Svg_Element ** element);
+
+/** Set what finds the elements of other documents for a context (NULL for none: such a reference names nothing). */
+GVEC_INTERNAL_API void gvec_svg_style_set_external(GVEC_Svg_Style_Context * context, gvec_svg_external_fn fn, void * user);
+
 /** An instance (see style.h). */
 struct GVEC_Svg_Instance {
   gvec_svg_handle handle;                 ///< What the element interface is handed for this instance (its `element` is `element`).
   const GVEC_Svg_Element * element;
   const GVEC_Svg_Instance * parent;       ///< The inheritance parent; NULL for the root of inheritance.
   const GVEC_Svg_Instance * use;          ///< The nearest enclosing `use` instance: the clone context; NULL in the document's own.
+  GVEC_Svg_Style_Context * owner;         ///< The context of the document the element is in: what styles it (an element of another document has its own).
   double viewport_width, viewport_height; ///< The basis of percentages for this element's own properties.
   double override_width, override_height; ///< The `width` and `height` a `use` gives the `svg` or `symbol` it instantiates, where `has_override_*`.
   bool has_override_width, has_override_height;
@@ -166,11 +174,19 @@ struct GVEC_Svg_Style_Context {
   const GVEC_Svg_Element * sheet_refused; ///< The first `style` element whose sheet could not be applied (an `@import`, a conditional rule), else NULL.
   const char * sheet_refused_why;   ///< Static: why.
   gvec_res_state * res;             ///< The resolver's state of the lowering (an `@import` is asked of it); NULL when there is none: an `@import` is then not fetched.
+  gvec_svg_external_fn external_find; ///< Asked for an element of another document (`url(other.svg#id)`), or NULL: such a reference then names nothing here.
+  void * external_user;
   const char * base;                ///< What an `@import` of this document's `style` elements is resolved against; NULL for none.
   size_t res_depth;                 ///< The depth of the document (0 for the one being lowered): an import is one deeper.
   GTEXT_CSS_Computed_Style ** styles; ///< Every style made, to free.
   size_t style_count, style_capacity;
 };
+
+/** The context that owns an instance: the document of its element is that context's, whatever context the caller holds (a clip, a mask, a filter or a paint server
+ * of another document is read through the context of that document). */
+static inline GVEC_Svg_Style_Context * gvec_svg_owner(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance) {
+  return instance && instance->owner ? instance->owner : context;
+}
 
 /** The element of an instance handle given back by the engine's callbacks. */
 GVEC_INTERNAL_API void gvec_svg_element_interface(GTEXT_CSS_Element_Interface * table, void * user);

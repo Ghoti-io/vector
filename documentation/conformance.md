@@ -327,7 +327,7 @@ The rest of the audit found the rows' prose wrong in two places (a decoration's 
 The score is **1,544 of 1,679 (91.96%)**: 589 `PASS`, 36 `ACCEPTED`, 763 `EDGE`, 156 `ORACLE_AGREES`; 114 `ORACLE_SPLIT`, no `DEFECT`, no `REFUSED`, no `NOT_LOADED`, 21 `EXCLUDED`.
 
 What the lowering still refuses, by reason (`refusals.md`): `foreignObject` and embedded media (not SVG, never lowered); a reference to something outside the document unless the caller's resolver
-supplies it (the gate for external references); a basic shape whose reference box is the stroke box of an element that holds a
+supplies it (the gate for external references, which now includes the clips, masks, filters, paint servers and markers of another document, drawn when it does and untested against the browsers, which draw none of them); a basic shape whose reference box is the stroke box of an element that holds a
 `foreignObject`. A `color()` space named by `@color-profile` is converted through the profile the caller's resolver supplies (the browsers ignore the rule and draw such a
 declaration as if it were not written, so this is unmeasured by them); with no profile to be had the element is refused and says so. Lowered since the audit above: the alternates of `font-variant` (through the document's `@font-feature-values`), a basic shape (`shape()`, and `rect()` and `xywh()`, which the engine
 computes to `inset()`) and a clip in the units of a bounding box on a `clipPath`'s shape, `use` or text, a basic shape on a `clipPath`, text and a `use` of text with a `clip-path` of their own, a basic shape on a group, a `use`,

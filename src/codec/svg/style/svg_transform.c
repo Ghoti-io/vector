@@ -362,6 +362,7 @@ static bool read_origin(const GTEXT_CSS_Value * v, double origin[2], double frac
 }
 
 GVEC_Result gvec_svg_used_transform(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, GVEC_Svg_Transform * out) {
+  context = gvec_svg_owner(context, instance);
   memset(out, 0, sizeof *out);
   const GTEXT_CSS_Computed_Style * style = NULL;
   const GTEXT_CSS_Value *list = NULL, *origin = NULL, *box = NULL;

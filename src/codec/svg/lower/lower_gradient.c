@@ -90,6 +90,7 @@ static const GVEC_Svg_Element * chain_owner(const GVEC_Svg_Element * start, cons
 
 /* The instance of an element of the document: the chain from the root, so that a property inherits as it does in the tree. */
 GVEC_Result gvec_lw_instance_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GVEC_Svg_Instance ** out) {
+  ctx = gvec_lw_ctx_of(ctx, e); /* an element of another document is made through that document's context */
   const GVEC_Svg_Element * parent = gvec_svg_element_parent(e);
   if (!parent) {
     *out = gvec_svg_instance_root(ctx->style);
