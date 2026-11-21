@@ -79,6 +79,53 @@ static char * fragment_id(const GVEC_Allocator * a, const char * fragment, bool 
   return id;
 }
 
+/* The context kept for a document an element of which is drawn or read from `ctx`: made for `doc`, held by `holder` (freed with it), counted as an
+ * instantiation. `use` is the `use` it was made for, NULL for a document a property's `url()` names. Its style sheets are applied. */
+static GVEC_Result make_context(gvec_lw_ctx * ctx, gvec_lw_ctx * holder, const GVEC_Doc * doc, const char * url, const GVEC_Svg_Element * use,
+    gvec_lw_ctx ** out) {
+  gvec_lw_ctx * n = gvec_alloc(ctx->allocator, sizeof *n);
+  if (!n) {
+    return GVEC_ERR_OOM;
+  }
+  if (holder->nested_count == holder->nested_capacity) {
+    size_t capacity = holder->nested_capacity ? holder->nested_capacity * 2 : 4, bytes;
+    void * fresh = gcu_safe_mul_size(capacity, sizeof *holder->nested, &bytes) ? gvec_realloc(ctx->allocator, holder->nested, bytes) : NULL;
+    if (!fresh) {
+      gvec_free(ctx->allocator, n);
+      return GVEC_ERR_OOM;
+    }
+    holder->nested = fresh;
+    holder->nested_capacity = capacity;
+  }
+  GVEC_Result r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, url);
+  if (r != GVEC_OK) {
+    gvec_free(ctx->allocator, n);
+    return r;
+  }
+  holder->nested[holder->nested_count++] = n;
+  ctx->res->instantiations++;
+  n->parent = holder;
+  n->parent_element = use;
+  n->external_doc = doc;
+  n->external_use = use;
+  n->image_nesting = ctx->image_nesting;
+  /* Its own style sheets apply to its elements, as the document's do. */
+  r = gvec_svg_style_sheets(n->style);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  const char * why = NULL;
+  const GVEC_Svg_Element * refused = gvec_svg_style_sheet_refused(n->style, &why);
+  if (refused) {
+    r = gvec_lw_refuse(n, refused, GVEC_LOWER_STYLESHEET, why);
+    if (r != GVEC_OK) {
+      return r;
+    }
+  }
+  *out = n;
+  return GVEC_OK;
+}
+
 GVEC_Result gvec_lw_external_target(gvec_lw_ctx * ctx, const GVEC_Svg_Element * use, const char * reference, gvec_lw_ctx ** nested,
     const GVEC_Svg_Element ** target, bool * ready) {
   *ready = false;
@@ -156,44 +203,10 @@ GVEC_Result gvec_lw_external_target(gvec_lw_ctx * ctx, const GVEC_Svg_Element * 
     return missing(ctx, use, "the document the use names has no element with the id of the reference: nothing is drawn");
   }
   /* The context for the document, kept (with its nodes) until the lowering ends, as for an SVG image. */
-  gvec_lw_ctx * n = gvec_alloc(ctx->allocator, sizeof *n);
-  if (!n) {
-    return GVEC_ERR_OOM;
-  }
-  if (ctx->nested_count == ctx->nested_capacity) {
-    size_t capacity = ctx->nested_capacity ? ctx->nested_capacity * 2 : 4, bytes;
-    void * fresh = gcu_safe_mul_size(capacity, sizeof *ctx->nested, &bytes) ? gvec_realloc(ctx->allocator, ctx->nested, bytes) : NULL;
-    if (!fresh) {
-      gvec_free(ctx->allocator, n);
-      return GVEC_ERR_OOM;
-    }
-    ctx->nested = fresh;
-    ctx->nested_capacity = capacity;
-  }
-  r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, entry->url);
-  if (r != GVEC_OK) {
-    gvec_free(ctx->allocator, n);
-    return r;
-  }
-  ctx->nested[ctx->nested_count++] = n;
-  res->instantiations++;
-  n->parent = ctx;
-  n->parent_element = use;
-  n->external_doc = doc;
-  n->external_use = use;
-  n->image_nesting = ctx->image_nesting;
-  /* Its own style sheets apply to its elements, as the document's do. */
-  r = gvec_svg_style_sheets(n->style);
+  gvec_lw_ctx * n = NULL;
+  r = make_context(ctx, ctx, doc, entry->url, use, &n);
   if (r != GVEC_OK) {
     return r;
-  }
-  const char * why = NULL;
-  const GVEC_Svg_Element * refused = gvec_svg_style_sheet_refused(n->style, &why);
-  if (refused) {
-    r = gvec_lw_refuse(n, refused, GVEC_LOWER_STYLESHEET, why);
-    if (r != GVEC_OK) {
-      return r;
-    }
   }
   *nested = n;
   *target = found;
@@ -313,42 +326,10 @@ GVEC_Result gvec_lw_external_property(void * user, const char * reference, const
     if (res->instantiations >= res->max_instances) {
       return GVEC_OK;
     }
-    gvec_lw_ctx * n = gvec_alloc(ctx->allocator, sizeof *n);
-    if (!n) {
-      return GVEC_ERR_OOM;
-    }
-    if (root->nested_count == root->nested_capacity) {
-      size_t capacity = root->nested_capacity ? root->nested_capacity * 2 : 4, bytes;
-      void * fresh = gcu_safe_mul_size(capacity, sizeof *root->nested, &bytes) ? gvec_realloc(ctx->allocator, root->nested, bytes) : NULL;
-      if (!fresh) {
-        gvec_free(ctx->allocator, n);
-        return GVEC_ERR_OOM;
-      }
-      root->nested = fresh;
-      root->nested_capacity = capacity;
-    }
-    r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, entry->url);
-    if (r != GVEC_OK) {
-      gvec_free(ctx->allocator, n);
-      return r;
-    }
-    root->nested[root->nested_count++] = n;
-    res->instantiations++;
-    n->parent = root;
-    n->external_doc = doc;
-    n->external_use = NULL;
-    n->image_nesting = ctx->image_nesting;
-    r = gvec_svg_style_sheets(n->style);
+    gvec_lw_ctx * n = NULL;
+    r = make_context(ctx, root, doc, entry->url, NULL, &n);
     if (r != GVEC_OK) {
       return r;
-    }
-    const char * why = NULL;
-    const GVEC_Svg_Element * refused = gvec_svg_style_sheet_refused(n->style, &why);
-    if (refused) {
-      r = gvec_lw_refuse(n, refused, GVEC_LOWER_STYLESHEET, why);
-      if (r != GVEC_OK) {
-        return r;
-      }
     }
   }
   *target = found;

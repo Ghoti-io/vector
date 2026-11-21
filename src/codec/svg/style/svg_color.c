@@ -717,22 +717,9 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
         foreground(out, 1.0);
         return GVEC_OK;
       }
-      for (size_t i = 0; i < sizeof system_colors / sizeof *system_colors; i++) {
-        if (is_name(c, system_colors[i].name)) {
-          const uint32_t v = used_scheme_is_dark(context, instance) ? system_colors[i].dark : system_colors[i].light;
-          for (int k = 0; k < 4; k++) {
-            rgba[k] = (double) ((v >> (24 - 8 * k)) & 0xffu) / 255.0;
-          }
-          solid(out, rgba, GCOL_PRIMARIES_SRGB, GCOL_TRANSFER_SRGB, 0);
-          return GVEC_OK;
-        }
-      }
-      if (is_name(c, "canvas") || one_of(c, canvas_names, sizeof canvas_names / sizeof *canvas_names)) {
-        /* The document's background: opaque white in the light scheme, opaque black in the dark, the scheme being the one the element's
-         * `color-scheme` and the load options' preference make (CSS Color Adjust 1). */
-        double v = used_scheme_is_dark(context, instance) ? 0.0 : 1.0;
-        rgba[0] = rgba[1] = rgba[2] = v;
-        rgba[3] = 1;
+      /* The table's colors and the document's background, in the scheme of the element (`Canvas`, in the light scheme opaque white, in the dark opaque
+       * black: the scheme being the one the element's `color-scheme` and the load options' preference make, CSS Color Adjust 1). */
+      if (system_rgba(context, instance, c, rgba)) {
         solid(out, rgba, GCOL_PRIMARIES_SRGB, GCOL_TRANSFER_SRGB, 0);
         return GVEC_OK;
       }
