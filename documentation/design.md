@@ -613,7 +613,7 @@ none. The shift of the `text` element itself is ignored; the values of SVG 1.1 t
 **H25 Rotation and decoration.** A `rotate` list turns each character about the origin of its glyph; a mark turns about the base of its
 cluster, so that it keeps its place on it. `text-decoration` is drawn for each span from the face of the element that declared it: an
 underline at the face's underline position, a line-through at its strikeout position, an overline at the ascent, each as wide as the span's
-glyphs and as thick as the face says. An element outside the text that declares one draws it with the paint of the text. A decoration over
+glyphs and as thick as the face says. An element outside the text that declares one draws it with its own fill and stroke, as SVG 2 says (the references paint it with the text's; Chromium and Firefox with the declaring element's). A decoration over
 glyphs that are rotated, or whose baseline moves with `dy` or `y`, is refused.
 
 **H26 Direction.** `direction` is the base direction of the paragraph the bidirectional algorithm is run over, so right-to-left text is
@@ -628,7 +628,8 @@ horizontal in a frame turned a quarter: the line runs down, the next one to the 
 the glyphs are put back when the layout is done. The ideographs, kana, Hangul and full-width forms stand upright, shaped on the vertical axis
 (`vert`, the face's vertical advances and origins, which put each glyph on the middle of the line); every other character lies on its side,
 shaped as horizontal text and turned a quarter about its own origin, on the central baseline. A decoration on vertical text is a rectangle laid out
-in the turned frame and turned back with the line (so an underline is on the left of the column). A stretched `textLength` is refused.
+in the turned frame and turned back with the line (so an underline is on the left of the column), one across the glyphs of upright and sideways scripts
+alike: they are on different baselines of the line, which is not a reason to cut the decoration. A stretched `textLength` is refused.
 
 **H28 Text on a path.** A `textPath` that is a child of the `text` and names a `path` starts a chunk of its own, and so does the text after it.
 The chunk is laid out as a straight line (its glyphs, kerning, spacing, anchor and `textLength` as any chunk's) that starts at the

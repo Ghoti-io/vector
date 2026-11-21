@@ -743,6 +743,7 @@ PLANTS = [
     ('CL5', 'src/codec/svg/style/svg_color.c', '  const GTEXT_CSS_Color * replaced;\n  if (!subst_color(&s, c, 0, &replaced)) {', '  const GTEXT_CSS_Color * replaced = c;\n  if (false && !subst_color(&s, c, 0, &replaced)) {', 'currentcolor in a mix is left in it'),
     ('BX1', 'src/codec/svg/lower/lower_clip.c', 'const GVEC_Svg_Element * chosen = switch_leaf ? gvec_svg_element_switch_selected(child) : NULL;', 'const GVEC_Svg_Element * chosen = NULL;', 'the box of a switch takes in every child, not the one it draws'),
     ('BX2', 'src/codec/svg/lower/lower_clip.c', '  if (state != 0 || !gvec_lw_compose(placed, &inner, &moved)) {', '  if (state != 0 || !gvec_lw_compose(placed, placed, &moved)) {', 'the box of a viewport leaves out its viewBox map'),
+    ('TD9', 'src/codec/svg/lower/lower_text.c', '      d->inst = chain[k];', '      d->inst = inst;', 'a decoration declared by an ancestor of the text is painted with the text\'s own paint'),
     ('RS26', 'src/codec/svg/style/svg_sheet.c', '  sheet_frame inner = {frame, context, frame->element, entry->url, frame->depth + 1, false};', '  sheet_frame inner = {frame, context, frame->element, NULL, frame->depth + 1, false};',
      'an imported sheet does not know its own url'),
     ('RS27', 'src/codec/svg/style/svg_sheet.c', '  case GVEC_RES_TOO_BIG:\n    why = "an imported style sheet is longer than the limit allows";\n    break;', '  case GVEC_RES_TOO_BIG:\n    break;',

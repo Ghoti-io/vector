@@ -1922,9 +1922,11 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       if (r != GVEC_OK || !flags || t.decor_count >= t.decor_capacity || false) {
         continue;
       }
-      /* A decoration of an element outside the text is drawn with the text's own paint and font (the references do so). */
+      /* A decoration of an element outside the text is drawn with the fill and stroke of the element that declares it (SVG 2, 11.? "the fill and
+       * stroke of the text decoration are given by the fill and stroke of the text at the point where the text decoration is declared"), and the
+       * font of the text. The references draw it with the text's own paint; Chromium and Firefox with the declaring element's. */
       tdecor * d = &t.decors[t.decor_count++];
-      d->inst = inst;
+      d->inst = chain[k];
       d->style = 0;
       d->start = 0;
       d->end = t.count;
@@ -2320,7 +2322,10 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
        * them. (The references draw it so.) */
       bool cut = tp_index != 0;
       for (size_t g = ga; g < gb && !cut; g++) {
-        cut = glyphs[g].rotate - (glyphs[g].sideways ? 90.0 : 0.0) != 0 || glyphs[g].base != glyphs[ga].base;
+        /* In vertical text a glyph of an upright script and one on its side are set on different baselines of the line (the central one and the
+         * alphabetic one): that is the script's own place in the line, and the line of the decoration is one across them (the browsers and the
+         * references draw it so), not a piece for each baseline. */
+        cut = glyphs[g].rotate - (glyphs[g].sideways ? 90.0 : 0.0) != 0 || (!t.vertical && glyphs[g].base != glyphs[ga].base);
       }
       /* The face and the size of the element that declares the decoration give the lines' place and thickness. */
       const tstyle * ds = &t.styles[dec->style];

@@ -339,7 +339,7 @@ TEST(LowerText, UnderlineAndLineThroughAreRectanglesAcrossTheGlyphsInTheFacesMet
   EXPECT_LT(strike.max.y, 100.0);         // above it
 }
 
-TEST(LowerText, ADecorationHasThePaintOfTheElementThatDeclaredItAndAnAncestorsTheTextsOwn) {
+TEST(LowerText, ADecorationHasThePaintOfTheElementThatDeclaredItWhetherAnAncestorOrTheTextOrASpan) {
   Fonts f;
   GVEC_Lower_Options options;
   memset(&options, 0, sizeof options);
@@ -354,8 +354,9 @@ TEST(LowerText, ADecorationHasThePaintOfTheElementThatDeclaredItAndAnAncestorsTh
                "<g fill=\"green\" text-decoration=\"underline\"><text x=\"0\" y=\"100\" fill=\"red\">A</text></g>"),
       outside, 0, 0, &options);
   ASSERT_EQ(outside.Items(), (size_t) 2);
-  EXPECT_EQ(outside.Item(0).paint.rgba[0], 1.0);   // the underline is the text's red, not the g's green
-  EXPECT_EQ(outside.Item(1).paint.rgba[0], 1.0);
+  EXPECT_EQ(outside.Item(0).paint.rgba[0], 0.0);   // the underline is the g's green (SVG 2: the fill of the text where the decoration is declared) ...
+  EXPECT_GT(outside.Item(0).paint.rgba[1], 0.4);
+  EXPECT_EQ(outside.Item(1).paint.rgba[0], 1.0);   // ... and the glyphs are the text's red
 }
 
 TEST(LowerText, LetterSpacingFollowsEveryCharacterAndWordSpacingEverySpace) {
