@@ -809,37 +809,14 @@ static parse_status shape_function(gvec_lw_ctx * ctx, cur * c, const box * b, sh
     else if (!strcmp(cmd, "hline") || !strcmp(cmd, "vline")) {
       const bool horizontal = !strcmp(cmd, "hline");
       double v;
-      char keyword[12];
-      cur peek = *c;
-      if (next_is_word(c) && word(c, keyword, sizeof keyword)) {
-        const char * lows = horizontal ? "left" : "top";
-        const char * highs = horizontal ? "right" : "bottom";
-        const double span = horizontal ? b->w : b->h;
-        if (!strcmp(keyword, lows) || !strcmp(keyword, horizontal ? "x-start" : "y-start")) {
-          v = 0;
-        }
-        else if (!strcmp(keyword, "center")) {
-          v = span / 2;
-        }
-        else if (!strcmp(keyword, highs) || !strcmp(keyword, horizontal ? "x-end" : "y-end")) {
-          v = span;
-        }
-        else {
-          return PARSE_INVALID;
-        }
-        if (by) {
-          return PARSE_INVALID; /* a keyword is a position, and `by` is a distance */
-        }
+      /* The keywords of an axis (`left`, `right`, `center`, `x-start`...) are positions the style engine has already made percentages of the box, so a
+       * word here is not a length and is refused with the rest. */
+      lp_status ls = lp(c, horizontal ? b->w : b->h, &v);
+      if (ls == LP_REFUSE) {
+        return PARSE_REFUSED;
       }
-      else {
-        *c = peek;
-        lp_status ls = lp(c, horizontal ? b->w : b->h, &v);
-        if (ls == LP_REFUSE) {
-          return PARSE_REFUSED;
-        }
-        if (ls != LP_OK) {
-          return PARSE_INVALID;
-        }
+      if (ls != LP_OK) {
+        return PARSE_INVALID;
       }
       *w++ = horizontal ? (by ? 'h' : 'H') : (by ? 'v' : 'V');
       put_number(&w, v);

@@ -1183,3 +1183,20 @@ int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+/* An instance is read through the context of the document that made it, whichever context the caller holds: a system color is the document's own
+ * (Canvas of a dark document is dark, whatever the scheme of the document whose context is held). */
+TEST(SvgStyleOwner, AnInstanceIsReadThroughItsOwnersContext) {
+  Styled light(Svg("", "<rect id=\"c\" fill=\"Canvas\"/>"));
+  Styled dark(Svg("style=\"color-scheme: dark\"", "<rect id=\"c\" fill=\"Canvas\"/>"));
+  ASSERT_NE(light.context, nullptr);
+  ASSERT_NE(dark.context, nullptr);
+  const GVEC_Svg_Instance * of_dark = dark.Of("c");
+  GVEC_Svg_Style_Value own, other;
+  ASSERT_EQ(gvec_svg_get(dark.context, of_dark, GVEC_SVG_PROP_FILL, &own), GVEC_OK);
+  ASSERT_EQ(gvec_svg_get(light.context, of_dark, GVEC_SVG_PROP_FILL, &other), GVEC_OK);
+  ASSERT_EQ(own.paint.kind, GVEC_SVG_PAINT_COLOR);
+  ASSERT_EQ(other.paint.kind, GVEC_SVG_PAINT_COLOR);
+  EXPECT_NE(own.paint.color.color.rgba[0], FillOf(light, "c").color.rgba[0]) << "the two documents disagree about Canvas";
+  EXPECT_EQ(other.paint.color.color.rgba[0], own.paint.color.color.rgba[0]) << "read through the context of another document";
+}
