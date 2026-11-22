@@ -1216,6 +1216,83 @@ std::string ProfileDoc(const std::string & fill, const char * src = "p.icc") {
 
 }  // namespace
 
+//-----------------------------------------------------------------------------
+// @font-face
+//-----------------------------------------------------------------------------
+
+namespace {
+
+struct TestFonts {
+  GFNT_FontSet * set = nullptr;
+  GVEC_Fonts * fonts = nullptr;
+  TestFonts() {
+    const char * dirs[] = {"tests/data/fonts"};
+    static const GFNT_FontAlias aliases[] = {{"sans-serif", "Vector Test"}, {"serif", "Vector Test"}};
+    EXPECT_EQ(gfnt_fontset_scan(dirs, 1, aliases, 2, nullptr, &set, nullptr), GFNT_OK);
+    EXPECT_EQ(gvec_fonts_new(set, nullptr, &fonts), GVEC_OK);
+  }
+  ~TestFonts() {
+    gvec_fonts_free(fonts);
+    gfnt_fontset_free(set);
+  }
+};
+
+/** The advance between the two glyphs of `AA` set in the family `E` at 100: 60 for the regular face of the test font, 70 for the bold. */
+double Advance(Fake & fake, const std::string & rule, TestFonts & f, Lowered & l) {
+  GVEC_Lower_Options o;
+  std::memset(&o, 0, sizeof o);
+  o.fonts = f.fonts;
+  Lower(Svg("width=\"400\" height=\"200\" font-size=\"100\"", Style(rule) + "<text font-family=\"E\" y=\"100\">AA</text>"), l, fake, o);
+  GSHSCENE_Glyph_Run run;
+  if (l.Items() < 1 || gshscene_resource_glyph_run(l.Item(0).resource, &run) != GSHSCENE_OK || run.glyph_count != 2) {
+    return -1;
+  }
+  return run.glyphs[1].x - run.glyphs[0].x;
+}
+
+}  // namespace
+
+TEST(LowerResolverFont, AFontFaceThatNamesAFileIsAskedOfTheResolverOnceAndItsFontIsUsed) {
+  TestFonts f;
+  Fake fake;
+  std::vector<unsigned char> bold = FileBytes("tests/data/fonts/vector-test-bold.ttf");
+  fake.Put("e.ttf", std::string(bold.begin(), bold.end()));
+  Lowered l;
+  EXPECT_EQ(Advance(fake, "@font-face { font-family: E; src: url(e.ttf); }", f, l), 70.0);
+  EXPECT_EQ(fake.Calls("e.ttf"), (size_t) 1);
+  ASSERT_GE(fake.seen.size(), (size_t) 1);
+  EXPECT_EQ(fake.seen[0].kind, GVEC_RESOURCE_FONT);
+  EXPECT_EQ(fake.seen[0].reference, "e.ttf");
+  EXPECT_EQ(fake.seen[0].max_bytes, (size_t) 32 << 20);
+}
+
+TEST(LowerResolverFont, AFontTheResolverDoesNotGiveIsPassedOverForTheNextSourceOrTheFonts) {
+  TestFonts f;
+  Fake fake;
+  std::vector<unsigned char> bold = FileBytes("tests/data/fonts/vector-test-bold.ttf");
+  fake.Put("b.ttf", std::string(bold.begin(), bold.end()));
+  fake.Put("junk.ttf", "not a font at all");
+  fake.Status("refused.ttf", GVEC_RESOURCE_REFUSED);
+  Lowered next, junk, refused, missing;
+  EXPECT_EQ(Advance(fake, "@font-face { font-family: E; src: url(gone.ttf), url(b.ttf); }", f, next), 70.0);
+  EXPECT_EQ(Advance(fake, "@font-face { font-family: E; src: url(junk.ttf), url(b.ttf); }", f, junk), 70.0);
+  EXPECT_EQ(Advance(fake, "@font-face { font-family: E; src: url(refused.ttf); }", f, refused), 60.0) << "the fonts' own serif";
+  EXPECT_EQ(Advance(fake, "@font-face { font-family: E; src: url(gone.ttf); }", f, missing), 60.0);
+  EXPECT_EQ(refused.Refusals(), (size_t) 0);
+}
+
+TEST(LowerResolverFont, WithNoResolverOnlyADataUriIsAFont) {
+  TestFonts f;
+  Lowered l;
+  GVEC_Lower_Options o;
+  std::memset(&o, 0, sizeof o);
+  o.fonts = f.fonts;
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\"", "<style>@font-face { font-family: E; src: url(e.ttf); }</style><text font-family=\"E\" y=\"100\">AA</text>"), l, 0, 0, &o);
+  GSHSCENE_Glyph_Run run;
+  ASSERT_EQ(gshscene_resource_glyph_run(l.Item(0).resource, &run), GSHSCENE_OK);
+  EXPECT_EQ(run.glyphs[1].x - run.glyphs[0].x, 60.0);
+}
+
 TEST(LowerResolverProfile, AColorInTheSpaceOfAProfileIsConvertedThroughItToRec2020) {
   Fake fake;
   fake.Put("p.icc", Profile("srgb_g22.icc"));

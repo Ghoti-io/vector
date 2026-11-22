@@ -216,6 +216,9 @@ typedef struct gvec_svg_profile gvec_svg_profile;
  * A color in the space of a `@color-profile` (a `color(--name ...)`, or `device-cmyk()` when the document names a profile for it), as linear Rec. 2020 in
  * `rgb`. The profile is asked of the resolver the first time. GVEC_ERR_UNSUPPORTED with `*why` when it cannot be had or used; GVEC_ERR_OOM.
  */
+/** The `@font-face` rules of the document that define a family (the name as written), in cascade order, at most `capacity` of them; the return is how many there are. */
+GVEC_INTERNAL_API size_t gvec_svg_style_font_faces(GVEC_Svg_Style_Context * context, const char * family, size_t length, const GTEXT_CSS_Font_Face ** out, size_t capacity);
+
 GVEC_INTERNAL_API GVEC_Result gvec_svg_style_profile_color(GVEC_Svg_Style_Context * context, const char * name, size_t length, const double * channels,
     size_t count, double rgb[3], const char ** why);
 

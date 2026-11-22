@@ -39,6 +39,7 @@ struct BlockFail {
   static constexpr size_t kLarge = 8192;
   bool armed = false;
   long large_seen = 0;
+  long attempts = 0;
   long fail_large_at = -1;
   long outstanding = 0;
 
@@ -81,6 +82,7 @@ struct BlockFail {
   }
 
   bool Fail(size_t size) {
+    attempts++;
     if (!armed || size < kLarge) {
       return false;
     }
@@ -90,7 +92,13 @@ struct BlockFail {
 };
 
 /** Load `text` (every request served), then lower it with `alloc` armed; the result of the lowering and the number of items, or -1. */
-long LowerWith(BlockFail & alloc, const std::string & text, const GVEC_Fonts * fonts, GVEC_Result * result) {
+inline void Arm(BlockFail & a, bool on) {
+  a.armed = on;
+}
+inline void Arm(Failing &, bool) {}
+
+template <typename Alloc>
+long LowerWith(Alloc & alloc, const std::string & text, const GVEC_Fonts * fonts, GVEC_Result * result, long * after_load = nullptr) {
   GVEC_Stream * stream = nullptr;
   EXPECT_EQ(gvec_stream_create_memory(text.data(), text.size(), &stream), GVEC_OK);
   GVEC_Load_Options load;
@@ -101,6 +109,9 @@ long LowerWith(BlockFail & alloc, const std::string & text, const GVEC_Fonts * f
   GVEC_Doc * doc = nullptr;
   GVEC_Result r = gvec_doc_load(stream, &load, &diagnostics, &doc);
   gvec_stream_destroy(stream);
+  if (after_load) {
+    *after_load = alloc.attempts;
+  }
   long items = -1;
   GSHSCENE_Scene * scene = nullptr;
   GSHSCENE_List * list = nullptr;
@@ -111,9 +122,9 @@ long LowerWith(BlockFail & alloc, const std::string & text, const GVEC_Fonts * f
     std::memset(&options, 0, sizeof options);
     options.store = gshscene_scene_store(scene);
     options.fonts = fonts;
-    alloc.armed = true;
+    Arm(alloc, true);
     r = gvec_doc_lower_list(doc, &options, list, &diagnostics);
-    alloc.armed = false;
+    Arm(alloc, false);
     if (r == GVEC_OK) {
       items = (long) gshscene_list_count(list);
     }
@@ -185,6 +196,61 @@ TEST(LowerGrowth, ATextOnAPathWithManyDecoratedGlyphsOutgrowsItsFirstLines) {
                                "<text style=\"text-decoration: underline line-through overline\"><textPath href=\"#p\">ABCDEFGHIJKLMNOP</textPath></text>"),
                 f.fonts),
       1);
+}
+
+namespace {
+
+std::string Base64Of(const char * path) {
+  static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  FILE * f = std::fopen(path, "rb");
+  EXPECT_NE(f, nullptr);
+  std::vector<unsigned char> bytes;
+  unsigned char buffer[4096];
+  size_t n;
+  while (f && (n = std::fread(buffer, 1, sizeof buffer, f)) > 0) {
+    bytes.insert(bytes.end(), buffer, buffer + n);
+  }
+  if (f) {
+    std::fclose(f);
+  }
+  for (size_t i = 0; i < bytes.size(); i += 3) {
+    unsigned v = (unsigned) bytes[i] << 16 | (i + 1 < bytes.size() ? (unsigned) bytes[i + 1] << 8 : 0) | (i + 2 < bytes.size() ? bytes[i + 2] : 0u);
+    out += table[v >> 18 & 63];
+    out += table[v >> 12 & 63];
+    out += i + 1 < bytes.size() ? table[v >> 6 & 63] : '=';
+    out += i + 2 < bytes.size() ? table[v & 63] : '=';
+  }
+  return out;
+}
+
+/** Every allocation of the lowering of `text` failed in turn (every `stride`th of them): out of memory or the lowering as it was, and nothing leaks. */
+void SweepEveryAllocation(const std::string & text, const GVEC_Fonts * fonts, long stride) {
+  Failing base;
+  GVEC_Result r;
+  long loaded = 0;
+  long items = LowerWith(base, text, fonts, &r, &loaded);
+  ASSERT_EQ(r, GVEC_OK);
+  ASSERT_GT(items, 0);
+  ASSERT_EQ(base.outstanding, 0);
+  for (long fail_at = loaded + 1; fail_at <= base.attempts; fail_at += stride) {
+    Failing alloc;
+    alloc.fail_at = fail_at;
+    GVEC_Result result;
+    long after_load = 0;
+    LowerWith(alloc, text, fonts, &result, &after_load);
+    EXPECT_TRUE(result == GVEC_OK || result == GVEC_ERR_OOM) << "failing allocation " << fail_at << ": " << gvec_result_string(result);
+    EXPECT_EQ(alloc.outstanding, 0) << "leak after failing allocation " << fail_at;
+  }
+}
+
+}  // namespace
+
+TEST(LowerGrowth, AFontFaceOfTheDocumentIsLoadedThroughTheAllocatorAndEveryFailureIsOutOfMemory) {
+  Fonts f;
+  SweepEveryAllocation(Root("<style>@font-face { font-family: E; src: url(data:font/ttf;base64," + Base64Of("tests/data/fonts/vector-test-bold.ttf") +
+                            "); }</style><text y=\"50\" font-family=\"E\">AB</text>"),
+      f.fonts, 23);
 }
 
 int main(int argc, char ** argv) {

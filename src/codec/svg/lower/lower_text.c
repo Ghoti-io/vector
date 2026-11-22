@@ -31,6 +31,7 @@
 
 #include <math.h>
 
+#include <ghoti.io/math/basic.h>
 #include <ghoti.io/math/elementary.h>
 #include <ghoti.io/shape-geometry/along.h>
 #include <stdint.h>
@@ -1164,6 +1165,17 @@ static GVEC_Result decoration_flags(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
   return GVEC_OK;
 }
 
+/* A computed length the engine writes as a number and a unit (`3px`, `10%`): the number, read by the library's own scanner (never the C library's, which reads the
+ * locale), and the unit, which is what follows it. False when there is no number. */
+static bool number_with_unit(const char * text, double * value, const char ** unit) {
+  size_t length = strlen(text), pos = 0;
+  if (!gvec_svg_scan_number(text, length, &pos, value, NULL)) {
+    return false;
+  }
+  *unit = text + pos;
+  return true;
+}
+
 /* The color, style, thickness and offset a decoration declares, read from the element that declares it (they are not inherited, and the decoration is drawn
  * with them wherever it falls). `currentcolor` is no color of its own: the line takes the paint of the declaring element. */
 static GVEC_Result decoration_look(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, tdecor * d) {
@@ -1193,15 +1205,17 @@ static GVEC_Result decoration_look(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
     return r;
   }
   if (ok && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
-    char * end = NULL;
-    double value = strtod(v.keyword, &end);
-    if (end && end != v.keyword && !strcmp(end, "px") && value >= 0) {
-      d->thickness_kind = 1;
-      d->thickness = value;
-    }
-    else if (end && end != v.keyword && !strcmp(end, "%") && value >= 0) {
-      d->thickness_kind = 2;
-      d->thickness = value;
+    double value;
+    const char * unit = NULL;
+    if (number_with_unit(v.keyword, &value, &unit) && value >= 0) {
+      if (!strcmp(unit, "px")) {
+        d->thickness_kind = 1;
+        d->thickness = value;
+      }
+      else if (!strcmp(unit, "%")) {
+        d->thickness_kind = 2;
+        d->thickness = value;
+      }
     }
   }
   r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_UNDERLINE_OFFSET, &v, &ok);
@@ -1209,16 +1223,11 @@ static GVEC_Result decoration_look(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * 
     return r;
   }
   if (ok && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
-    char * end = NULL;
-    double value = strtod(v.keyword, &end);
-    if (end && end != v.keyword && !strcmp(end, "px")) {
+    double value;
+    const char * unit = NULL;
+    if (number_with_unit(v.keyword, &value, &unit) && (!strcmp(unit, "px") || !strcmp(unit, "%"))) {
       d->has_offset = true;
-      d->offset_percent = false;
-      d->offset = value;
-    }
-    else if (end && end != v.keyword && !strcmp(end, "%")) {
-      d->has_offset = true;
-      d->offset_percent = true;
+      d->offset_percent = !strcmp(unit, "%");
       d->offset = value;
     }
   }
@@ -1718,6 +1727,7 @@ static int script_class(uint32_t cp) {
  * the glyphs are appended to `glyphs` in visual order, positioned from `pen` and with the dx and dy of their characters, which move the pen. */
 static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, size_t to, double * pen_x, double * pen_y, tglyph * glyphs, size_t * glyph_count) {
   gvec_lw_ctx * ctx = t->lw;
+  (void) fonts; /* the faces come through the context, which has the document's own @font-face rules and the fonts */
   const tstyle * st = &t->styles[t->chars[from].style];
   const GVEC_Svg_Element * e = gvec_svg_instance_element(st->inst);
   size_t count = to - from;
@@ -1743,7 +1753,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       face = previous;
     }
     else {
-      GVEC_Result r = gvec_fonts_face(fonts, st->families, st->family_count, st->weight, st->italic, st->width, cps[i], &face, &found);
+      GVEC_Result r = gvec_lw_font_face(ctx, st->families, st->family_count, st->weight, st->italic, st->width, cps[i], &face, &found);
       if (r != GVEC_OK) {
         return r;
       }
@@ -2669,7 +2679,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       const tstyle * ds = &t.styles[dec->style];
       const GFNT_Face * face = NULL;
       bool found = false;
-      r = gvec_fonts_face(fonts, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, &face, &found);
+      r = gvec_lw_font_face(ctx, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, &face, &found);
       if (r != GVEC_OK) {
         return r;
       }
@@ -2822,7 +2832,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
           /* A wave of the line's thickness, four thicknesses long and one thickness high (above and below its center), as a band of that thickness along it:
            * the top edge forward and the bottom edge back. */
           const double thick = rects[k].thickness, wavelength = 4 * thick;
-          size_t steps = (size_t) ceil((rects[k].x1 - rects[k].x0) / (wavelength / 8));
+          size_t steps = (size_t) gmath_ceil((rects[k].x1 - rects[k].x0) / (wavelength / 8));
           steps = steps < 2 ? 2 : steps;
           if (steps > 8192) {
             return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a wavy text decoration has more pieces than the lowering draws");
@@ -2833,7 +2843,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
           }
           for (size_t i = 0; i <= steps; i++) {
             const double x = rects[k].x0 + (rects[k].x1 - rects[k].x0) * (double) i / (double) steps;
-            const double y = rects[k].center + thick * sin(6.283185307179586 * (x - rects[k].x0) / wavelength);
+            const double y = rects[k].center + thick * gmath_sin(6.283185307179586 * (x - rects[k].x0) / wavelength);
             const double ys[2] = {y - thick / 2, y + thick / 2};
             for (int side = 0; side < 2; side++) {
               const size_t at = side == 0 ? i : 2 * (steps + 1) - 1 - i;

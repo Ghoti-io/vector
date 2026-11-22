@@ -431,6 +431,21 @@ const GTEXT_CSS_Feature_Values * gvec_svg_style_feature_values(GVEC_Svg_Style_Co
   return n ? gtext_css_atrule_set_feature_values(context->atrules, key, n) : NULL;
 }
 
+size_t gvec_svg_style_font_faces(GVEC_Svg_Style_Context * context, const char * family, size_t length, const GTEXT_CSS_Font_Face ** out, size_t capacity) {
+  if (!context->atrules) {
+    return 0;
+  }
+  if (!context->atrules_frozen) {
+    context->atrules_frozen = true;
+    if (gtext_css_atrule_set_freeze(context->atrules) != GTEXT_CSS_OK) {
+      return 0;
+    }
+  }
+  char key[256];
+  size_t n = gtext_css_atrule_set_family_key(family, length, key, sizeof key);
+  return n ? gtext_css_atrule_set_font_faces(context->atrules, key, n, out, capacity) : 0;
+}
+
 const GTEXT_CSS_Color_Profile * gvec_svg_style_color_profile(GVEC_Svg_Style_Context * context, const char * name, size_t length) {
   if (!context->atrules) {
     return NULL;

@@ -212,6 +212,8 @@ typedef struct gvec_lw_ctx {
   const GVEC_Svg_Instance * blend_moved; ///< The instance whose `mix-blend-mode` its mask group carries (the blend is the outermost of the stack: lower_walk.c).
   const GVEC_Svg_Element * pattern_stack[GVEC_LW_PATTERN_NESTING]; ///< The patterns whose tile the walk is inside (lower_pattern.c).
   size_t pattern_depth;
+  void * font_faces;                 ///< What each `@font-face` rule that text asked for came to (lower_fonts.c): an array of `font_face_count` entries.
+  size_t font_face_count, font_face_capacity;
   void * images;                     ///< What each element that names an image came to (lower_image.c): an array of `image_count` entries.
   size_t image_count, image_capacity;
   uint64_t image_decoded;            ///< The bytes of decoded samples of the images decoded so far (`max_image_decoded_bytes`).
@@ -413,6 +415,15 @@ GVEC_INTERNAL_API GVEC_Result gvec_fonts_face(const GVEC_Fonts * fonts, const ch
 struct gvec_svg_font_hooks;
 /** The hooks that answer a style's font-relative units (`ex`, `ch`, `cap`, `ic`, a `normal` line height) from @p fonts. */
 GVEC_INTERNAL_API void gvec_fonts_style_hooks(const GVEC_Fonts * fonts, struct gvec_svg_font_hooks * hooks);
+
+/**
+ * The face for a character of a span, as the document's own `@font-face` rules and the caller's fonts give it: for each family of the span, in order, a face the
+ * document defines (the best by style, weight and width of those whose `unicode-range` has the character) and then the family of the caller's fonts, and then the
+ * fonts' own fallback. `*found` is false when no face has the character. A face the document gives is loaded once, from a `data:` URI or the resolver, and is
+ * kept by `ctx->options->fonts` as long as they are.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, size_t family_count, double weight, int italic, double width,
+    uint32_t codepoint, const GFNT_Face ** out, bool * found);
 
 GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
     const GVEC_Fonts * fonts, const GFNT_Face * face, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);

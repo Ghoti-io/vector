@@ -35,6 +35,7 @@ ry:length: ours auto browser #px	unspecified	the resolved value of `ry` is the u
 stroke-miterlimit:number: ours # browser #	standard-newer	Fill and Stroke 3 restricts `stroke-miterlimit` to numbers of at least 1, as the registry does; the CR says non-negative and the browsers accept 0.5	2
 text-overflow:keyword: ours 'ellipsis' browser 'clip'	reference-old	Chromium does not read `text-overflow` as a presentation attribute (the served SVG 2 lists it)	2
 transform-origin:keyword: ours '#% #%' browser '#px #px'	unspecified	the resolved value of `transform-origin` is the used pair in px against the box; this library reads the computed percentages	34
+white-space-collapse:keyword: ours 'preserve' browser 'collapse'	reference-wrong	the user-agent sheet of SVG 2 (6.8) maps `xml:space="preserve"` to the property; the browsers keep xml:space apart from the CSS and compute `collapse`	1
 width:length: ours # browser auto	reference-old	Chromium and Firefox have no `width` property on a use element (SVG 2 adds it)	4
 width:length: ours auto browser #px	unspecified	the resolved value of `width` is the used width of the box; this library reads the computed value, `auto`	132
 writing-mode:keyword: ours 'horizontal-tb' browser 'vertical-rl'	legacy-compat	`tb` is an SVG 1.1 value of `writing-mode` that the browsers map to `vertical-rl`; the registry's grammar (CSS Writing Modes 4) does not have it	2

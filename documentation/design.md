@@ -248,7 +248,7 @@ to linear Rec. 2020 too, a color outside the gamut kept with a component beyond 
 from it; `device-cmyk()` is the naive conversion unless the document names a `@color-profile device-cmyk` for it. The system colors are a table of the library's own (CSS Color 4 leaves their values to the user
 agent, and the two browsers differ): Chromium's values, light and dark, a deprecated name being the color CSS Color 4 maps it to; `Canvas` and
 `CanvasText` are the document's background and foreground. A `color()` in a space a `@color-profile` names (and `device-cmyk()` when the document names a profile for it) is converted through the ICC profile that
-rule's `src` names, which the caller's resolver supplies (`GVEC_RESOURCE_COLOR_PROFILE`, bounded by `max_image_bytes`, resolved against the document's base,
+rule's `src` names, which the caller's resolver supplies (`GVEC_RESOURCE_COLOR_PROFILE`, bounded by `max_image_bytes`, resolved against the document's base; an `@font-face` font is `GVEC_RESOURCE_FONT`, likewise,
 asked once per document), by the `color` library's transform at the rule's rendering intent to linear Rec. 2020; the browsers ignore `@color-profile`, so the oracle
 draws such a declaration as if it were not written and a document that uses one is not compared. What is refused is a profile that cannot be had (no resolver,
 refused, not found, not an ICC profile, not RGB, CMYK or gray, with no table for the intent, or with other channels than the color writes): reading one is `GVEC_ERR_UNSUPPORTED` and a `GVEC_DIAG_UNSUPPORTED_COLOR_SPACE` with the element's
@@ -672,6 +672,22 @@ element that is not of the SVG language give no characters. Text in a `clipPath`
 and `-vertical` are not read (SVG 2 dropped them, and the references ignore them); a `font-variant` other than `normal` and `small-caps` refuses
 the text, as do the other refusals `refusals.md` lists for `GVEC_LOWER_TEXT`. A `textPath` whose `href` names something that is not a shape has no characters.
 
+**H30b What text reads besides.** `text-transform` (`uppercase`, `lowercase`, `capitalize` and `full-width`) maps the characters before they are shaped, by the
+full case mappings (so `ß` is `SS`: one character becomes two), a letter that begins a word being titlecased for `capitalize`; a text whose mapped characters no face
+has is refused as any such text is. `white-space` and `white-space-collapse` decide whether spaces are kept, as `xml:space` does through the user-agent sheet.
+A decoration draws with its own `text-decoration-color` (not `currentcolor`, which is the fill and stroke of the declaring element), `text-decoration-style` (solid; double,
+two lines a thickness apart; dotted, squares of the thickness a thickness apart; dashed, dashes of three thicknesses; wavy, a band a thickness thick that rises and
+falls a thickness about the line, four thicknesses long), `text-decoration-thickness` (a length, or a percentage of the font size) and `text-underline-offset`
+(a length or a percentage, from the baseline to the top of the underline). The wave's shape is this library's; the references draw it each their own way. The face's `@font-face` rules
+of the document give faces too (H34).
+
+**H34 `@font-face`.** A family a span names is looked for first among the `@font-face` rules of the document, then in the caller's fonts, family by family in order, and
+the fonts' own fallback comes last. Of the rules that define the family and whose `unicode-range` holds the character the nearest by style, width and weight is used (the
+later of two as near wins); its `src` entries are tried in order, a `data:` URI decoded and any other `url()` asked of the caller's resolver (`GVEC_RESOURCE_FONT`, bounded by
+`max_image_bytes`), a `local()` entry skipped, until one is a font the font library reads (TrueType, OpenType, WOFF, WOFF2). A rule that gives none is as if it were not written: the
+family falls through to the caller's fonts. The face is made once for each lowering and kept, with the scene fonts made from it, by the `GVEC_Fonts` the lowering was given as long as
+they live (at most 256 faces and 128 MB of font data), because the scene's glyph runs refer to what is made of it; the same bytes are the same face.
+
 **H31 `font-size-adjust`, `kerning`.** `font-size-adjust` (a number, or `ex-height` and a number; `none` and `from-font` change nothing) is read as
 the presentation attribute SVG 2 makes it: each run is drawn at the size that gives the ratio asked for between the x-height of the face it is
 shaped in and the size, so a fallback face is adjusted by its own x-height. The face's x-height is its `OS/2` value, or half the em when it has none.
@@ -862,6 +878,19 @@ is not SVG, an id it does not have) names nothing here, so the property is refus
 size that is a lie, a media type that does not end, a refusal where it said yes before. None of it crashes or runs without bound: the byte, count, depth and instance limits
 stop what a set of documents can make, the load's limits (elements, depth, entity bombs) apply to each document and sheet as they do to the first, and the scene's limits
 to what is drawn. `tests/fuzz/fuzz_resolver.c` drives the three paths with arbitrary answers.
+
+**S11 `d`, `pathLength` and the property forms.** The `d` property (SVG 2 makes it a property whose value is a string of path data) overrides the attribute where a style says
+it; the data is read as the attribute's is, and data with an error keeps what came before it. `pathLength` scales `stroke-dasharray` and `stroke-dashoffset` by the length of the
+path over it. `translate`, `rotate` (about z; an axis other than z is three-dimensional and the transform is not one this reads) and `scale` are composed before `transform`, in that order. A `style`
+element's `media` is answered by the environment of a screen of the viewport's size in the document's color scheme, and a list that cannot be read is `not all`. A `drop-shadow()` color is any
+color the style layer reads, in its own space.
+
+**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. A variable font is drawn at its default instance: `font-weight`
+and `font-variation-settings` do not move an axis, because the shaper's variation location applies to every face of a fallback run and the axes of two faces are not the same (the weights of the
+caller's fonts, and of the document's `@font-face` rules, choose among static faces). `lang` does not select a language system or a case tailoring. `text-orientation` is not read: Latin in
+vertical text always lies on its side. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
+gradient is refused (GVEC_LOWER_MASK), not half drawn. The root's `background` is not painted: a document's transparent background is the caller's to composite, and the references ignore it.
+`text-overflow` has no effect on SVG text.
 
 **S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The
 `tref`, `feImage` of an element of another file, `mask`, `clip-path`, `filter`, `marker`, `pattern` and gradient `href` that name another file are not resolved: only an `image`, an

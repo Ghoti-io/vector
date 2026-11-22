@@ -89,8 +89,9 @@ static GVEC_Result mask_reference(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
     *kind = usable ? 0 : -1;
     return r;
   }
+  /* A list of masks is composited (CSS Masking 1, mask-composite), and an image or a gradient is a mask image of its own: neither is a `mask` element. */
   for (size_t i = 0; i < v.reference_count; i++) {
-    if (!v.references[i].is_url || !v.references[i].local) {
+    if (!v.references[i].is_url || !v.references[i].local || v.reference_count > 1) {
       *kind = -1;
       return GVEC_OK;
     }
@@ -240,7 +241,7 @@ static GVEC_Result make_mask(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
     return r;
   }
   if (nested_kind == -1) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names an element the resolver does not supply is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that is a list of masks, an image or a gradient, or names an element the resolver does not supply, is not lowered");
   }
   const GSHSCENE_Resource * nested = NULL;
   bool loops = false;
@@ -402,7 +403,7 @@ GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   if (kind == -1) {
     *state = GVEC_LW_MASK_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names an element the resolver does not supply is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that is a list of masks, an image or a gradient, or names an element the resolver does not supply, is not lowered");
   }
   if (kind == 0 || in_stack(ctx, mask)) {
     return GVEC_OK; /* A reference to nothing, or one that comes back to a mask being made, draws the element unmasked. */

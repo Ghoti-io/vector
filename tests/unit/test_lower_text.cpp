@@ -32,11 +32,13 @@ struct Fonts {
   }
 };
 
-bool LowerText(Fonts & f, const std::string & attributes, const std::string & content, Lowered & l, const std::string & root = "") {
+bool LowerText(Fonts & f, const std::string & attributes, const std::string & content, Lowered & l, const std::string & root = "", const std::string & style = "") {
   GVEC_Lower_Options options;
   memset(&options, 0, sizeof options);
   options.fonts = f.fonts;
-  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\" " + root, "<text " + attributes + ">" + content + "</text>"), l, 0, 0, &options);
+  LowerSvg(Svg("width=\"400\" height=\"200\" font-size=\"100\" font-family=\"sans-serif\" " + root,
+               (style.empty() ? "" : "<style>" + style + "</style>") + "<text " + attributes + ">" + content + "</text>"),
+      l, 0, 0, &options);
   return l.Items() >= 1 && l.Item(0).kind == GSHSCENE_ITEM_FILL;
 }
 
@@ -1524,4 +1526,83 @@ TEST(LowerText, TextTransformMapsTheCharactersBeforeTheyAreShaped) {
   Lowered full;
   EXPECT_FALSE(LowerText(f, "style=\"text-transform: full-width\"", "ab", full));
   EXPECT_NE(full.Refusal(GVEC_LOWER_TEXT), nullptr);
+}
+
+namespace {
+
+std::vector<unsigned char> FileBytes(const std::string & path) {
+  std::vector<unsigned char> bytes;
+  FILE * f = std::fopen(path.c_str(), "rb");
+  if (!f) {
+    ADD_FAILURE() << "cannot open " << path;
+    return bytes;
+  }
+  unsigned char buffer[4096];
+  size_t n;
+  while ((n = std::fread(buffer, 1, sizeof buffer, f)) > 0) {
+    bytes.insert(bytes.end(), buffer, buffer + n);
+  }
+  std::fclose(f);
+  return bytes;
+}
+
+std::string Base64(const std::vector<unsigned char> & bytes) {
+  static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  for (size_t i = 0; i < bytes.size(); i += 3) {
+    unsigned v = (unsigned) bytes[i] << 16 | (i + 1 < bytes.size() ? (unsigned) bytes[i + 1] << 8 : 0) | (i + 2 < bytes.size() ? bytes[i + 2] : 0u);
+    out += table[v >> 18 & 63];
+    out += table[v >> 12 & 63];
+    out += i + 1 < bytes.size() ? table[v >> 6 & 63] : '=';
+    out += i + 2 < bytes.size() ? table[v & 63] : '=';
+  }
+  return out;
+}
+
+/** The advance of the second glyph of "AA" in `font-size` 100: 60 in the regular face of the test font, 70 in the bold one. */
+bool SecondAdvance(Fonts & f, const std::string & style, const std::string & attributes, double * advance) {
+  Lowered l;
+  if (!LowerText(f, attributes, "AA", l, "", style)) {
+    return false;
+  }
+  GSHSCENE_Glyph_Run run;
+  if (!ReadRun(l, 0, run) || run.glyph_count != 2) {
+    return false;
+  }
+  *advance = run.glyphs[1].x - run.glyphs[0].x;
+  return true;
+}
+
+}  // namespace
+
+TEST(LowerText, AFontFaceRuleOfTheDocumentGivesTheFaceOfAFamilyTheFontsDoNotHave) {
+  Fonts f;
+  const std::string bold = Base64(FileBytes("tests/data/fonts/vector-test-bold.ttf"));
+  double advance = 0;
+  // the family `Embedded` is in no font of the caller: its text is the fonts' own serif (60)
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Embedded\"", &advance));
+  EXPECT_EQ(advance, 60.0);
+  // the document's rule gives it the bold face of the test font, from a data: URI (70)
+  const std::string rule = "@font-face { font-family: Embedded; src: url(data:font/ttf;base64," + bold + ") format(\"truetype\"); }";
+  ASSERT_TRUE(SecondAdvance(f, rule, "font-family=\"Embedded\"", &advance));
+  EXPECT_EQ(advance, 70.0);
+  // a family named after it in a list comes first, and the name is matched without regard to case
+  ASSERT_TRUE(SecondAdvance(f, rule, "font-family=\"embedded, sans-serif\"", &advance));
+  EXPECT_EQ(advance, 70.0);
+  // a source that is not a font is passed over for the next
+  const std::string second = "@font-face { font-family: Embedded; src: url(data:font/ttf;base64,AAAA), url(data:font/ttf;base64," + bold + "); }";
+  ASSERT_TRUE(SecondAdvance(f, second, "font-family=\"Embedded\"", &advance));
+  EXPECT_EQ(advance, 70.0);
+  // a rule with a unicode-range that does not hold the character is not used for it
+  const std::string ranged = "@font-face { font-family: Embedded; unicode-range: U+0061-007A; src: url(data:font/ttf;base64," + bold + "); }";
+  ASSERT_TRUE(SecondAdvance(f, ranged, "font-family=\"Embedded\"", &advance));
+  EXPECT_EQ(advance, 60.0) << "the range is the lowercase letters, and the text is `AA`";
+  // among the rules of a family the one nearest the weight asked for is used
+  const std::string regular = Base64(FileBytes("tests/data/fonts/vector-test.ttf"));
+  const std::string two = "@font-face { font-family: Embedded; font-weight: 400; src: url(data:font/ttf;base64," + regular + "); }"
+                          "@font-face { font-family: Embedded; font-weight: 700; src: url(data:font/ttf;base64," + bold + "); }";
+  ASSERT_TRUE(SecondAdvance(f, two, "font-family=\"Embedded\" font-weight=\"400\"", &advance));
+  EXPECT_EQ(advance, 60.0);
+  ASSERT_TRUE(SecondAdvance(f, two, "font-family=\"Embedded\" font-weight=\"700\"", &advance));
+  EXPECT_EQ(advance, 70.0);
 }
