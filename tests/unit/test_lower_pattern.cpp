@@ -179,6 +179,31 @@ TEST(LowerPattern, ContentUnitsOfTheBoxScaleTheContentAndAViewBoxOverridesThem) 
   EXPECT_EQ(item->map.m[0][0], 4.0);  // 20 over 5, not the box's
 }
 
+TEST(LowerPattern, AViewBoxIsFittedByThePreserveAspectRatioOfThePattern) {
+  const std::string head = "<pattern id=\"p\" patternUnits=\"userSpaceOnUse\" width=\"20\" height=\"10\" viewBox=\"0 0 5 5\" ";
+  struct Case {
+    const char * par;
+    double sx, sy, tx, ty;
+  };
+  // a 5 by 5 box in a cell of 20 by 10: meet fits the height and centers across; none fills the cell; slice fits the width and centers down
+  const Case cases[] = {{"", 2, 2, 5, 0}, {"preserveAspectRatio=\"xMinYMin meet\"", 2, 2, 0, 0}, {"preserveAspectRatio=\"none\"", 4, 2, 0, 0},
+      {"preserveAspectRatio=\"xMidYMid slice\"", 4, 4, 0, -5}};
+  for (const Case & c : cases) {
+    Lowered l;
+    ASSERT_TRUE(Lower(head + c.par + ">" + kContent + "</pattern>", l)) << c.par;
+    GSHSCENE_Pattern p;
+    ASSERT_TRUE(Read(l, p)) << c.par;
+    const GSHSCENE_List * tile = gshscene_resource_picture(p.tile);
+    ASSERT_NE(tile, nullptr) << c.par;
+    const GSHSCENE_Item * item = nullptr;
+    ASSERT_EQ(gshscene_list_item(tile, 0, &item), GSHSCENE_OK) << c.par;
+    EXPECT_EQ(item->map.m[0][0], c.sx) << c.par;
+    EXPECT_EQ(item->map.m[1][1], c.sy) << c.par;
+    EXPECT_EQ(item->map.t[0], c.tx) << c.par;
+    EXPECT_EQ(item->map.t[1], c.ty) << c.par;
+  }
+}
+
 TEST(LowerPattern, APatternThatPaintsItsOwnContentWithItselfIsCutByTheStyleLayerAndPaintsNothing) {
   Lowered l;
   LowerSvg(Svg("width=\"200\" height=\"200\"",

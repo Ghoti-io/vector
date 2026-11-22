@@ -313,6 +313,24 @@ TEST(References, HrefResolvesToTheElementOrIsMissingAndSaidSo) {
   EXPECT_STREQ(missing->element, "use");
 }
 
+TEST(References, TheUncutTargetIsFoundWhereACycleCutTheEdgeAndNowhereElseDiffers) {
+  Doc d(Svg("", "<use id=\"self\" href=\"#self\"/><g id=\"a\"><use id=\"ua\" href=\"#b\"/></g><g id=\"b\"><use id=\"ub\" href=\"#a\"/></g>"
+                "<rect id=\"ok\"/><use id=\"fine\" href=\"#ok\"/><use id=\"gone\" href=\"#nowhere\"/><use id=\"far\" href=\"other.svg#x\"/>"));
+  ASSERT_EQ(d.loaded.result, GVEC_OK);
+  // on a cycle the edge is cut, and the uncut target is still the element the href names
+  EXPECT_EQ(gvec_svg_element_href_target(d.Id("self")), nullptr);
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("self")), d.Id("self"));
+  EXPECT_EQ(gvec_svg_element_href_target(d.Id("ua")), nullptr);
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("ua")), d.Id("b"));
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("ub")), d.Id("a"));
+  // off a cycle the two are the same, and a reference that names nothing here names nothing
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("fine")), d.Id("ok"));
+  EXPECT_EQ(gvec_svg_element_href_target(d.Id("fine")), d.Id("ok"));
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("gone")), nullptr);
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("far")), nullptr);
+  EXPECT_EQ(gvec_svg_element_href_target_uncut(d.Id("ok")), nullptr) << "an element with no href";
+}
+
 TEST(References, ACycleOfUseElementsIsCutAndEveryMemberIsMarkedOnce) {
   Doc d(Svg("", "<use id=\"self\" href=\"#self\"/>"
                 "<g id=\"anc\"><use id=\"inner\" href=\"#anc\"/></g>"

@@ -1260,6 +1260,62 @@ TEST(LowerResolverProfile, AProfileThatSwapsRedAndGreenSwapsThem) {
   EXPECT_NEAR(p.rgba[2], 0.0880, 2e-3);
 }
 
+TEST(LowerResolverProfile, MoreProfilesThanTheFirstTableHoldsAreAllKept) {
+  // The table of profiles begins with room for four; each of five names has its own entry, and a failure of the allocator at the growth is out of memory.
+  Fake fake;
+  std::string rules, shapes;
+  for (int i = 0; i < 5; i++) {
+    const std::string name = "--p" + std::to_string(i);
+    fake.Put("p" + std::to_string(i) + ".icc", Profile("srgb_g22.icc"));
+    rules += "@color-profile " + name + " { src: url(p" + std::to_string(i) + ".icc); } ";
+    shapes += "<path d=\"M" + std::to_string(i) + " 5h2v2h-2z\" fill=\"color(" + name + " 1 0 0)\"/>";
+  }
+  const std::string text = Doc(Style(rules) + shapes);
+  Lowered l;
+  Lower(text, l, fake);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  EXPECT_EQ(fake.Calls(), (size_t) 5) << "each name is a profile of its own";
+  long total = 0;
+  for (long fail_at = 0; fail_at < 4000; fail_at++) {
+    Failing alloc;
+    alloc.fail_at = fail_at == 0 ? -1 : fail_at;
+    GVEC_Stream * stream = nullptr;
+    ASSERT_EQ(gvec_stream_create_memory(text.data(), text.size(), &stream), GVEC_OK);
+    GVEC_Load_Options load;
+    std::memset(&load, 0, sizeof load);
+    load.allocator = &alloc.a;
+    GVEC_Doc * doc = nullptr;
+    GVEC_Diagnostics diagnostics;
+    gvec_diagnostics_init(&diagnostics, &alloc.a);
+    GVEC_Result r = gvec_doc_load(stream, &load, &diagnostics, &doc);
+    gvec_stream_destroy(stream);
+    GSHSCENE_Scene * scene = nullptr;
+    GSHSCENE_List * list = nullptr;
+    if (r == GVEC_OK) {
+      ASSERT_EQ(gshscene_scene_create(nullptr, nullptr, nullptr, &scene), GSHSCENE_OK);
+      ASSERT_EQ(gshscene_list_create(nullptr, nullptr, gshscene_scene_store(scene), &list), GSHSCENE_OK);
+      GVEC_Lower_Options o;
+      std::memset(&o, 0, sizeof o);
+      fake.Fill(o);
+      o.store = gshscene_scene_store(scene);
+      r = gvec_doc_lower_list(doc, &o, list, &diagnostics);
+      EXPECT_TRUE(r == GVEC_OK || r == GVEC_ERR_OOM) << fail_at << " " << gvec_result_string(r);
+    }
+    gshscene_list_destroy(list);
+    gshscene_scene_destroy(scene);
+    gvec_doc_free(doc);
+    gvec_diagnostics_destroy(&diagnostics);
+    EXPECT_EQ(alloc.outstanding, 0) << "leak after failing allocation " << fail_at;
+    if (fail_at == 0) {
+      total = alloc.attempts;
+      ASSERT_EQ(r, GVEC_OK);
+    }
+    else if (fail_at > total) {
+      break;
+    }
+  }
+}
+
 TEST(LowerResolverProfile, AGrayProfileTakesOneChannel) {
   Fake fake;
   fake.Put("p.icc", Profile("gray_g22.icc"));

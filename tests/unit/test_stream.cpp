@@ -104,6 +104,45 @@ TEST(Stream, AFileStreamReadsTheFileAndAnUnreadablePathIsIo) {
   EXPECT_EQ(gvec_stream_create_file(nullptr, &s), GVEC_ERR_INVALID);
 }
 
+TEST(Stream, TheStreamsThatTakeAnAllocatorAllocateThroughItAndFailWithIt) {
+  const char text[] = "<svg/>";
+  Failing alloc;
+  GVEC_Stream * s = nullptr;
+  ASSERT_EQ(gvec_stream_create_memory_with_allocator(&alloc.a, text, sizeof text - 1, &s), GVEC_OK);
+  EXPECT_GT(alloc.attempts, 0) << "the stream was made through the allocator";
+  EXPECT_GT(alloc.outstanding, 0);
+  EXPECT_EQ(gvec_stream_size(s), sizeof text - 1);
+  gvec_stream_destroy(s);
+  EXPECT_EQ(alloc.outstanding, 0);
+  GVEC_Stream * f = nullptr;
+  ASSERT_EQ(gvec_stream_create_file_with_allocator(&alloc.a, "tests/data/svg/minimal.svg", &f), GVEC_OK);
+  EXPECT_EQ(gvec_stream_size(f), Fixture("minimal.svg").size());
+  gvec_stream_destroy(f);
+  EXPECT_EQ(alloc.outstanding, 0);
+  // every allocation failing in turn is out of memory and leaks nothing; NULL is the default allocator
+  for (long fail_at = 1; fail_at <= 8; fail_at++) {
+    Failing failing;
+    failing.fail_at = fail_at;
+    GVEC_Stream * m = nullptr;
+    GVEC_Result r = gvec_stream_create_memory_with_allocator(&failing.a, text, sizeof text - 1, &m);
+    EXPECT_TRUE(r == GVEC_OK || r == GVEC_ERR_OOM) << fail_at;
+    if (r == GVEC_OK) {
+      gvec_stream_destroy(m);
+    }
+    GVEC_Stream * g = nullptr;
+    r = gvec_stream_create_file_with_allocator(&failing.a, "tests/data/svg/minimal.svg", &g);
+    EXPECT_TRUE(r == GVEC_OK || r == GVEC_ERR_OOM) << fail_at;
+    if (r == GVEC_OK) {
+      gvec_stream_destroy(g);
+    }
+    EXPECT_EQ(failing.outstanding, 0) << fail_at;
+  }
+  GVEC_Stream * d = nullptr;
+  ASSERT_EQ(gvec_stream_create_memory_with_allocator(nullptr, text, sizeof text - 1, &d), GVEC_OK);
+  gvec_stream_destroy(d);
+  EXPECT_EQ(gvec_stream_create_file_with_allocator(&alloc.a, "tests/data/svg/no-such-file.svg", &d), GVEC_ERR_IO);
+}
+
 TEST(Stream, AnOutputStreamCollectsWhatIsWritten) {
   GVEC_Stream * s = nullptr;
   ASSERT_EQ(gvec_stream_create_memory_output(&s), GVEC_OK);
