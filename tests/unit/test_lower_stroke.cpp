@@ -234,3 +234,20 @@ int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST(LowerStroke, PathLengthScalesTheDashesAndTheirOffsetByTheLengthOfThePathOverIt) {
+  Lowered l;
+  GSHSCENE_Stroke_Style s;
+  /* The path is 18 + 18 = 36 long; it is declared 4 long, so a unit is 9. */
+  ASSERT_TRUE(OneStroke("stroke-dasharray=\"1 0.5\" stroke-dashoffset=\"2\" pathLength=\"4\"", l, s));
+  ASSERT_EQ(s.dash_count, (size_t) 2);
+  EXPECT_NEAR(s.dashes[0], 9.0, 1e-6);
+  EXPECT_NEAR(s.dashes[1], 4.5, 1e-6);
+  EXPECT_NEAR(s.dash_offset, 18.0, 1e-6);
+  Lowered same;
+  ASSERT_TRUE(OneStroke("stroke-dasharray=\"1 0.5\" pathLength=\"36\"", same, s));
+  EXPECT_NEAR(s.dashes[0], 1.0, 1e-6);
+  Lowered bad;  // a pathLength that is not positive is an error: no scaling
+  ASSERT_TRUE(OneStroke("stroke-dasharray=\"1 0.5\" pathLength=\"0\"", bad, s));
+  EXPECT_NEAR(s.dashes[0], 1.0, 1e-6);
+}

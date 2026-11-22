@@ -894,6 +894,37 @@ static GVEC_Result color_of(GVEC_Svg_Style_Context * context, const GVEC_Svg_Ins
   return refuse(context, where, 0, "a color this library does not know");
 }
 
+GVEC_Result gvec_svg_style_color_of_text(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GVEC_Svg_Element * where,
+    const char * text, size_t length, GVEC_Svg_Color * out, bool * valid) {
+  *valid = false;
+  GTEXT_CSS_Parse_Options parse = context->style_options.parse;
+  GTEXT_CSS_Tree * tree = NULL;
+  GTEXT_CSS_Status status = gtext_css_parse_component_value(text, length, &parse, &tree, NULL);
+  if (status == GTEXT_CSS_E_OOM) {
+    return GVEC_ERR_OOM;
+  }
+  if (status != GTEXT_CSS_OK || !tree) {
+    return GVEC_OK;
+  }
+  GVEC_Result r = GVEC_OK;
+  if (tree->value_count == 1 && tree->syntax_error == GTEXT_CSS_SYNTAX_NONE) {
+    GTEXT_CSS_Color_Options options = gtext_css_color_options_default();
+    bool is_color = false;
+    GTEXT_CSS_Color * color = NULL;
+    status = gtext_css_color_parse(&tree->values[0], &options, &is_color, &color, NULL);
+    if (status == GTEXT_CSS_E_OOM) {
+      r = GVEC_ERR_OOM;
+    }
+    else if (status == GTEXT_CSS_OK && is_color) {
+      r = computed_color(context, instance, color, where, out);
+      *valid = r == GVEC_OK;
+    }
+    gtext_css_color_free(color);
+  }
+  gtext_css_tree_free(tree);
+  return r;
+}
+
 GVEC_Result gvec_svg_used_color(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GTEXT_CSS_Value * value,
     const GVEC_Svg_Element * where, GVEC_Svg_Color * out) {
   context = gvec_svg_owner(context, instance);

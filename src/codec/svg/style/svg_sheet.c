@@ -47,6 +47,26 @@ static bool is_css(const GVEC_Svg_Element * e) {
   return true;
 }
 
+/* Whether a `style` element's `media` attribute admits it: the list is answered by the conditions of the context (a screen of the viewport's size, in the
+ * document's color scheme). A list that cannot be read is `not all`, as the engine reads it, and no `media` is every media. */
+static bool media_admits(GVEC_Svg_Style_Context * context, const GVEC_Svg_Element * e) {
+  for (size_t i = 0; i < e->attribute_count; i++) {
+    const GVEC_Svg_Attribute * a = &e->attributes[i];
+    if (a->ns || strcmp(a->name, "media") != 0) {
+      continue;
+    }
+    GTEXT_CSS_Media_List * list = NULL;
+    if (gtext_css_media_list_parse(a->raw, a->raw_length, NULL, &list, NULL) != GTEXT_CSS_OK || !list) {
+      return false;
+    }
+    bool matches = false;
+    GTEXT_CSS_Status status = gtext_css_conditions_matches_list(context->conditions, list, NULL, &matches);
+    gtext_css_media_list_free(list);
+    return status == GTEXT_CSS_OK && matches;
+  }
+  return true;
+}
+
 /* The character data of a `style` element, its text and CDATA nodes joined, in memory the caller frees. */
 static GVEC_Result sheet_text(GVEC_Svg_Style_Context * context, const GVEC_Svg_Element * e, char ** out, size_t * length) {
   size_t total = 0;
@@ -356,6 +376,9 @@ GVEC_Result gvec_svg_style_sheets(GVEC_Svg_Style_Context * context) {
         r = status_result(status);
         break;
       }
+    }
+    if (!media_admits(context, e)) {
+      continue;
     }
     r = add_sheet(context, e, index);
   }

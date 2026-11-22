@@ -421,6 +421,8 @@ GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
 typedef struct gvec_lw_text_piece {
   const GSHSCENE_Resource * run;      ///< A glyph run (held by the context): the glyphs of one span in one face.
   const GVEC_Svg_Instance * inst;     ///< The span it is of: its fill is the run's paint.
+  bool has_color;                     ///< A decoration with a `text-decoration-color` of its own: `color` is its paint, and it is not stroked.
+  GVEC_Svg_Color color;
   bool decoration;                    ///< A line of a text decoration (a rectangle's path, not a glyph run): `inst` is the element that declared it.
   const GSHSCENE_Resource * image;    ///< A glyph of colour pixels (a `CBDT` strike), not an outline: the image (held by the context), drawn as an image paint under `image_map`; `run` is NULL.
   double image_width, image_height;   ///< The image's size in pixels.
@@ -574,10 +576,12 @@ typedef enum gvec_lw_geometry {
 /**
  * The path of a `path`, `polygon`, `polyline` or `line` element, interned in the store.
  *
+ * @param inst The instance of the element, whose `d` property (SVG 2 makes it a property, a string of path data that overrides the attribute) is read; NULL
+ *   for an element that is only referred to (a `textPath`'s path), which is read by its attribute.
  * @param for_stroke The path is a centerline: a `polyline` stays open, a `line` is a path, and a subpath of no length is kept
  *   (a cap draws it). Else the path is what a fill covers, and a path with no extent is empty.
  */
-GVEC_INTERNAL_API GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, bool for_stroke,
+GVEC_INTERNAL_API GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Instance * inst, bool for_stroke,
     gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource);
 
 /**

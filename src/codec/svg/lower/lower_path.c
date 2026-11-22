@@ -250,12 +250,65 @@ GVEC_Result gvec_lw_line_path(gvec_lw_ctx * ctx, double x1, double y1, double x2
   return finish(ctx, path, out_kind, out_resource);
 }
 
-GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, bool for_stroke, gvec_lw_geometry * out_kind,
-    const GSHSCENE_Resource ** out_resource) {
+/* The path data the `d` property gives an instance when it is not the attribute's own: the computed string, parsed. False with `*usable` left true when the
+ * attribute is what is drawn (the property is `none` or says the same); `*usable` false when the string cannot be read as path data. */
+static GVEC_Result path_from_property(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Instance * inst, gvec_svg_path * out, bool * from_property) {
+  *from_property = false;
+  GVEC_Svg_Style_Value v;
+  bool usable = false;
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_D, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable || !v.keyword) {
+    return r;
+  }
+  const char * text = v.keyword;
+  size_t n = strlen(text);
+  if (n < 2 || (text[0] != '"' && text[0] != '\'') || text[n - 1] != text[0]) {
+    return GVEC_OK; /* `none` */
+  }
+  text++;
+  n -= 2;
+  const GVEC_Svg_Attribute * d = gvec_svg_element_find_attribute(element, "d");
+  size_t attribute_length = 0;
+  const char * attribute = d ? gvec_svg_attribute_raw(d, &attribute_length) : NULL;
+  if (attribute && attribute_length == n && memcmp(attribute, text, n) == 0) {
+    return GVEC_OK; /* The attribute's own data: parsed already, once. */
+  }
+  gvec_svg_parse_context pc;
+  memset(&pc, 0, sizeof pc);
+  pc.arena = &ctx->arena;
+  pc.allocator = ctx->allocator;
+  pc.max_list_items = ctx->document->limits.max_list_items;
+  pc.max_path_segments = ctx->document->limits.max_path_segments;
+  gvec_svg_parse_error err;
+  gvec_svg_parse_status st = gvec_svg_parse_path(text, n, &pc, out, &err);
+  if (st == GVEC_SVG_PARSE_OOM) {
+    return GVEC_ERR_OOM;
+  }
+  *from_property = st != GVEC_SVG_PARSE_INVALID;
+  if (!*from_property) {
+    memset(out, 0, sizeof *out); /* Data that cannot be read draws nothing, as it does in the attribute. */
+    *from_property = true;
+  }
+  return GVEC_OK;
+}
+
+GVEC_Result gvec_lw_path_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, const GVEC_Svg_Instance * inst, bool for_stroke,
+    gvec_lw_geometry * out_kind, const GSHSCENE_Resource ** out_resource) {
   *out_kind = GVEC_LW_GEOMETRY_EMPTY;
   *out_resource = NULL;
   switch (gvec_svg_element_kind(element)) {
   case GVEC_SVG_KIND_PATH: {
+    if (inst) {
+      gvec_svg_path given;
+      bool from_property = false;
+      GVEC_Result pr = path_from_property(ctx, element, inst, &given, &from_property);
+      if (pr != GVEC_OK) {
+        return pr;
+      }
+      if (from_property) {
+        return given.segment_count ? path_segments(ctx, given.segments, given.segment_count, for_stroke, out_kind, out_resource) : GVEC_OK;
+      }
+    }
     const GVEC_Svg_Attribute * d = gvec_svg_element_find_attribute(element, "d");
     const GVEC_Svg_Path_Command * commands;
     const GVEC_Svg_Path_Segment * segments;

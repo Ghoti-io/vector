@@ -37,6 +37,7 @@
 
 #include "../../../core/core_internal.h"
 #include "../svg_grammar.h"
+#include "../style/svg_used.h"
 #include "lower_internal.h"
 
 /* --- the element's map into the list's space ---------------------------------------------------------------------------- */
@@ -1766,6 +1767,44 @@ static bool is_current_color(const char * s, size_t n) {
   return word_is(s, n, "currentcolor");
 }
 
+/** A color of a `drop-shadow()` that the subset of `css_color` does not read (a named color, `oklch()`, `lab()`, `color(display-p3 ...)`, a system color, a mix):
+ * the style layer reads the text as it reads a property. `*ok` is false, with nothing refused, when the text is no color; the element is refused (as for any
+ * color the waist cannot carry) when it is one that cannot be had. */
+static GVEC_Result typed_color(fbuild * b, const char * text, size_t n, double rgba[4], GSHSCENE_Color_Space * space, bool * typed, bool * ok) {
+  *ok = false;
+  const GVEC_Svg_Instance * inst;
+  GVEC_Result r = gvec_lw_instance_of(b->ctx, b->target, &inst);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  GVEC_Svg_Color c;
+  memset(&c, 0, sizeof c);
+  bool valid = false;
+  r = gvec_svg_style_color_of_text(b->ctx->style, inst, b->target, text, n, &c, &valid);
+  if (r == GVEC_ERR_UNSUPPORTED) {
+    b->refused = true;
+    return gvec_lw_refuse(b->ctx, b->target, GVEC_LOWER_UNSUPPORTED_COLOR_SPACE, "a color of a drop-shadow() is in a space the waist cannot carry");
+  }
+  if (r != GVEC_OK || !valid) {
+    return r;
+  }
+  if (c.kind == GVEC_SVG_COLOR_FOREGROUND) {
+    GSHSCENE_Color fg;
+    r = foreground_color(b, b->target, &c, &fg);
+    if (r != GVEC_OK || b->refused) {
+      return r;
+    }
+    c.color = fg;
+  }
+  for (int k = 0; k < 4; k++) {
+    rgba[k] = c.color.rgba[k];
+  }
+  *space = c.color.space;
+  *typed = true;
+  *ok = true;
+  return GVEC_OK;
+}
+
 /** The `color` property of the filtered element, which a drop-shadow() with no color, or with `currentcolor`, takes (Filter Effects 1: "the missing used color is taken from the color property"). */
 static GVEC_Result element_color(fbuild * b, double rgba[4]) {
   const GVEC_Svg_Instance * inst;
@@ -1937,6 +1976,10 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
     size_t got = 0;
     double rgba[4] = {0, 0, 0, 1};
     bool color_given = false;
+    bool typed = false, ok_typed = false;
+    GVEC_Result r;
+    GSHSCENE_Color_Space typed_space;
+    memset(&typed_space, 0, sizeof typed_space);
     bool current = false; /* the color is `currentcolor` (the computed value always writes one, first): the element's `color` */
     /* the color may come first, as a style engine writes the computed value */
     while (pos < arg_len && is_wsp(args[pos])) {
@@ -1950,7 +1993,10 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
         end++;
       }
       if (!css_color(args + pos, end - pos, rgba)) {
-        return GVEC_OK;
+        r = typed_color(b, args + pos, end - pos, rgba, &typed_space, &typed, &ok_typed);
+        if (r != GVEC_OK || b->refused || !ok_typed) {
+          return r;
+        }
       }
       current = is_current_color(args + pos, end - pos);
       color_given = true;
@@ -1968,7 +2014,10 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
       return GVEC_OK;
     }
     if (!color_given && pos < arg_len && !css_color(args + pos, arg_len - pos, rgba)) {
-      return GVEC_OK; /* a color this subset does not read: the list is refused whole */
+      r = typed_color(b, args + pos, arg_len - pos, rgba, &typed_space, &typed, &ok_typed);
+      if (r != GVEC_OK || b->refused || !ok_typed) {
+        return r; /* not a color: the list is not lowered */
+      }
     }
     if (current) {
       GVEC_Result cr = element_color(b, rgba);
@@ -1988,6 +2037,9 @@ static GVEC_Result css_function(fbuild * b, const char * text, bool * ok) {
     p->opacity = 1;
     p->color.space.primaries = GCOL_PRIMARIES_SRGB;
     p->color.space.transfer = GCOL_TRANSFER_SRGB;
+    if (typed) {
+      p->color.space = typed_space; /* a color the CSS subset above does not read, in the space the style layer made it in */
+    }
   }
   else {
     return GVEC_OK;

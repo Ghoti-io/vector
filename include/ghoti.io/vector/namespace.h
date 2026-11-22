@@ -271,6 +271,7 @@
 #define gvec_svg_resolve GHOTIIO_VECTOR(gvec_svg_resolve)
 #define gvec_svg_resolve_url GHOTIIO_VECTOR(gvec_svg_resolve_url)
 #define gvec_svg_scan_number GHOTIIO_VECTOR(gvec_svg_scan_number)
+#define gvec_svg_style_color_of_text GHOTIIO_VECTOR(gvec_svg_style_color_of_text)
 #define gvec_svg_style_color_profile GHOTIIO_VECTOR(gvec_svg_style_color_profile)
 #define gvec_svg_style_context_new_with_fonts GHOTIIO_VECTOR(gvec_svg_style_context_new_with_fonts)
 #define gvec_svg_style_diag GHOTIIO_VECTOR(gvec_svg_style_diag)

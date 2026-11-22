@@ -456,7 +456,7 @@ static GVEC_Result region_of(chain * c, const GVEC_Svg_Element * shape, const GV
     }
   }
   else {
-    r = gvec_lw_path_of(ctx, shape, false, geometry, path);
+    r = gvec_lw_path_of(ctx, shape, shape_inst, false, geometry, path);
     if (r != GVEC_OK) {
       return r;
     }

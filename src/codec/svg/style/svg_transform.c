@@ -361,12 +361,93 @@ static bool read_origin(const GTEXT_CSS_Value * v, double origin[2], double frac
   return true;
 }
 
+/* The items of a property's value: the value itself, or the members of its list. */
+static size_t items_of(const GTEXT_CSS_Value * v, const GTEXT_CSS_Value ** first) {
+  if (v->kind == GTEXT_CSS_VAL_LIST) {
+    *first = v->children;
+    return v->child_count;
+  }
+  *first = v;
+  return 1;
+}
+
+/* The ops of the `translate`, `rotate` and `scale` properties (CSS Transforms 2), appended to `ops`. A value of `none` makes none. `rotate` about an axis
+ * other than z, and a `translate` or `scale` with a third value that moves anything, are three-dimensional, which a drawing in the plane cannot carry. */
+static bool individual_ops(const GTEXT_CSS_Value * translate, const GTEXT_CSS_Value * rotate, const GTEXT_CSS_Value * scale, GVEC_Svg_Transform_Op * ops,
+    size_t * count) {
+  const GTEXT_CSS_Value * a;
+  size_t n;
+  if (translate && !keyword_lower(translate, "none")) {
+    n = items_of(translate, &a);
+    GVEC_Svg_Transform_Op * op = &ops[*count];
+    memset(op, 0, sizeof *op);
+    op->kind = GVEC_SVG_TRANSFORM_TRANSLATE;
+    double z;
+    bool percent_z = false;
+    if (n < 1 || n > 3 || !length_or_fraction(&a[0], &op->v[0], &op->percent[0]) || (n >= 2 && !length_or_fraction(&a[1], &op->v[1], &op->percent[1])) ||
+        (n == 3 && (!length_or_fraction(&a[2], &z, &percent_z) || percent_z || z != 0))) {
+      return false;
+    }
+    (*count)++;
+  }
+  if (rotate && !keyword_lower(rotate, "none")) {
+    n = items_of(rotate, &a);
+    GVEC_Svg_Transform_Op * op = &ops[*count];
+    memset(op, 0, sizeof *op);
+    op->kind = GVEC_SVG_TRANSFORM_ROTATE;
+    /* One angle is a turn about z; so is an axis of (0 0 1) before the angle (the engine writes `z` and `x`, `y` as such an axis, in a list). */
+    if (n == 1) {
+      if (!angle_of(&a[0], &op->v[0])) {
+        return false;
+      }
+    }
+    else if (n == 2 && a[0].kind == GTEXT_CSS_VAL_LIST && a[0].child_count == 3) {
+      double axis[3];
+      for (size_t k = 0; k < 3; k++) {
+        if (!number_of(&a[0].children[k], &axis[k])) {
+          return false;
+        }
+      }
+      if (axis[0] != 0 || axis[1] != 0 || axis[2] <= 0 || !angle_of(&a[1], &op->v[0])) {
+        return false;
+      }
+    }
+    else {
+      return false;
+    }
+    (*count)++;
+  }
+  if (scale && !keyword_lower(scale, "none")) {
+    n = items_of(scale, &a);
+    GVEC_Svg_Transform_Op * op = &ops[*count];
+    memset(op, 0, sizeof *op);
+    op->kind = GVEC_SVG_TRANSFORM_SCALE;
+    double z;
+    if (n < 1 || n > 3 || !number_of(&a[0], &op->v[0]) || (n >= 2 ? !number_of(&a[1], &op->v[1]) : (op->v[1] = op->v[0], false)) ||
+        (n == 3 && (!number_of(&a[2], &z) || z != 1))) {
+      return false;
+    }
+    (*count)++;
+  }
+  return true;
+}
+
 GVEC_Result gvec_svg_used_transform(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, GVEC_Svg_Transform * out) {
   context = gvec_svg_owner(context, instance);
   memset(out, 0, sizeof *out);
   const GTEXT_CSS_Computed_Style * style = NULL;
   const GTEXT_CSS_Value *list = NULL, *origin = NULL, *box = NULL;
   GVEC_Result r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_TRANSFORM, &style, &list);
+  const GTEXT_CSS_Value *translate = NULL, *rotate = NULL, *scale = NULL;
+  if (r == GVEC_OK) {
+    r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_TRANSLATE, NULL, &translate);
+  }
+  if (r == GVEC_OK) {
+    r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_ROTATE, NULL, &rotate);
+  }
+  if (r == GVEC_OK) {
+    r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_SCALE, NULL, &scale);
+  }
   if (r == GVEC_OK) {
     r = gvec_svg_computed(context, instance, GVEC_SVG_PROP_TRANSFORM_ORIGIN, NULL, &origin);
   }
@@ -380,16 +461,26 @@ GVEC_Result gvec_svg_used_transform(GVEC_Svg_Style_Context * context, const GVEC
   /* The ops. */
   GVEC_Svg_Transform_Op * ops = NULL;
   size_t count = 0;
-  if (list && !keyword_lower(list, "none")) {
+  const bool has_list = list && !keyword_lower(list, "none");
+  const bool has_individual = (translate && !keyword_lower(translate, "none")) || (rotate && !keyword_lower(rotate, "none")) ||
+      (scale && !keyword_lower(scale, "none"));
+  if (has_list || has_individual) {
     const GTEXT_CSS_Value * items = list;
-    size_t n = 1;
-    if (list->kind == GTEXT_CSS_VAL_LIST) {
-      items = list->children;
-      n = list->child_count;
+    size_t n = 0;
+    if (has_list) {
+      n = 1;
+      if (list->kind == GTEXT_CSS_VAL_LIST) {
+        items = list->children;
+        n = list->child_count;
+      }
     }
-    ops = gvec_arena_array(&context->arena, n * 2 + 1, sizeof *ops, 8);
+    ops = gvec_arena_array(&context->arena, n * 2 + 1 + 3, sizeof *ops, 8);
     if (!ops) {
       return GVEC_ERR_OOM;
+    }
+    /* The individual properties come first, in the order CSS Transforms 2 gives: translate, rotate, scale, then `transform`. */
+    if (!individual_ops(translate, rotate, scale, ops, &count)) {
+      goto invalid;
     }
     for (size_t i = 0; i < n; i++) {
       const GTEXT_CSS_Value * f = &items[i];

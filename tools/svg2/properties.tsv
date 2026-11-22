@@ -77,8 +77,10 @@ overflow	KEYWORD	-	overflow-x	G
 paint-order	KEYWORD	-		G				
 pointer-events	KEYWORD	-		G				
 r	LENGTH	D		G				
+rotate	KEYWORD	-		G				
 rx	LENGTH	W		G				
 ry	LENGTH	H		G				
+scale	KEYWORD	-		G				
 shape-rendering	KEYWORD	-		G				
 stop-color	COLOR	-		O	no	black	currentcolor | <color>	The pin gives the property no initial value (and does not say whether it inherits); SVG 2 CR Appendix H: initial `black`, not inherited.
 stop-opacity	NUMBER	-		O	no	1	<opacity-value>	The pin gives the property no initial value; SVG 2 CR Appendix H: initial 1, not inherited.
@@ -92,15 +94,22 @@ stroke-opacity	NUMBER	-		G
 stroke-width	LENGTH	D		O	yes	1px	<length-percentage [0,∞]> | <number [0,∞]>	CSS Fill and Stroke 3 makes it a comma separated list, one width for each stroke layer, and adds the <line-width> keywords; SVG 2 section 13.3 and the browsers take one <length-percentage> or <number>, and a list is invalid.
 text-anchor	KEYWORD	-		G				
 text-decoration	KEYWORD	-	text-decoration-line	G				
+text-decoration-color	COLOR	-		G				
+text-decoration-style	KEYWORD	-		G				
+text-decoration-thickness	KEYWORD	-		G				
 text-overflow	KEYWORD	-		G				
 text-rendering	KEYWORD	-		G				
+text-transform	KEYWORD	-		G				
+text-underline-offset	KEYWORD	-		G				
 transform	TRANSFORM	-		G				
 transform-box	KEYWORD	-		G				
 transform-origin	KEYWORD	-		G				
+translate	KEYWORD	-		G				
 unicode-bidi	KEYWORD	-		G				
 vector-effect	KEYWORD	-		G				
 visibility	KEYWORD	-		G				
 white-space	KEYWORD	-		G				
+white-space-collapse	KEYWORD	-		G				
 width	LENGTH	W		G				
 word-spacing	KEYWORD	-		G				
 writing-mode	KEYWORD	-		G				

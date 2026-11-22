@@ -820,3 +820,38 @@ int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+TEST(LowerFilter, ADropShadowColorIsAnyColorTheStyleLayerReads) {
+  // The computed value writes a color as `orange`, `oklch(...)`, `color(display-p3 ...)` or `lab(...)`, which the plain forms of the list above do not
+  // cover: each is read as a property's color is, in its own space.
+  struct Case {
+    const char * color;
+    double rgb[3];
+    GCOL_Primaries primaries;
+  };
+  const Case cases[] = {
+      {"orange", {1, 165.0 / 255, 0}, GCOL_PRIMARIES_SRGB},
+      {"color(display-p3 1 0 0)", {1, 0, 0}, GCOL_PRIMARIES_DISPLAY_P3},
+  };
+  for (const Case & c : cases) {
+    Lowered l;
+    LowerSvg(Doc("", std::string("<rect width=\"10\" height=\"10\" style=\"filter: drop-shadow(") + c.color + " 4px 5px 6px)\"/>"), l);
+    ASSERT_EQ(l.Refusals(), (size_t) 0) << c.color;
+    GSHSCENE_Filter f;
+    ASSERT_TRUE(FilterOf(l, &f)) << c.color;
+    ASSERT_EQ(f.primitive_count, 1u) << c.color;
+    EXPECT_EQ(f.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_DROP_SHADOW) << c.color;
+    EXPECT_EQ(f.primitives[0].color.space.primaries, c.primaries) << c.color;
+    for (int k = 0; k < 3; k++) {
+      EXPECT_NEAR(f.primitives[0].color.rgba[k], c.rgb[k], 1e-6) << c.color << " channel " << k;
+    }
+  }
+  // An oklch color is not the sRGB color of the same numbers: it is what the style layer makes of it.
+  Lowered ok;
+  LowerSvg(Doc("", "<rect width=\"10\" height=\"10\" style=\"filter: drop-shadow(oklch(60% 0.2 30) 4px 5px 6px)\"/>"), ok);
+  ASSERT_EQ(ok.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(ok, &f));
+  ASSERT_EQ(f.primitive_count, 1u);
+  EXPECT_GT(f.primitives[0].color.rgba[0], 2 * f.primitives[0].color.rgba[2]) << "a red-orange, in whatever space the style layer keeps it";
+}

@@ -838,7 +838,7 @@ GVEC_Result gvec_lw_centerline_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
     return gvec_lw_primitive_of(ctx, inst, geometry, path, usable);
   }
   if (kind != GVEC_SVG_KIND_LINE) {
-    return gvec_lw_path_of(ctx, e, true, geometry, path);
+    return gvec_lw_path_of(ctx, e, inst, true, geometry, path);
   }
   double x1, y1, x2, y2;
   GVEC_Result r = line_coordinate(ctx, inst, "x1", true, &x1, usable);
@@ -948,7 +948,7 @@ static GVEC_Result lw_shape(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, c
         return r;
       }
     } else {
-      r = gvec_lw_path_of(ctx, e, false, &geometry, &path);
+      r = gvec_lw_path_of(ctx, e, inst, false, &geometry, &path);
       if (r != GVEC_OK) {
         return r;
       }
@@ -1326,11 +1326,29 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     GSHSCENE_Paint paint;
     GSHGEOM_Fill_Rule rule = GSHGEOM_FILL_NONZERO;
     gvec_lw_paint_decision fill_decision;
-    r = fill_of(ctx, span, &paint, &rule, &fill_decision);
     gvec_lw_stroke stroke;
     memset(&stroke, 0, sizeof stroke);
-    if (r == GVEC_OK && fill_decision != GVEC_LW_PAINT_REFUSED) {
-      r = gvec_lw_stroke_of(ctx, span, &stroke);
+    if (text.pieces[i].decoration && text.pieces[i].has_color) {
+      /* A decoration that has a color of its own is that color alone, with the opacity of the fill of the element that declares it. */
+      GVEC_Svg_Style_Value opacity;
+      GVEC_Svg_Paint own;
+      memset(&own, 0, sizeof own);
+      own.kind = GVEC_SVG_PAINT_COLOR;
+      own.color = text.pieces[i].color;
+      r = gvec_lw_read_property(ctx, span, GVEC_SVG_PROP_FILL_OPACITY, GVEC_LOWER_STYLE, &opacity, &usable);
+      if (r == GVEC_OK && usable) {
+        r = gvec_lw_paint_of(ctx, span, &own, opacity.kind == GVEC_SVG_STYLE_NUMBER ? opacity.number : 1, &paint, &fill_decision);
+      }
+      else if (r == GVEC_OK) {
+        fill_decision = GVEC_LW_PAINT_REFUSED;
+      }
+      stroke.decision = GVEC_LW_PAINT_NONE;
+    }
+    else {
+      r = fill_of(ctx, span, &paint, &rule, &fill_decision);
+      if (r == GVEC_OK && fill_decision != GVEC_LW_PAINT_REFUSED) {
+        r = gvec_lw_stroke_of(ctx, span, &stroke);
+      }
     }
     ctx->paint_box_set = false;
     ctx->paint_pre_set = false;

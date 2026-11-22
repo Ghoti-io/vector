@@ -65,6 +65,9 @@ size_t gvec_svg_ua_declarations(const GVEC_Svg_Instance * instance, const char *
     if (length == 8 && memcmp(raw, "preserve", 8) == 0) {
       out[n++] = "white-space-collapse:preserve-spaces";
     }
+    else if (length == 7 && memcmp(raw, "default", 7) == 0) {
+      out[n++] = "white-space-collapse:collapse";
+    }
   }
   switch (e->kind) {
   case GVEC_SVG_KIND_DEFS:

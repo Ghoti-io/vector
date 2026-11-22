@@ -30,6 +30,8 @@
 
 #include <string.h>
 
+#include <ghoti.io/shape-geometry/along.h>
+#include <ghoti.io/shape-scene/resource.h>
 #include <ghoti.io/shape-scene/stroke.h>
 
 #include "lower_internal.h"
@@ -207,6 +209,33 @@ GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
       return r;
     }
     style.dash_offset = o.kind == GVEC_SVG_STYLE_LENGTH ? o.number : 0;
+    /* `pathLength` (SVG 2, 9.9) says the path is that long: the dashes and their offset are lengths along it, so each is scaled by the path's own
+     * length over that one (a stroke of `pathLength="1"` with a dash of 0.5 is half dashes). */
+    const GVEC_Svg_Attribute * declared = gvec_svg_element_find_attribute(e, "pathLength");
+    double wanted;
+    if (declared && gvec_svg_attribute_number(declared, &wanted) && wanted > 0) {
+      gvec_lw_geometry geometry;
+      const GSHSCENE_Resource * centerline = NULL;
+      r = gvec_lw_centerline_of(ctx, inst, &geometry, &centerline, &usable);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      const GSHGEOM_Path * measured_path = centerline ? gshscene_resource_path(centerline) : NULL;
+      GSHGEOM_Measured * measured = NULL;
+      if (usable && measured_path && gshgeom_measured_create(NULL, NULL, measured_path, 0, &measured) == GSHGEOM_OK) {
+        double scale = gshgeom_measured_length(measured) / wanted;
+        gshgeom_measured_destroy(measured);
+        double * scaled = gvec_arena_array(&ctx->arena, style.dash_count, sizeof *scaled, sizeof(double));
+        if (!scaled) {
+          return GVEC_ERR_OOM;
+        }
+        for (size_t i = 0; i < style.dash_count; i++) {
+          scaled[i] = style.dashes[i] * scale;
+        }
+        style.dashes = scaled;
+        style.dash_offset *= scale;
+      }
+    }
   }
   r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_VECTOR_EFFECT, GVEC_LOWER_STYLE, &w, &usable);
   if (r != GVEC_OK || !usable) {

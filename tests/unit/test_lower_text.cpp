@@ -116,6 +116,14 @@ TEST(LowerText, WhiteSpaceIsCollapsedUnlessItIsPreserved) {
   ASSERT_TRUE(LowerText(f, "xml:space=\"preserve\"", " A  B ", preserved, "xmlns:xml=\"http://www.w3.org/XML/1998/namespace\""));
   ASSERT_TRUE(ReadRun(preserved, 0, run));
   EXPECT_EQ(run.glyph_count, (size_t) 6);
+  /* The property says the same as the attribute. */
+  Lowered by_style, by_sheet;
+  ASSERT_TRUE(LowerText(f, "style=\"white-space: pre\"", " A  B ", by_style));
+  ASSERT_TRUE(ReadRun(by_style, 0, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 6);
+  ASSERT_TRUE(LowerText(f, "style=\"white-space-collapse: preserve-spaces\"", " A  B ", by_sheet));
+  ASSERT_TRUE(ReadRun(by_sheet, 0, run));
+  EXPECT_EQ(run.glyph_count, (size_t) 6);
 }
 
 TEST(LowerText, TheWeightPicksTheFaceAndSoTheAdvance) {
@@ -337,6 +345,52 @@ TEST(LowerText, UnderlineAndLineThroughAreRectanglesAcrossTheGlyphsInTheFacesMet
   EXPECT_GT(under.min.y, 100.0);          // below the baseline
   ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(l.Item(2).resource), &strike), GSHGEOM_OK);
   EXPECT_LT(strike.max.y, 100.0);         // above it
+}
+
+TEST(LowerText, TheLookOfADecorationIsItsColorStyleThicknessAndOffset) {
+  Fonts f;
+  auto under = [&](const std::string & style, Lowered & l, GSHGEOM_Bounds & box) {
+    EXPECT_TRUE(LowerText(f, "x=\"10\" y=\"100\" fill=\"#00ff00\" style=\"text-decoration: underline; " + style + "\"", "AA", l)) << style;
+    ASSERT_GE(l.Items(), (size_t) 2) << style;
+    ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(l.Item(0).resource), &box), GSHGEOM_OK) << style;
+  };
+  Lowered plain, red, thick, pct, offset, doubled, dotted, dashed, wavy;
+  GSHGEOM_Bounds b_plain, b_red, b_thick, b_pct, b_offset, b_double, b_dotted, b_dashed, b_wavy;
+  under("", plain, b_plain);
+  // the color: the line is that color, not the fill of the text
+  under("text-decoration-color: #ff0000", red, b_red);
+  EXPECT_EQ(plain.Item(0).paint.rgba[1], 1.0) << "the fill of the text";
+  EXPECT_EQ(red.Item(0).paint.rgba[0], 1.0);
+  EXPECT_EQ(red.Item(0).paint.rgba[1], 0.0);
+  EXPECT_EQ(red.Items(), plain.Items());
+  // the thickness: a length, and a percentage of the font size (100)
+  under("text-decoration-thickness: 7px", thick, b_thick);
+  EXPECT_NEAR(b_thick.max.y - b_thick.min.y, 7.0, 1e-6);
+  under("text-decoration-thickness: 10%", pct, b_pct);
+  EXPECT_NEAR(b_pct.max.y - b_pct.min.y, 10.0, 1e-6);
+  EXPECT_NE(b_plain.max.y - b_plain.min.y, 7.0);
+  // the offset: from the baseline to the top of the line
+  under("text-underline-offset: 20px; text-decoration-thickness: 4px", offset, b_offset);
+  EXPECT_NEAR(b_offset.min.y, 120.0, 1e-6);
+  // double: two lines, a thickness apart
+  under("text-decoration-style: double; text-decoration-thickness: 4px", doubled, b_double);
+  EXPECT_EQ(doubled.Items(), plain.Items() + 1) << "two lines where there was one";
+  GSHGEOM_Bounds second;
+  ASSERT_EQ(gshgeom_path_bounds(gshscene_resource_path(doubled.Item(1).resource), &second), GSHGEOM_OK);
+  EXPECT_NEAR(second.min.y - b_double.max.y, 4.0, 1e-6) << "a gap of the thickness";
+  // dotted and dashed: a row of pieces, of the thickness and a gap of it, and of three thicknesses
+  under("text-decoration-style: dotted; text-decoration-thickness: 6px", dotted, b_dotted);
+  EXPECT_NEAR(b_dotted.max.x - b_dotted.min.x, 6.0, 1e-6);
+  EXPECT_GT(dotted.Items(), (size_t) 10) << "120 across, a dot and a gap of 12";
+  under("text-decoration-style: dashed; text-decoration-thickness: 6px", dashed, b_dashed);
+  EXPECT_NEAR(b_dashed.max.x - b_dashed.min.x, 18.0, 1e-6);
+  EXPECT_LT(dashed.Items(), dotted.Items());
+  // wavy: one polygon that rises and falls about the line
+  under("text-decoration-style: wavy; text-decoration-thickness: 6px", wavy, b_wavy);
+  EXPECT_EQ(wavy.Items(), plain.Items());
+  EXPECT_GT(b_wavy.max.y - b_wavy.min.y, 12.0) << "a thickness above and below, and a thickness of band";
+  EXPECT_NEAR(b_wavy.min.x, 10.0, 1e-6);
+  EXPECT_NEAR(b_wavy.max.x, 130.0, 1e-6);
 }
 
 TEST(LowerText, ADecorationHasThePaintOfTheElementThatDeclaredItWhetherAnAncestorOrTheTextOrASpan) {
@@ -1435,3 +1489,39 @@ TEST(LowerText, TheSpacingATextLengthSpreadsIsTakenByTheLastGlyphOfTheSpanToo) {
   EXPECT_EQ(xs[3], 540.0) << "60 + 120 of glyphs + 180 between + 180 after the last";
 }
 
+
+TEST(LowerText, TextTransformMapsTheCharactersBeforeTheyAreShaped) {
+  Fonts f;
+  GSHSCENE_Glyph_Run a, b;
+  auto glyphs = [&](const std::string & attributes, const std::string & content, GSHSCENE_Glyph_Run & run, Lowered & l) {
+    ASSERT_TRUE(LowerText(f, attributes, content, l));
+    ASSERT_TRUE(ReadRun(l, 0, run));
+  };
+  Lowered la, lb, lc, ld, le, lf;
+  glyphs("style=\"text-transform: uppercase\"", "ab cd", a, la);
+  glyphs("", "AB CD", b, lb);
+  ASSERT_EQ(a.glyph_count, b.glyph_count);
+  for (size_t i = 0; i < a.glyph_count; i++) {
+    EXPECT_EQ(a.glyphs[i].id, b.glyphs[i].id) << i;
+  }
+  glyphs("style=\"text-transform: lowercase\"", "AB CD", a, lc);
+  glyphs("", "ab cd", b, ld);
+  for (size_t i = 0; i < a.glyph_count; i++) {
+    EXPECT_EQ(a.glyphs[i].id, b.glyphs[i].id) << i;
+  }
+  // capitalize makes the first letter of each word a capital and leaves the rest
+  glyphs("style=\"text-transform: capitalize\"", "ab cD", a, le);
+  glyphs("", "Ab CD", b, lf);
+  ASSERT_EQ(a.glyph_count, b.glyph_count);
+  for (size_t i = 0; i < a.glyph_count; i++) {
+    EXPECT_EQ(a.glyphs[i].id, b.glyphs[i].id) << i;
+  }
+  // a mapping can make more characters than it had: the full mappings, not the simple ones
+  Lowered sharp;
+  glyphs("style=\"text-transform: uppercase\"", "stra\xC3\x9F" "e", a, sharp);
+  EXPECT_EQ(a.glyph_count, (size_t) 7) << "straSSe";
+  // full-width puts the ASCII characters at U+FF01..U+FF5E, which the test face does not have: the text is refused, as any text of characters no face has
+  Lowered full;
+  EXPECT_FALSE(LowerText(f, "style=\"text-transform: full-width\"", "ab", full));
+  EXPECT_NE(full.Refusal(GVEC_LOWER_TEXT), nullptr);
+}

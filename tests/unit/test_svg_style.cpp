@@ -1200,3 +1200,48 @@ TEST(SvgStyleOwner, AnInstanceIsReadThroughItsOwnersContext) {
   EXPECT_NE(own.paint.color.color.rgba[0], FillOf(light, "c").color.rgba[0]) << "the two documents disagree about Canvas";
   EXPECT_EQ(other.paint.color.color.rgba[0], own.paint.color.color.rgba[0]) << "read through the context of another document";
 }
+
+TEST(SvgStyleUsed, TheIndividualTransformPropertiesComeBeforeTheTransformList) {
+  Styled s(Svg("width=\"200\" height=\"100\"",
+      "<g id=\"t\" style=\"translate: 10px 20px\"/><g id=\"r\" style=\"rotate: 90deg\"/><g id=\"s\" style=\"scale: 2\"/><g id=\"s2\" style=\"scale: 50% 3\"/>"
+      "<g id=\"all\" style=\"translate: 10px 0; rotate: 90deg; scale: 2; transform: translate(1px, 0)\"/>"
+      "<g id=\"axis\" style=\"rotate: x 90deg\"/><g id=\"zaxis\" style=\"rotate: z 90deg\"/>"));
+  auto map = [&](const char * id) {
+    GVEC_Svg_Style_Value v = s.Get(id, GVEC_SVG_PROP_TRANSFORM);
+    EXPECT_EQ(v.kind, GVEC_SVG_STYLE_TRANSFORM) << id;
+    return v.transform;
+  };
+  GVEC_Svg_Transform t = map("t");
+  EXPECT_EQ(t.map.t[0], 10.0);
+  EXPECT_EQ(t.map.t[1], 20.0);
+  GVEC_Svg_Transform r = map("r");
+  EXPECT_EQ(r.map.m[0][1], -1.0);
+  EXPECT_EQ(r.map.m[1][0], 1.0);
+  GVEC_Svg_Transform sc = map("s");
+  EXPECT_EQ(sc.map.m[0][0], 2.0);
+  EXPECT_EQ(sc.map.m[1][1], 2.0);
+  GVEC_Svg_Transform sc2 = map("s2");
+  EXPECT_EQ(sc2.map.m[0][0], 0.5);
+  EXPECT_EQ(sc2.map.m[1][1], 3.0);
+  /* The point (0, 0) goes by transform to (1, 0), by scale to (2, 0), by rotate to (0, 2), by translate to (10, 2). */
+  GVEC_Svg_Transform all = map("all");
+  EXPECT_EQ(all.map.t[0], 10.0);
+  EXPECT_EQ(all.map.t[1], 2.0);
+  /* A turn about an axis of the plane is not a drawing in the plane: the transform is not one this can use. */
+  GVEC_Svg_Style_Value v;
+  EXPECT_NE(gvec_svg_get(s.context, s.Of("axis"), GVEC_SVG_PROP_TRANSFORM, &v), GVEC_OK);
+  EXPECT_EQ(gvec_svg_get(s.context, s.Of("zaxis"), GVEC_SVG_PROP_TRANSFORM, &v), GVEC_OK);
+  EXPECT_EQ(v.transform.map.m[1][0], 1.0) << "a turn about z is a turn in the plane";
+}
+
+TEST(SvgStyleSheets, AStyleElementsMediaDecidesWhetherItApplies) {
+  Styled s(Svg("", "<style media=\"print\">#p { fill: #ff0000 }</style><style media=\"screen\">#s { fill: #00ff00 }</style>"
+                   "<style media=\"(min-width: 99999px)\">#w { fill: #0000ff }</style><style media=\"not-a-query (\">#n { fill: #ff00ff }</style>"
+                   "<style>#a { fill: #00ffff }</style>"
+                   "<rect id=\"p\"/><rect id=\"s\"/><rect id=\"w\"/><rect id=\"n\"/><rect id=\"a\"/>"));
+  EXPECT_EQ(FillOf(s, "p").color.rgba[0], 0.0) << "print is not a screen";
+  EXPECT_EQ(FillOf(s, "s").color.rgba[1], 1.0) << "screen is";
+  EXPECT_EQ(FillOf(s, "w").color.rgba[2], 0.0) << "a viewport that wide is not this one";
+  EXPECT_EQ(FillOf(s, "n").color.rgba[0], 0.0) << "a list that cannot be read is not all";
+  EXPECT_EQ(FillOf(s, "a").color.rgba[1], 1.0) << "no media is every media";
+}

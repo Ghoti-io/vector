@@ -39,6 +39,9 @@
 #include <string.h>
 
 #include <ghoti.io/font/bitmap.h>
+#include <ghoti.io/unicode/case.h>
+#include <ghoti.io/unicode/char.h>
+#include <ghoti.io/unicode/utf.h>
 #include <ghoti.io/font/glyph.h>
 #include <ghoti.io/font/metrics.h>
 #include <ghoti.io/image/image.h>
@@ -310,6 +313,8 @@ typedef struct tstyle {
   GFNT_ShapeFeature features[FEATURE_MAX]; ///< The OpenType features the span asks for, as the shaper takes them: kerning, ligatures, caps, numerals, settings.
   size_t feature_count;
   double size_adjust; ///< `font-size-adjust`: the x-height to size ratio the text keeps, or 0 for none.
+  int transform;      ///< `text-transform`: 0 none, 1 uppercase, 2 lowercase, 3 capitalize.
+  bool full_width;    ///< `text-transform: full-width`.
   bool rtl, bidi_override; ///< `direction: rtl`; `unicode-bidi: bidi-override` (or isolate-override): the order is the direction's, not the algorithm's.
 } tstyle;
 
@@ -378,6 +383,14 @@ typedef struct tdecor {
   uint32_t style;
   size_t start, end;
   unsigned flags; ///< 1 underline, 2 overline, 4 line-through.
+  bool has_color;       ///< `text-decoration-color` is a color (not `currentcolor`, which is the fill and stroke of the element that declares the decoration).
+  GVEC_Svg_Color color;
+  int line_style;       ///< `text-decoration-style`: 0 solid, 1 double, 2 dotted, 3 dashed, 4 wavy.
+  int thickness_kind;   ///< `text-decoration-thickness`: 0 auto or from-font (the face's), 1 a length, 2 a percentage of the font size.
+  double thickness;     ///< The length in user units, or the percentage.
+  bool has_offset;      ///< `text-underline-offset` is a length or a percentage.
+  bool offset_percent;
+  double offset;
 } tdecor;
 
 /** A `textPath`: the path it follows, where the text starts on it, and the path measured (by the layout). */
@@ -796,6 +809,26 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     st->rtl = chain_value(inst, "direction", true, true, dv, sizeof dv) && strcmp(dv, "rtl") == 0;
     st->bidi_override = chain_value(inst, "unicode-bidi", true, true, dv, sizeof dv) && strstr(dv, "override") != NULL;
   }
+  st->transform = 0;
+  st->full_width = false;
+  r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_TRANSFORM, &v, &ok);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (ok && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
+    for (const char * k = v.keyword; *k;) {
+      while (*k == ' ') {
+        k++;
+      }
+      const char * word = k;
+      while (*k && *k != ' ') {
+        k++;
+      }
+      size_t n = (size_t) (k - word);
+      st->transform = n == 9 && !strncmp(word, "uppercase", 9) ? 1 : n == 9 && !strncmp(word, "lowercase", 9) ? 2 : n == 10 && !strncmp(word, "capitalize", 10) ? 3 : st->transform;
+      st->full_width = st->full_width || (n == 10 && !strncmp(word, "full-width", 10));
+    }
+  }
   st->size_adjust = 0;
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_SIZE_ADJUST, &v, &ok);
   if (r != GVEC_OK || !ok) {
@@ -881,27 +914,84 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
   return GVEC_OK;
 }
 
-/* The `xml:space` that applies to an element: its own, else its parent's. */
-static bool preserves(const GVEC_Svg_Element * e, bool inherited) {
-  const GVEC_Svg_Attribute * space = gvec_svg_element_find_attribute(e, "xml:space");
-  for (size_t i = 0; !space && i < e->attribute_count; i++) {
-    const GVEC_Svg_Attribute * a = &e->attributes[i];
-    if (a->ns && strcmp(a->name, "space") == 0) {
-      space = a;
-    }
+/* Whether the spaces of an element are kept: its `white-space-collapse` (inherited) is not `collapse`. `xml:space="preserve"` is the author spelling of
+ * `preserve-spaces` and `default` of `collapse`, which the user-agent sheet gives; `white-space` is the shorthand of the property and of `text-wrap-mode`. */
+static GVEC_Result preserves(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * keep) {
+  GVEC_Svg_Style_Value v;
+  bool usable = false;
+  *keep = false;
+  GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_WHITE_SPACE_COLLAPSE, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
   }
-  if (!space) {
-    return inherited;
-  }
-  size_t n;
-  const char * text = gvec_svg_attribute_raw(space, &n);
-  if (text && n == 8 && strncmp(text, "preserve", 8) == 0) {
-    return true;
-  }
-  return text && n == 7 && strncmp(text, "default", 7) == 0 ? false : inherited;
+  *keep = v.keyword && strcmp(v.keyword, "collapse") != 0;
+  return GVEC_OK;
 }
 
+static void add_characters_as_written(tctx * t, const char * text, size_t n, bool preserve, uint32_t style);
+
+/* Whether the character before is of a word (a letter, a number or a mark): the next letter then does not begin one. */
+static bool word_character(uint32_t cp) {
+  return (guni_general_category_mask(cp) & (GUNI_GC_MASK_L | GUNI_GC_MASK_N | GUNI_GC_MASK_M)) != 0;
+}
+
+/* The characters of `text` as `text-transform` of the span's style makes them (CSS Text 3, 2.1): the full case mappings, which can make more characters of one
+ * (`ß` is `SS`), a letter that begins a word titlecased for `capitalize`, and the ASCII characters of `full-width` as their full-width forms. The transformed
+ * text is in the arena; a text it cannot make (too many characters) is left as written. */
 static void add_characters(tctx * t, const char * text, size_t n, bool preserve, uint32_t style) {
+  const tstyle * st = &t->styles[style];
+  if ((st->transform == 0 && !st->full_width) || n == 0) {
+    add_characters_as_written(t, text, n, preserve, style);
+    return;
+  }
+  uint32_t * cps = gvec_arena_array(&t->lw->arena, n * GUNI_CASE_MAX_EXPANSION + 1, sizeof *cps, sizeof *cps);
+  uint32_t * source = gvec_arena_array(&t->lw->arena, n + 1, sizeof *source, sizeof *source);
+  char * bytes = gvec_arena_array(&t->lw->arena, n * GUNI_CASE_MAX_EXPANSION * 4 + 1, 1, 1);
+  if (!cps || !source || !bytes) {
+    add_characters_as_written(t, text, n, preserve, style);
+    return;
+  }
+  size_t count = 0;
+  for (size_t i = 0; i < n;) {
+    size_t used = guni_utf8_decode(text + i, n - i, &source[count], NULL);
+    i += used ? used : 1;
+    count++;
+  }
+  size_t out = 0;
+  uint32_t previous = t->count ? t->chars[t->count - 1].cp : ' ';
+  for (size_t i = 0; i < count; i++) {
+    uint32_t mapped[GUNI_CASE_MAX_EXPANSION];
+    size_t mapped_length = 1;
+    mapped[0] = source[i];
+    if (st->transform == 1) {
+      (void) guni_to_upper_at(source, count, i, GUNI_LANG_NONE, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
+    }
+    else if (st->transform == 2) {
+      (void) guni_to_lower_at(source, count, i, GUNI_LANG_NONE, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
+    }
+    else if (st->transform == 3 && !word_character(i ? source[i - 1] : previous) && word_character(source[i])) {
+      (void) guni_to_title_at(source, count, i, GUNI_LANG_NONE, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
+    }
+    if (mapped_length == 0 || mapped_length > GUNI_CASE_MAX_EXPANSION) {
+      mapped_length = 1;
+      mapped[0] = source[i];
+    }
+    for (size_t k = 0; k < mapped_length; k++) {
+      uint32_t cp = mapped[k];
+      if (st->full_width) {
+        cp = cp >= 0x21 && cp <= 0x7E ? cp + 0xFEE0 : cp; /* a space stays, for the white space to collapse */
+      }
+      cps[out++] = cp;
+    }
+  }
+  size_t length = 0;
+  for (size_t i = 0; i < out; i++) {
+    length += guni_utf8_encode(cps[i], bytes + length);
+  }
+  add_characters_as_written(t, bytes, length, preserve, style);
+}
+
+static void add_characters_as_written(tctx * t, const char * text, size_t n, bool preserve, uint32_t style) {
   for (size_t i = 0; i < n;) {
     unsigned char c = (unsigned char) text[i];
     uint32_t cp;
@@ -1074,6 +1164,142 @@ static GVEC_Result decoration_flags(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
   return GVEC_OK;
 }
 
+/* The color, style, thickness and offset a decoration declares, read from the element that declares it (they are not inherited, and the decoration is drawn
+ * with them wherever it falls). `currentcolor` is no color of its own: the line takes the paint of the declaring element. */
+static GVEC_Result decoration_look(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, tdecor * d) {
+  GVEC_Svg_Style_Value v;
+  bool ok;
+  d->has_color = false;
+  d->line_style = 0;
+  d->thickness_kind = 0;
+  d->has_offset = false;
+  GVEC_Result r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_DECORATION_COLOR, &v, &ok);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (ok && v.kind == GVEC_SVG_STYLE_COLOR && v.color.kind == GVEC_SVG_COLOR_SOLID) {
+    d->has_color = true;
+    d->color = v.color;
+  }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_DECORATION_STYLE, &v, &ok);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (ok && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
+    d->line_style = !strcmp(v.keyword, "double") ? 1 : !strcmp(v.keyword, "dotted") ? 2 : !strcmp(v.keyword, "dashed") ? 3 : !strcmp(v.keyword, "wavy") ? 4 : 0;
+  }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_DECORATION_THICKNESS, &v, &ok);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (ok && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
+    char * end = NULL;
+    double value = strtod(v.keyword, &end);
+    if (end && end != v.keyword && !strcmp(end, "px") && value >= 0) {
+      d->thickness_kind = 1;
+      d->thickness = value;
+    }
+    else if (end && end != v.keyword && !strcmp(end, "%") && value >= 0) {
+      d->thickness_kind = 2;
+      d->thickness = value;
+    }
+  }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_UNDERLINE_OFFSET, &v, &ok);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (ok && v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword) {
+    char * end = NULL;
+    double value = strtod(v.keyword, &end);
+    if (end && end != v.keyword && !strcmp(end, "px")) {
+      d->has_offset = true;
+      d->offset_percent = false;
+      d->offset = value;
+    }
+    else if (end && end != v.keyword && !strcmp(end, "%")) {
+      d->has_offset = true;
+      d->offset_percent = true;
+      d->offset = value;
+    }
+  }
+  return GVEC_OK;
+}
+
+typedef struct drect {
+  double x0, x1, center, thickness;
+  const GVEC_Svg_Instance * inst;
+  bool mapped;    ///< `map` takes the line from the frame it was laid out in to the element's space (a vertical frame, a glyph on a path).
+  GSHGEOM_Map map;
+  bool over_text; ///< A line-through: drawn after the text, where an underline and an overline are before it.
+  bool wavy;      ///< A wave of the thickness's amplitude about `center`, not a straight band.
+  bool has_color;
+  GVEC_Svg_Color color;
+} drect;
+
+/* The lines of one decoration piece, as `text-decoration-style` draws them: a band for solid; two, a thickness apart, for double; a row of squares or of
+ * dashes for dotted and dashed; one wave for wavy. The list grows in the arena. */
+#define DECOR_RECT_MAX 20000
+
+static GVEC_Result push_rect(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, drect ** rects, size_t * count, size_t * capacity, const drect * line, double x0, double x1,
+    double center) {
+  if (*count == *capacity) {
+    if (*count >= DECOR_RECT_MAX) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a dotted or dashed text decoration has more pieces than the lowering draws");
+    }
+    size_t grown_capacity = *capacity ? *capacity * 2 : 8;
+    drect * grown = gvec_arena_array(&ctx->arena, grown_capacity, sizeof *grown, sizeof(double));
+    if (!grown) {
+      return GVEC_ERR_OOM;
+    }
+    if (*count) {
+      memcpy(grown, *rects, *count * sizeof *grown);
+    }
+    *rects = grown;
+    *capacity = grown_capacity;
+  }
+  drect * dr = &(*rects)[(*count)++];
+  *dr = *line;
+  dr->x0 = x0;
+  dr->x1 = x1;
+  dr->center = center;
+  return GVEC_OK;
+}
+
+static GVEC_Result push_lines(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, drect ** rects, size_t * count, size_t * capacity, drect * line, int line_style) {
+  const double t = line->thickness;
+  if (!(t > 0)) {
+    return GVEC_OK;
+  }
+  const double x0 = line->x0, x1 = line->x1, c = line->center;
+  switch (line_style) {
+  case 1: /* double: two lines of the thickness, a thickness apart */
+    {
+      GVEC_Result r = push_rect(ctx, e, rects, count, capacity, line, x0, x1, c - t);
+      return r != GVEC_OK ? r : push_rect(ctx, e, rects, count, capacity, line, x0, x1, c + t);
+    }
+  case 2: /* dotted: squares of the thickness, a thickness apart */
+  case 3: { /* dashed: dashes of three thicknesses, a thickness apart */
+    const double dash = line_style == 2 ? t : 3 * t, step = dash + t;
+    if (!((x1 - x0) / step < DECOR_RECT_MAX)) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a dotted or dashed text decoration has more pieces than the lowering draws");
+    }
+    for (double x = x0; x < x1; x += step) {
+      double end = x + dash > x1 ? x1 : x + dash;
+      GVEC_Result r = push_rect(ctx, e, rects, count, capacity, line, x, end, c);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+    return GVEC_OK;
+  }
+  case 4: /* wavy: one wave, drawn as a polygon where the others are bands */
+    line->wavy = true;
+    return push_rect(ctx, e, rects, count, capacity, line, x0, x1, c);
+  default:
+    return push_rect(ctx, e, rects, count, capacity, line, x0, x1, c);
+  }
+}
+
 /* The element a `tref` names (by `href`, or `xlink:href`), or NULL. */
 static const GVEC_Svg_Element * tref_target(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * tref) {
   const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(tref, "href");
@@ -1129,7 +1355,12 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
   if (r != GVEC_OK || t->refused) {
     return r;
   }
-  bool preserve = preserves(e, inherited_preserve);
+  bool preserve = false;
+  r = preserves(ctx, inst, &preserve);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  (void) inherited_preserve;
   size_t start = t->count;
   size_t first_list = t->list_count;
   static const char * const names[4] = {"x", "y", "dx", "dy"};
@@ -1327,6 +1558,11 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
       d->start = start;
       d->end = t->count;
       d->flags = flags;
+      r = decoration_look(ctx, inst, d);
+      if (r != GVEC_OK) {
+        t->refused = true;
+        return r;
+      }
     }
   }
   const GVEC_Svg_Attribute * tl = gvec_svg_element_find_attribute(e, "textLength");
@@ -2032,6 +2268,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       d->start = 0;
       d->end = t.count;
       d->flags = flags;
+      r = decoration_look(ctx, chain[k], d);
     }
     if (r != GVEC_OK) {
       return r;
@@ -2039,7 +2276,14 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     /* The ancestors come before the text's own, whose lines are on top of theirs. */
     (void) outer;
   }
-  if (t.count > 0 && t.chars[t.count - 1].cp == ' ' && !preserves(e, false)) {
+  bool keep_trailing = false;
+  if (t.count > 0 && t.chars[t.count - 1].cp == ' ') {
+    r = preserves(ctx, inst, &keep_trailing);
+    if (r != GVEC_OK) {
+      return r;
+    }
+  }
+  if (t.count > 0 && t.chars[t.count - 1].cp == ' ' && !keep_trailing) {
     t.count--; /* The trailing white space of the text is dropped. */
   }
   r = apply_lists(&t);
@@ -2091,7 +2335,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       }
     }
     else {
-      r = gvec_lw_path_of(ctx, t.tpaths[k].path, true, &geometry, &resource);
+      r = gvec_lw_path_of(ctx, t.tpaths[k].path, NULL, true, &geometry, &resource);
     }
     if (r != GVEC_OK) {
       return r;
@@ -2125,13 +2369,6 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   if (!glyphs) {
     return GVEC_ERR_OOM;
   }
-  typedef struct drect {
-    double x0, x1, center, thickness;
-    const GVEC_Svg_Instance * inst;
-    bool mapped;    ///< `map` takes the line from the frame it was laid out in to the element's space (a vertical frame, a glyph on a path).
-    GSHGEOM_Map map;
-    bool over_text; ///< A line-through: drawn after the text, where an underline and an overline are before it.
-  } drect;
   drect * rects = NULL;
   size_t rect_count = 0, rect_capacity = 0;
   size_t glyph_count = 0;
@@ -2474,24 +2711,26 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
           if (tp_index && glyphs[ga0].hidden) {
             continue;
           }
-          if (rect_count == rect_capacity) {
-            size_t capacity = rect_capacity ? rect_capacity * 2 : 8;
-            drect * grown = gvec_arena_array(&ctx->arena, capacity, sizeof *grown, sizeof(double));
-            if (!grown) {
-              return GVEC_ERR_OOM;
-            }
-            if (rect_count) {
-              memcpy(grown, rects, rect_count * sizeof *grown);
-            }
-            rects = grown;
-            rect_capacity = capacity;
-          }
-          drect * dr = &rects[rect_count++];
+          drect line_template;
+          drect * dr = &line_template;
+          memset(dr, 0, sizeof *dr);
           dr->x0 = glyphs[ga0].cell_x0;
           dr->x1 = glyphs[gb0 - 1].cell_x1;
           double base = glyphs[ga0].base;
           dr->center = kind == 1 ? base - under_position : kind == 2 ? base - (double) line.ascent * sc : base - strike_position;
           dr->thickness = kind == 4 ? strike_thickness : under_thickness;
+          if (dec->thickness_kind == 1) {
+            dr->thickness = dec->thickness;
+          }
+          else if (dec->thickness_kind == 2) {
+            dr->thickness = dec->thickness / 100.0 * ds->size;
+          }
+          if (kind == 1 && dec->has_offset) {
+            /* `text-underline-offset`: from the alphabetic baseline to the top of the underline. */
+            dr->center = base + (dec->offset_percent ? dec->offset / 100.0 * ds->size : dec->offset) + dr->thickness / 2;
+          }
+          dr->has_color = dec->has_color;
+          dr->color = dec->color;
           dr->inst = dec->inst;
           dr->over_text = kind == 4;
           dr->mapped = false;
@@ -2528,6 +2767,10 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
             else if (dr->mapped) {
               dr->map = turn;
             }
+          }
+          r = push_lines(ctx, e, &rects, &rect_count, &rect_capacity, dr, dec->line_style);
+          if (r != GVEC_OK) {
+            return r;
           }
         }
       }
@@ -2575,7 +2818,36 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         }
         gvec_lw_geometry geometry;
         const GSHSCENE_Resource * rect = NULL;
-        if (rects[k].mapped) {
+        if (rects[k].wavy) {
+          /* A wave of the line's thickness, four thicknesses long and one thickness high (above and below its center), as a band of that thickness along it:
+           * the top edge forward and the bottom edge back. */
+          const double thick = rects[k].thickness, wavelength = 4 * thick;
+          size_t steps = (size_t) ceil((rects[k].x1 - rects[k].x0) / (wavelength / 8));
+          steps = steps < 2 ? 2 : steps;
+          if (steps > 8192) {
+            return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a wavy text decoration has more pieces than the lowering draws");
+          }
+          double * polygon = gvec_arena_array(&ctx->arena, 2 * (steps + 1) * 2, sizeof *polygon, sizeof *polygon);
+          if (!polygon) {
+            return GVEC_ERR_OOM;
+          }
+          for (size_t i = 0; i <= steps; i++) {
+            const double x = rects[k].x0 + (rects[k].x1 - rects[k].x0) * (double) i / (double) steps;
+            const double y = rects[k].center + thick * sin(6.283185307179586 * (x - rects[k].x0) / wavelength);
+            const double ys[2] = {y - thick / 2, y + thick / 2};
+            for (int side = 0; side < 2; side++) {
+              const size_t at = side == 0 ? i : 2 * (steps + 1) - 1 - i;
+              GSHGEOM_Point in = {x, ys[side], 0}, moved = in;
+              if (rects[k].mapped && gshgeom_map_apply_point(&rects[k].map, in, &moved) != GSHGEOM_OK) {
+                return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a piece of a text decoration is past the range the waist can carry");
+              }
+              polygon[2 * at] = moved.x;
+              polygon[2 * at + 1] = moved.y;
+            }
+          }
+          r = gvec_lw_points_path(ctx, polygon, 4 * (steps + 1), &geometry, &rect);
+        }
+        else if (rects[k].mapped) {
           /* A piece that is turned is made turned, not mapped, so that its paint stays in the element's space as a glyph's does. */
           const double y0 = rects[k].center - rects[k].thickness / 2, y1 = y0 + rects[k].thickness;
           const double corners[4][2] = {{rects[k].x0, y0}, {rects[k].x1, y0}, {rects[k].x1, y1}, {rects[k].x0, y1}};
@@ -2602,6 +2874,8 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         out->pieces[out->count].run = rect;
         out->pieces[out->count].inst = rects[k].inst;
         out->pieces[out->count].decoration = true;
+        out->pieces[out->count].has_color = rects[k].has_color;
+        out->pieces[out->count].color = rects[k].color;
         out->pieces[out->count].box.empty = 1;
         gshgeom_map_identity(2, &out->pieces[out->count].map);
         out->count++;

@@ -72,6 +72,11 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_used_length(GVEC_Svg_Style_Context * cont
 GVEC_INTERNAL_API bool gvec_svg_length_of_value(const GTEXT_CSS_Value * value, double basis, double * out, bool * out_auto);
 
 /** A colour value: the used colour of `color`, `stop-color` and the other colour properties, and the colour in a paint (C7, C8). */
+/** The color a text spells (`oklch(0.6 0.2 30)`, `color(display-p3 1 0 0)`, `orange`, a system color, `currentcolor`) as the instance reads colors: for a
+ * function of a property that keeps its argument as text (`drop-shadow()`). `*valid` is false, and the result GVEC_OK, when the text is no color. */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_style_color_of_text(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance, const GVEC_Svg_Element * where,
+    const char * text, size_t length, GVEC_Svg_Color * out, bool * valid);
+
 GVEC_INTERNAL_API GVEC_Result gvec_svg_used_color(GVEC_Svg_Style_Context * context, const GVEC_Svg_Instance * instance,
     const GTEXT_CSS_Value * value, const GVEC_Svg_Element * where, GVEC_Svg_Color * out);
 
