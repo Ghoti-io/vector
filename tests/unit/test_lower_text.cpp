@@ -1522,7 +1522,7 @@ TEST(LowerText, TextTransformMapsTheCharactersBeforeTheyAreShaped) {
   Lowered sharp;
   glyphs("style=\"text-transform: uppercase\"", "stra\xC3\x9F" "e", a, sharp);
   EXPECT_EQ(a.glyph_count, (size_t) 7) << "straSSe";
-  // full-width puts the ASCII characters at U+FF01..U+FF5E, which the test face does not have: the text is refused, as any text of characters no face has
+  // full-width puts the ASCII characters at U+FF01..U+FF5E, which the test face does not have: the text is refused, as any text of characters no face has (the exact offset is not testable without a face that has them, and none is in the repository)
   Lowered full;
   EXPECT_FALSE(LowerText(f, "style=\"text-transform: full-width\"", "ab", full));
   EXPECT_NE(full.Refusal(GVEC_LOWER_TEXT), nullptr);
