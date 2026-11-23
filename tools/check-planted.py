@@ -1014,12 +1014,12 @@ PAIRED = [
 PLANTS += [
     # Wrapped text: the lines of an inline-size and of the shapes a text flows into (SVG 2, 11.7).
     ('WR1', 'src/codec/svg/lower/lower_text_wrap.c', "  while (end > from && w->cps[end - 1] == ' ') {\n    end--;\n  }\n  *to = end;", "  while (end > from && w->cps[end - 1] == 'x') {\n    end--;\n  }\n  *to = end;", 'the spaces at the end of a line stay on it'),
-    ('WR2', 'src/codec/svg/lower/lower_text_wrap.c', '    if (span_width(w, from, b) <= width + slack) {', '    if (span_width(w, from, b) < width) {', 'a word that fits exactly is put on the next line'),
+    ('WR2', 'src/codec/svg/lower/lower_text_wrap.c', '    if (span_width(w, from, b, b < w->n && !hard) <= width + slack) {', '    if (span_width(w, from, b, b < w->n && !hard) < width) {', 'a word that fits exactly is put on the next line'),
     ('WR3', 'src/codec/svg/lower/lower_text_wrap.c', '      baseline = band_top + band_above;', '      baseline = band_top + band_below;', 'a baseline is a descent below the top of its line box'),
     ('WR4', 'src/codec/svg/lower/lower_text_wrap.c', '      first->x = line->left + anchor * line->width;', '      first->x = line->left;', 'text-anchor does not put a wrapped line in its rectangle'),
     ('WR5', 'src/codec/svg/lower/lower_text_wrap.c', '    const bool hard = w->t->chars[b - 1].newline;', '    const bool hard = false;', 'a line feed that the white space keeps does not end a line'),
     ('WR6', 'src/codec/svg/lower/lower_text_wrap.c', '    const bool forced = b->t->chars[line->next - 1].newline;', '    const bool forced = false;', 'the stretches after a forced break are filled'),
-    ('WR7', 'src/codec/svg/lower/lower_text_wrap.c', '        cut_fits = span_width(w, from, cut) <= width + slack;', '        cut_fits = true;', 'a word broken to fit is put in a stretch that is narrower than a letter'),
+    ('WR7', 'src/codec/svg/lower/lower_text_wrap.c', '        cut_fits = span_width(w, from, cut, false) <= width + slack;', '        cut_fits = true;', 'a word broken to fit is put in a stretch that is narrower than a letter'),
     ('WR8', 'src/codec/svg/lower/lower_text_wrap.c', '      if (count_lines(&w, mid) <= lines) {', '      if (count_lines(&w, mid) < lines) {', 'balanced text is as wide as the unbalanced'),
     ('WR9', 'src/codec/svg/lower/lower_text_wrap.c', '    if (props.word_break == 1 && w.grapheme[c]', '    if (props.word_break == 0 && w.grapheme[c]', 'break-all breaks every word, and a word is broken without it'),
     ('WR10', 'src/codec/svg/lower/lower_text_wrap.c', '    if (props.word_break == 2 && cjk_letter(w.cps[c - 1]) && cjk_letter(w.cps[c])) {', '    if (props.word_break == 3 && cjk_letter(w.cps[c - 1]) && cjk_letter(w.cps[c])) {', 'keep-all does not keep letters together'),
