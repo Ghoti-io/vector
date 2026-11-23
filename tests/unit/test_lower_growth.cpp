@@ -268,6 +268,19 @@ TEST(LowerGrowth, TheMemoOfTheFaceRulesIsTakenFromTheAllocatorAndEveryFailureIsO
       f.fonts, 7);
 }
 
+TEST(LowerGrowth, AWrappedTextIsLaidOutOrOutOfMemoryAtEveryAllocation) {
+  Fonts f;
+  SweepEveryAllocation(Root("<style>text { inline-size: 120px }</style><text y=\"50\" style=\"white-space: pre-line; overflow-wrap: break-word\">AA BB CC\nDD EEEEEEEEEEEE</text>"), f.fonts, 3);
+}
+
+TEST(LowerGrowth, ATextInAShapeIsLaidOutOrOutOfMemoryAtEveryAllocation) {
+  Fonts f;
+  SweepEveryAllocation(Root("<defs><circle id=\"c\" cx=\"200\" cy=\"100\" r=\"95\"/><rect id=\"s\" x=\"190\" width=\"20\" height=\"200\"/></defs>"
+                            "<text style=\"font-size: 20px; shape-inside: url(#c); shape-subtract: url(#s); shape-padding: 3px; shape-margin: 2px\">A B C D E F G H I J K L M N O P</text>"),
+      f.fonts, 3);
+}
+
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -56,6 +56,7 @@
 #include "../svg_grammar.h"
 #include "../style/svg_style.h"
 #include "lower_internal.h"
+#include "lower_text_types.h"
 
 /* The most characters of one text this lowering shapes. */
 #define TEXT_CHARACTERS_MAX ((size_t) 1 << 20)
@@ -240,7 +241,7 @@ static bool chain_value(const GVEC_Svg_Instance * inst, const char * name, bool 
 
 /* The length a `letter-spacing` or `word-spacing` of the cascade says, in user units: it comes as written (`5`, `1mm`, `5%`, `normal`). A
  * percentage is of the font size. False for what this does not read. */
-static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Value * v, double font_size, bool percent_of_font, double * out) {
+bool gvec_lw_text_spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Value * v, double font_size, bool percent_of_font, double * out) {
   *out = 0;
   if (v->kind == GVEC_SVG_STYLE_LENGTH || v->kind == GVEC_SVG_STYLE_NUMBER) {
     *out = v->number;
@@ -299,161 +300,6 @@ static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Valu
 // The text's content: characters, each with the span it is in and the positions the lists give it
 //-----------------------------------------------------------------------------
 
-#define FEATURE_MAX 40u
-#define VARIATION_MAX 16u ///< How many axes of `font-variation-settings` a span keeps.
-#define AXES_MAX 32u      ///< How many axes of one face a location holds.
-
-/** What a span says about the face and the line: read once for each element of the text. */
-typedef struct tstyle {
-  const GVEC_Svg_Instance * inst;
-  const char ** families;
-  size_t family_count;
-  double size, weight, width, anchor;
-  double letter_spacing, word_spacing;
-  int dominant, alignment; ///< The baseline the text is set on, and the one a span is aligned by (-1: its parent's): see baseline_kind().
-  double shift_length;     ///< The baseline-shifts of the span and its ancestors that are lengths, up positive, in user units.
-  int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
-  int italic;
-  GFNT_Tag language;  ///< The OpenType language system of the text's `lang`, or 0.
-  int tailoring;      ///< The case tailoring of that language (GUNI_LANG_*).
-  int orientation;    ///< `text-orientation` in vertical text: 0 mixed, 1 upright, 2 sideways.
-  double oblique;     ///< The angle of `font-style: oblique`, in degrees (14 when the style gives none).
-  bool optical_none;  ///< `font-optical-sizing: none`: an `opsz` axis stays where the face has it.
-  GFNT_Tag var_tags[VARIATION_MAX]; ///< `font-variation-settings`: the axes it sets, and to what.
-  double var_values[VARIATION_MAX];
-  size_t var_count;
-  bool visible;
-  GFNT_ShapeFeature features[FEATURE_MAX]; ///< The OpenType features the span asks for, as the shaper takes them: kerning, ligatures, caps, numerals, settings.
-  size_t feature_count;
-  double size_adjust; ///< `font-size-adjust`: the x-height to size ratio the text keeps, or 0 for none.
-  int transform;      ///< `text-transform`: 0 none, 1 uppercase, 2 lowercase, 3 capitalize.
-  bool full_width;    ///< `text-transform: full-width`.
-  bool rtl, bidi_override; ///< `direction: rtl`; `unicode-bidi: bidi-override` (or isolate-override): the order is the direction's, not the algorithm's.
-} tstyle;
-
-static bool same_features(const tstyle * a, const tstyle * b) {
-  if (a->feature_count != b->feature_count) {
-    return false;
-  }
-  for (size_t i = 0; i < a->feature_count; i++) {
-    if (a->features[i].tag != b->features[i].tag || a->features[i].value != b->features[i].value) {
-      return false;
-    }
-  }
-  return true;
-}
-
-static bool same_variations(const tstyle * a, const tstyle * b) {
-  if (a->var_count != b->var_count) {
-    return false;
-  }
-  for (size_t i = 0; i < a->var_count; i++) {
-    if (a->var_tags[i] != b->var_tags[i] || a->var_values[i] != b->var_values[i]) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
-static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->orientation != b->orientation || a->language != b->language || a->oblique != b->oblique || a->optical_none != b->optical_none || !same_variations(a, b) || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
-      a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
-    return false;
-  }
-  for (size_t i = 0; i < a->family_count; i++) {
-    if (strcmp(a->families[i], b->families[i]) != 0) {
-      return false;
-    }
-  }
-  return true;
-}
-
-typedef struct tchar {
-  uint32_t cp;
-  uint32_t style;
-  bool has_x, has_y, has_dy, has_rotate;
-  bool chunk_start;   ///< A textPath begins or ends before the character: a new chunk.
-  uint32_t tpath;     ///< One more than the textPath the character is in, or 0.
-  double x, y, dx, dy;
-  double rotate; ///< Degrees, about the glyph's origin.
-} tchar;
-
-/** A list of a span, applied to the characters of its content once the content is known (the tree's order, outer first, so that an inner list wins). */
-typedef struct tlist {
-  size_t start, end;   ///< The characters of the element's content (end is set when the content is known).
-  const GVEC_Svg_Length * items;
-  const double * numbers; ///< Kind 4: the angles.
-  size_t count;
-  int kind; ///< 0 x, 1 y, 2 dx, 3 dy, 4 rotate.
-  const GVEC_Svg_Instance * inst;
-} tlist;
-
-/** A `textLength` of an element: the content from `start` to `end` is to take `length`. */
-typedef struct tlength {
-  size_t start, end;
-  double length;
-  bool glyphs; ///< `lengthAdjust` is `spacingAndGlyphs`: the glyphs are stretched too.
-  const GVEC_Svg_Instance * inst;
-  GSHGEOM_Map map; ///< The stretch, once laid out (spacingAndGlyphs), in the element's space: the layout frame's, turned back when vertical.
-  double factor;   ///< The glyphs' stretch along the line.
-  bool multi;      ///< The content spans several text chunks: its length is shared out over all of them (a first pass measures it).
-  double natural;  ///< The natural width of the whole content, across its chunks.
-  size_t total, seen; ///< The glyphs of the whole content, and how many the chunks so far have had.
-} tlength;
-
-/** A `text-decoration` of an element (or of an ancestor of the text): the lines are drawn across its content, with its own paint and font. */
-typedef struct tdecor {
-  const GVEC_Svg_Instance * inst;
-  uint32_t style;
-  size_t start, end;
-  unsigned flags; ///< 1 underline, 2 overline, 4 line-through.
-  bool has_color;       ///< `text-decoration-color` is a color (not `currentcolor`, which is the fill and stroke of the element that declares the decoration).
-  GVEC_Svg_Color color;
-  int line_style;       ///< `text-decoration-style`: 0 solid, 1 double, 2 dotted, 3 dashed, 4 wavy.
-  int thickness_kind;   ///< `text-decoration-thickness`: 0 auto or from-font (the face's), 1 a length, 2 a percentage of the font size.
-  double thickness;     ///< The length in user units, or the percentage.
-  bool has_offset;      ///< `text-underline-offset` is a length or a percentage.
-  bool offset_percent;
-  double offset;
-} tdecor;
-
-/** A `textPath`: the path it follows, where the text starts on it, and the path measured (by the layout). */
-#define TPATH_MAX 16
-typedef struct ttpath {
-  const GVEC_Svg_Element * path;
-  const GVEC_Svg_Path_Segment * segments; ///< The `path` attribute's own data (SVG 2), which is preferred to `href`; else NULL.
-  size_t segment_count;
-  GSHGEOM_Map map;   ///< The referenced element's own `transform`, which the path is under.
-  bool mapped;
-  bool right;        ///< `side="right"`: the text is on the other side of the path, which it runs along backwards.
-  double offset;
-  bool percent;
-  GSHGEOM_Measured * measured;
-} ttpath;
-
-typedef struct tctx {
-  gvec_lw_ctx * lw;
-  tstyle * styles;
-  size_t style_count, style_capacity;
-  tchar * chars;
-  size_t count, capacity;
-  tlist * lists;
-  size_t list_count, list_capacity;
-  tlength * lengths;
-  size_t length_count, length_capacity;
-  tdecor * decors;
-  size_t decor_count, decor_capacity;
-  bool last_space;
-  bool refused;
-  ttpath tpaths[TPATH_MAX];
-  size_t tpath_count;
-  uint32_t current_tpath;
-  bool pending_break;
-  bool vertical; ///< `writing-mode` of the text is vertical: the layout is made in a frame turned a quarter, and the glyphs are put back.
-} tctx;
-
-#define TEXT_DEPTH_MAX 64
 
 /* The baseline a keyword names: 0 alphabetic, then central, middle, hanging, mathematical, ideographic, before-edge, after-edge; -1 for the keywords
  * that name no baseline of their own (`auto`, `baseline`, `use-script`, `no-change`, `reset-size`) and for what is not one. */
@@ -940,18 +786,46 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     t->refused = true;
     return r;
   }
-  bool good = spacing_of(inst, &v, st->size, false, &st->letter_spacing);
+  bool good = gvec_lw_text_spacing_of(inst, &v, st->size, false, &st->letter_spacing);
   if (good) {
     r = read_style(ctx, inst, GVEC_SVG_PROP_WORD_SPACING, &v, &ok);
     if (r != GVEC_OK || !ok) {
       t->refused = true;
       return r;
     }
-    good = spacing_of(inst, &v, st->size, false, &st->word_spacing);
+    good = gvec_lw_text_spacing_of(inst, &v, st->size, false, &st->word_spacing);
   }
   if (!good) {
     t->refused = true;
     return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_TEXT, "a letter-spacing or word-spacing in a unit this does not read");
+  }
+  /* `line-height`: a number is a factor of the font size, a length or a percentage the height itself; `normal` (and what this does not read) is the face's. */
+  r = read_style(ctx, inst, GVEC_SVG_PROP_LINE_HEIGHT, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->line_normal = true;
+  if (v.kind == GVEC_SVG_STYLE_NUMBER && v.number >= 0) {
+    st->line_normal = false;
+    st->line_height = v.number * st->size;
+  }
+  else if (v.kind == GVEC_SVG_STYLE_LENGTH && v.number >= 0) {
+    st->line_normal = false;
+    st->line_height = v.number;
+  }
+  else if (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword && !gvec_lw_keyword_is(&v, "normal")) {
+    size_t at = 0;
+    double number;
+    if (gvec_svg_scan_number(v.keyword, strlen(v.keyword), &at, &number, NULL) && number >= 0) {
+      if (v.keyword[at] == 0) {
+        st->line_normal = false;
+        st->line_height = number * st->size;
+      }
+      else if (gvec_lw_text_spacing_of(inst, &v, st->size, true, &st->line_height)) {
+        st->line_normal = false;
+      }
+    }
   }
   {
     char dv[32];
@@ -1060,7 +934,7 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
   }
   else if (!gvec_lw_keyword_is(&v, "baseline")) {
     double shift;
-    if (spacing_of(inst, &v, st->size, true, &shift)) {
+    if (gvec_lw_text_spacing_of(inst, &v, st->size, true, &shift)) {
       st->shift_length += shift;
     }
   }
@@ -1070,19 +944,28 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
 
 /* Whether the spaces of an element are kept: its `white-space-collapse` (inherited) is not `collapse`. `xml:space="preserve"` is the author spelling of
  * `preserve-spaces` and `default` of `collapse`, which the user-agent sheet gives; `white-space` is the shorthand of the property and of `text-wrap-mode`. */
-static GVEC_Result preserves(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * keep) {
+static GVEC_Result preserves_mode(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, int * mode) {
   GVEC_Svg_Style_Value v;
   bool usable = false;
-  *keep = false;
+  *mode = 0;
   GVEC_Result r = gvec_lw_read_property(ctx, inst, GVEC_SVG_PROP_WHITE_SPACE_COLLAPSE, GVEC_LOWER_STYLE, &v, &usable);
-  if (r != GVEC_OK || !usable) {
+  if (r != GVEC_OK || !usable || !v.keyword) {
     return r;
   }
-  *keep = v.keyword && strcmp(v.keyword, "collapse") != 0;
+  /* 0 collapse; 1 the spaces are kept and a line feed is a space (`preserve-spaces`, `xml:space`); 2 the spaces are kept and a line feed is a line break
+   * (`preserve`, `break-spaces`); 3 the spaces collapse and a line feed is a line break (`preserve-breaks`). */
+  *mode = strcmp(v.keyword, "collapse") == 0 ? 0 : strcmp(v.keyword, "preserve-breaks") == 0 ? 3 : strcmp(v.keyword, "preserve") == 0 || strcmp(v.keyword, "break-spaces") == 0 ? 2 : 1;
   return GVEC_OK;
 }
 
-static void add_characters_as_written(tctx * t, const char * text, size_t n, bool preserve, uint32_t style);
+static GVEC_Result preserves(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, bool * keep) {
+  int mode;
+  GVEC_Result r = preserves_mode(ctx, inst, &mode);
+  *keep = mode != 0;
+  return r;
+}
+
+static void add_characters_as_written(tctx * t, const char * text, size_t n, int preserve, uint32_t style);
 
 /* Whether the character before is of a word (a letter, a number or a mark): the next letter then does not begin one. */
 static bool word_character(uint32_t cp) {
@@ -1092,7 +975,7 @@ static bool word_character(uint32_t cp) {
 /* The characters of `text` as `text-transform` of the span's style makes them (CSS Text 3, 2.1): the full case mappings, which can make more characters of one
  * (`ß` is `SS`), a letter that begins a word titlecased for `capitalize`, and the ASCII characters of `full-width` as their full-width forms. The transformed
  * text is in the arena; a text it cannot make (too many characters) is left as written. */
-static void add_characters(tctx * t, const char * text, size_t n, bool preserve, uint32_t style) {
+static void add_characters(tctx * t, const char * text, size_t n, int preserve, uint32_t style) {
   const tstyle * st = &t->styles[style];
   if ((st->transform == 0 && !st->full_width) || n == 0) {
     add_characters_as_written(t, text, n, preserve, style);
@@ -1145,7 +1028,7 @@ static void add_characters(tctx * t, const char * text, size_t n, bool preserve,
   add_characters_as_written(t, bytes, length, preserve, style);
 }
 
-static void add_characters_as_written(tctx * t, const char * text, size_t n, bool preserve, uint32_t style) {
+static void add_characters_as_written(tctx * t, const char * text, size_t n, int preserve, uint32_t style) {
   for (size_t i = 0; i < n;) {
     unsigned char c = (unsigned char) text[i];
     uint32_t cp;
@@ -1171,13 +1054,26 @@ static void add_characters_as_written(tctx * t, const char * text, size_t n, boo
     if (cp == '\r') {
       continue;
     }
-    if (cp == '\n' && !preserve) {
+    if (cp == '\n' && preserve == 0) {
       continue; /* A newline is removed unless the white space is preserved (SVG 1.1, 10.15). */
     }
+    bool newline = false;
     if (cp == '\n' || cp == '\t' || cp == ' ') {
+      newline = cp == '\n' && preserve >= 2; /* a line break, where the text is wrapped: a space where it is not */
       cp = ' ';
-      if (!preserve && (t->last_space || t->count == 0)) {
+      if (preserve == 0 && (t->last_space || t->count == 0)) {
         continue; /* The leading white space of the text, and each run after a space (a preserved one too), are dropped. */
+      }
+      if (preserve == 3) {
+        /* `preserve-breaks`: the spaces collapse, and the ones about a line break go (CSS Text 3, 4.1.2). */
+        if (newline) {
+          if (t->count > 0 && t->last_space && !t->chars[t->count - 1].newline) {
+            t->count--;
+          }
+        }
+        else if (t->last_space || t->count == 0) {
+          continue;
+        }
       }
       t->last_space = true;
     }
@@ -1185,6 +1081,7 @@ static void add_characters_as_written(tctx * t, const char * text, size_t n, boo
       t->last_space = false;
     }
     t->chars[t->count].cp = cp;
+    t->chars[t->count].newline = newline;
     t->chars[t->count].style = style;
     t->chars[t->count].has_x = t->chars[t->count].has_y = t->chars[t->count].has_dy = t->chars[t->count].has_rotate = false;
     t->chars[t->count].x = t->chars[t->count].y = t->chars[t->count].dx = t->chars[t->count].dy = t->chars[t->count].rotate = 0;
@@ -1505,7 +1402,7 @@ static bool collect_text(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, si
   return true;
 }
 
-static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited_preserve, size_t depth, const tstyle * parent) {
+static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, int inherited_preserve, size_t depth, const tstyle * parent) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   if (depth > TEXT_DEPTH_MAX) {
@@ -1517,8 +1414,8 @@ static GVEC_Result walk(tctx * t, const GVEC_Svg_Instance * inst, bool inherited
   if (r != GVEC_OK || t->refused) {
     return r;
   }
-  bool preserve = false;
-  r = preserves(ctx, inst, &preserve);
+  int preserve = 0;
+  r = preserves_mode(ctx, inst, &preserve);
   if (r != GVEC_OK) {
     return r;
   }
@@ -1828,34 +1725,6 @@ static bool combining(uint32_t cp) {
       (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) || (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xFE20 && cp <= 0xFE2F);
 }
 
-typedef struct tglyph {
-  const GFNT_Face * face;
-  const GFNT_F2Dot14 * coords; ///< The place of the face in its design space this glyph is drawn at (normalised), or NULL for the face's default.
-  size_t coord_count;
-  uint32_t id;
-  double x, y;
-  double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
-  uint32_t style;
-  double frame[5];  ///< On a path: the point (x, y) and the tangent (x, y) the glyph is put at, and the distance of its middle along the line.
-  bool hidden;      ///< On a path: the glyph's middle is off the path's end, and it is not drawn.
-  double advance;   ///< The advance of the glyph alone, without the spacing after it.
-  double trail;     ///< The spacing after the glyph's cluster (letter-spacing, word-spacing), which its cell holds and the text's box does not (CSS Text: no space at the end).
-  bool sideways;    ///< Vertical text: a glyph of a script that lies on its side.
-  size_t ch;        ///< The character the glyph is of (its cluster's first).
-  double base;      ///< The baseline the glyph sits on.
-  double rotate;    ///< Degrees about the origin of the glyph at the start of the glyph's cluster.
-  size_t pivot;     ///< That glyph's index in the text's glyphs.
-  uint32_t group;   ///< One more than the textLength entry that stretches the glyphs, or 0.
-  double size;      ///< The em size the glyph is drawn at (a small capital is smaller).
-  bool on_path;     ///< The glyph is put on a path: its position is in the element's space already, not in the frame vertical text is laid out in.
-  double path_angle; ///< On a path: the degrees the path turns the glyph by, in addition to its own rotation.
-  bool placed;      ///< On a path: `placed_box` holds the box of the glyph's cell where the path puts it (the cell itself is along the line, unplaced).
-  double placed_box[4]; ///< min x, min y, max x, max y of the turned cell, in the element's space.
-} tglyph;
-
-static bool same_coords(const tglyph * a, const tglyph * b) {
-  return a->coord_count == b->coord_count && (a->coord_count == 0 || a->coords == b->coords || memcmp(a->coords, b->coords, a->coord_count * sizeof a->coords[0]) == 0);
-}
 
 /* Whether a character stands upright in vertical text (Unicode's Vertical_Orientation U and Tu, in the blocks that matter): the ideographs,
  * the kana, Hangul, the full-width forms and the punctuation of the CJK blocks. The others lie on their side. */
@@ -1981,7 +1850,7 @@ static GFNT_Result shape_segment(const GFNT_Face * const * faces, size_t face_co
 
 /* Shape the characters [from, to) of one span: the faces its characters need (the first name of the list that maps each), shaped with fallback;
  * the glyphs are appended to `glyphs` in visual order, positioned from `pen` and with the dx and dy of their characters, which move the pen. */
-static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, size_t to, double * pen_x, double * pen_y, tglyph * glyphs, size_t * glyph_count) {
+GVEC_Result gvec_lw_text_shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, size_t to, double * pen_x, double * pen_y, tglyph * glyphs, size_t * glyph_count) {
   gvec_lw_ctx * ctx = t->lw;
   (void) fonts; /* the faces come through the context, which has the document's own @font-face rules and the fonts */
   const tstyle * st = &t->styles[t->chars[from].style];
@@ -2634,6 +2503,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     char mode[32];
     t.vertical = chain_value(inst, "writing-mode", true, true, mode, sizeof mode) &&
         (strcmp(mode, "tb") == 0 || strcmp(mode, "tb-rl") == 0 || strcmp(mode, "vertical-rl") == 0 || strcmp(mode, "vertical-lr") == 0);
+    t.vertical_lr = t.vertical && strcmp(mode, "vertical-lr") == 0;
   }
   if (t.vertical) {
     /* The text is laid out as if it were horizontal in a frame turned a quarter (down is the line's direction, left is the next one's), and
@@ -2709,6 +2579,18 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   if (!glyphs) {
     return GVEC_ERR_OOM;
   }
+  {
+    /* An `inline-size` makes the text wrapped: its lines are broken before it is laid out, each as a chunk of its own. */
+    bool wrapped;
+    r = gvec_lw_text_wrap(&t, inst, glyphs, glyph_capacity, &wrapped);
+    if (r != GVEC_OK || t.refused) {
+      return r;
+    }
+    if (t.count == 0) {
+      *usable = true;
+      return GVEC_OK;
+    }
+  }
   drect * rects = NULL;
   size_t rect_count = 0, rect_capacity = 0;
   size_t glyph_count = 0;
@@ -2773,7 +2655,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       if (glyph_count + (m - k) * 4 + 4 > glyph_capacity) {
         return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text has more glyphs than the lowering keeps");
       }
-      r = shape_run(&t, fonts, k, m, &pen_x, &pen_y, glyphs, &glyph_count);
+      r = gvec_lw_text_shape_run(&t, fonts, k, m, &pen_x, &pen_y, glyphs, &glyph_count);
       k = m;
     }
     if (r != GVEC_OK) {

@@ -922,7 +922,32 @@ passes its mode on to the mask. A layer of `none` is not there, and a list of no
 position of three or four values, a mask element of another document in a list and more than 16 layers are refused (GVEC_LOWER_MASK), not half drawn. Where a repeated image's tiles meet,
 the edge of one tile does not blend into the next, as it does in Chromium; the size of a `round` tile is not snapped to a whole pixel, as it is there.
 
-**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line.
+**S17 Wrapped text.** A `text` with an `inline-size` (SVG 2, 11.4.1) is laid out in a rectangle that wide (that tall, in vertical text) and as tall as it needs. `inline-size` is a
+property, set by a `style` or a sheet: it has no presentation attribute, and a number with no unit is not a length in CSS, so `inline-size: 300` is not read. A percentage is of the
+viewport's width (its height in vertical text), and `0` and `auto` turn the area off. The first character's `x` and `y` put the area: `x` is its left edge (its right edge in a
+right-to-left text) and `y` the first baseline; the `dx`, `dy`, `rotate` and the other characters' positions are ignored, and so is `textLength` (SVG 2, 11.2.1 and 11.2.2). Text on a path is not
+wrapped. The content is measured as one line, and the lines are broken by UAX 14 as CSS Text 3 tailors it: `line-break` (`loose`, `normal`, `strict`, `anywhere`; `auto` is `normal`),
+`word-break` (`break-all`; `keep-all` keeps the letters of the classes AL, AI, NU and ID, and the Hangul, together), `overflow-wrap` and `word-wrap` (`break-word` and `anywhere` break a word
+that is wider than the line, at least by a cluster so that the text ends; a word that cannot be broken overflows its line), `hyphens: none` (a soft hyphen is a place to break, and
+`hyphens: auto` has no dictionary), `text-wrap-mode: nowrap` and `text-wrap-style: balance` (the narrowest width that takes the lines the full width does; `pretty` and `stable` are `auto`).
+`white-space` is read by its longhands: a line feed is a forced break when `white-space-collapse` is `preserve`, `preserve-breaks` or `break-spaces` and a space otherwise (`xml:space="preserve"` is
+`preserve-spaces`), and `preserve-breaks` collapses the spaces, and the ones about a break go. The spaces at the end of a line hang, and are dropped. Each line box is as tall as the tallest
+span on it and the text element's own strut: a span's box is its face's ascent and descent with the half-leading `line-height` leaves (a number is a multiple of the font size; `normal` is the
+face's ascent, descent and line gap), and the baselines are a line box apart; in vertical text the central baseline is in the middle of the box, and the columns go to the left (to the right
+for `vertical-lr`). Each line is a text chunk of its own, put at the place the area gives it, so `text-anchor` moves it within the rectangle as it would any chunk (`text-align` is not read:
+SVG 2, 11.5, makes its used value the initial one, and no line is justified); each line has its own text decoration. What is wrapped has at most as many glyphs as an unwrapped text.
+
+`shape-inside` (CSS Shapes 2, which SVG 2's wrapped text names) is the area of a text that flows into a shape: one `url()` of a `rect`, `circle`, `ellipse`, `path` or `polygon` of this
+document (under its own `transform`, by its `fill-rule`), or one basic shape (`circle()`, `ellipse()`, `inset()`, `rect()`, `xywh()`, `polygon()`, `path()`, `shape()`) against the
+nearest viewport (a text has no box before it is laid out) unless the value names a box. The shapes are flattened (to about a thousandth of a unit; at most 65536 points) and a line box
+is put where it lies inside the shape at every height of the box: the first at the shape's top, the next each below the last, a box that fits nowhere moved down until it does. The
+`shape-subtract` shapes are taken out of what is left (a line box clear of them at every height of it), `shape-padding` insets the shape and `shape-margin` outsets each subtracted one by
+the distance (as a disc moved along the box: the rounding is sampled, and what is left out of a stretch is never added to it). Where a band has several stretches the text fills them in
+turn from the left (from the right in a right-to-left text), a line feed ending the line box; a piece that does not fit one stretch is put in another or lower. A shape wins over the
+`inline-size`. What does not fit the shape is not drawn, as `flowRoot` of SVG 1.2 did. A reference to nothing, or to what is not a shape, is as if the property were not given; more than one shape in a
+`shape-inside` (the text would flow from one into the next), `outside-shape`, an image and `display` are refused (GVEC_LOWER_TEXT). A line that ends at a soft hyphen shows a hyphen (U+2010 when the face has it, else U+002D) and counts its width; one that does not hides it. Not done: `text-indent`, `tab-size`, `text-align: justify` and hyphenation by dictionary (`hyphens: auto` is `manual`).
+
+**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have.
 `text-overflow` has no effect on SVG text.
 
 **S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The

@@ -64,10 +64,13 @@ font-weight	NUMBER	-		G
 glyph-orientation-horizontal	KEYWORD	-		R	yes	0deg	<angle> | <number>	SVG 1.1 section 10.7.3 (deprecated in SVG 2, still a presentation attribute of the CR's list): `<angle>`, initial 0deg, inherited.
 glyph-orientation-vertical	KEYWORD	-		O	yes	auto	auto | <angle> | <number>	The pin's text is not a definition (the property has no grammar); SVG 2 CR Appendix H: `auto | <angle> | <number>`, initial `auto`, inherited.
 height	LENGTH	H		G				
+hyphens	KEYWORD	-		G				
 image-rendering	KEYWORD	-		O	yes	auto	auto | optimizeSpeed | optimizeQuality | smooth | high-quality | crisp-edges | pixelated	SVG 2 CR, Appendix H: `auto | optimizeSpeed | optimizeQuality`, initial `auto`, inherited; the pin (CSS Images 3) has `auto | smooth | high-quality | crisp-edges | pixelated` and not the SVG keywords, which browsers and the reference renderer still accept, so the value is their union.
+inline-size	KEYWORD	-		G				
 isolation	KEYWORD	-		G				
 letter-spacing	KEYWORD	-		G				
 lighting-color	COLOR	-		G				
+line-break	KEYWORD	-		G				
 line-height	KEYWORD	-		G				
 marker	SHORTHAND	-		G				
 marker-end	REFS	-		G				
@@ -86,6 +89,7 @@ mask-type	KEYWORD	-		G
 mix-blend-mode	KEYWORD	-		G				
 opacity	NUMBER	-		G				
 overflow	KEYWORD	-	overflow-x	G				
+overflow-wrap	KEYWORD	-		G				
 paint-order	KEYWORD	-		G				
 pointer-events	KEYWORD	-		G				
 r	LENGTH	D		G				
@@ -93,7 +97,11 @@ rotate	KEYWORD	-		G
 rx	LENGTH	W		G				
 ry	LENGTH	H		G				
 scale	KEYWORD	-		G				
+shape-inside	REFS	-		G				
+shape-margin	KEYWORD	-		G				
+shape-padding	KEYWORD	-		G				
 shape-rendering	KEYWORD	-		G				
+shape-subtract	REFS	-		R	no	none	none | [ <basic-shape> | <url> ]+	CSS Shapes 2 (the shape-inside of SVG 2's text wrapping): the shapes the text does not flow into. The registry of the pin lacks it; it is not inherited.
 stop-color	COLOR	-		O	no	black	currentcolor | <color>	The pin gives the property no initial value (and does not say whether it inherits); SVG 2 CR Appendix H: initial `black`, not inherited.
 stop-opacity	NUMBER	-		O	no	1	<opacity-value>	The pin gives the property no initial value; SVG 2 CR Appendix H: initial 1, not inherited.
 stroke	PAINT	-		O	yes	none	none | <color> | <url> [ none | <color> ]? | context-fill | context-stroke	As fill.
@@ -114,6 +122,8 @@ text-overflow	KEYWORD	-		G
 text-rendering	KEYWORD	-		G				
 text-transform	KEYWORD	-		G				
 text-underline-offset	KEYWORD	-		G				
+text-wrap-mode	KEYWORD	-		G				
+text-wrap-style	KEYWORD	-		G				
 transform	TRANSFORM	-		G				
 transform-box	KEYWORD	-		G				
 transform-origin	KEYWORD	-		G				
@@ -124,7 +134,9 @@ visibility	KEYWORD	-		G
 white-space	KEYWORD	-		G				
 white-space-collapse	KEYWORD	-		G				
 width	LENGTH	W		G				
+word-break	KEYWORD	-		G				
 word-spacing	KEYWORD	-		G				
+word-wrap	KEYWORD	-	overflow-wrap	G				
 writing-mode	KEYWORD	-		G				
 x	LENGTH	W		G				
 y	LENGTH	H		G				

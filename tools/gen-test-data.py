@@ -380,6 +380,9 @@ def lower_corpus():
               "repeating-linear-gradient(to top right, black 0 3px, white 3px 6px) intersect, url(#m), none, url(a.png) 10% 90% / contain no-repeat exclude, conic-gradient(black, white)")
     c["mask-layers"] = seed('<svg %s width="40" height="30"><mask id="m"><rect width="9" height="9" fill="white"/></mask><rect width="40" height="30" stroke="black" stroke-width="3" style="%s"/></svg>' % (ns, layers))
     c["mask-tiles"] = seed('<svg %s width="400" height="300"><rect width="400" height="300" style="mask: linear-gradient(black, white) 0 0 / 1px 1px repeat"/></svg>' % ns)
+    c["text-wrap"] = seed('<svg %s width="200" height="100" font-family="sans-serif" font-size="20"><style>text { inline-size: 90px }</style><text y="20" style="white-space: pre-line; overflow-wrap: break-word">AA BB CC\nDD EEEEEEEEEE</text></svg>' % ns)
+    c["text-flow"] = seed('<svg %s width="200" height="100" font-family="sans-serif" font-size="12"><defs><circle id="c" cx="50" cy="50" r="45"/><rect id="s" x="40" width="20" height="100"/></defs><text style="shape-inside: url(#c); shape-subtract: url(#s); shape-padding: 3px; shape-margin: 2px">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</text></svg>' % ns)
+    c["text-flow-basic"] = seed('<svg %s width="200" height="100" font-family="sans-serif" font-size="12"><text style="shape-inside: polygon(0 0, 100px 0, 50px 90px); writing-mode: vertical-rl">AAA BBB CCC DDD EEE FFF</text></svg>' % ns)
     c["not-svg"] = seed(b"this is not xml")
     c["short"] = bytes([0x0f])
     return c
@@ -414,6 +417,12 @@ def test_font(bold, variable=False):
         else:
             glyphs.append(box(50, 0, advance - 50, 400 + (cp % 8) * 50))
             widths.append(advance)
+    ideograph = None
+    if not variable:
+        # one ideograph (U+4EBA, of the line-break class ID), after the ASCII range, so that the breaks between letters of that class can be tested
+        ideograph = len(glyphs)
+        glyphs.append(box(50, 0, advance - 50, 700))
+        widths.append(advance)
     glyf = b""
     loca = [0]
     for g in glyphs:
@@ -426,7 +435,7 @@ def test_font(bold, variable=False):
     hmtx = b"".join(struct.pack(">Hh", w, 50) for w in widths)
     loca_t = b"".join(struct.pack(">H", o // 2) for o in loca)
     # cmap format 4: one segment for the ASCII range, one for the end mark.
-    seg = [(first, last, (1 - first) & 0xFFFF), (0xFFFF, 0xFFFF, 1)]
+    seg = [(first, last, (1 - first) & 0xFFFF)] + ([(0x4EBA, 0x4EBA, (ideograph - 0x4EBA) & 0xFFFF)] if ideograph else []) + [(0xFFFF, 0xFFFF, 1)]
     sub = struct.pack(">HHHHHHH", 4, 16 + 8 * len(seg), 0, 2 * len(seg), 4, 1, 0)
     sub += b"".join(struct.pack(">H", e) for _, e, _ in seg) + struct.pack(">H", 0)
     sub += b"".join(struct.pack(">H", b) for b, _, _ in seg)
