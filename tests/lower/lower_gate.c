@@ -373,8 +373,14 @@ int main(int argc, char ** argv) {
     snprintf(dir, sizeof dir, "%s/../../data/fonts", golden_dir);
     const char * dirs[1] = {dir};
     static const GFNT_FontAlias aliases[] = {{"sans-serif", "Vector Test"}, {"serif", "Vector Test"}};
-    if (gfnt_fontset_scan(dirs, 1, aliases, 2, NULL, &font_set, NULL) == GFNT_OK && gvec_fonts_new(font_set, NULL, &g_fonts) != GVEC_OK) {
+    GFNT_Result scanned = gfnt_fontset_scan(dirs, 1, aliases, 2, NULL, &font_set, NULL);
+    if (scanned != GFNT_OK) {
+      /* A gate whose text silently draws nothing would still compare equal to a golden made the same way. */
+      fprintf(stderr, "lower_gate: the test fonts in %s could not be scanned (%d)\n", dir, (int) scanned);
+    }
+    else if (gvec_fonts_new(font_set, NULL, &g_fonts) != GVEC_OK) {
       g_fonts = NULL;
+      fprintf(stderr, "lower_gate: the test fonts in %s could not be made into a font source\n", dir);
     }
   }
   for (int i = first; i < argc; i++) {
