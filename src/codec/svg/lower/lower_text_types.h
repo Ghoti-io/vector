@@ -26,8 +26,10 @@
  * area (SVG 2, 11.7) before that layout runs.
  */
 
-#ifndef GHOTI_IO_VECTOR_LOWER_TEXT_TYPES_H
-#define GHOTI_IO_VECTOR_LOWER_TEXT_TYPES_H
+#ifndef GHOTI_IO_GVEC_SVG_LOWER_TEXT_TYPES_H
+#define GHOTI_IO_GVEC_SVG_LOWER_TEXT_TYPES_H
+
+#include <ghoti.io/vector/macros.h>
 
 #include <stdbool.h>
 #include <stddef.h>
