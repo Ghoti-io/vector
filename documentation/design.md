@@ -894,8 +894,12 @@ stretches is not used). The glyph runs carry the location, so one face at two lo
 The faces of a text are put in the order of the `font-family` list, the fonts' own fallback last, which is the order the shaper prefers them in; they used to be in the order the text first
 needed them, so that a text beginning with a character only a later family had took the other characters from that family.
 
-**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `lang` does not select a language system or a case tailoring. `text-orientation` is not read: Latin in
-vertical text always lies on its side. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
+**S13 `text-orientation`.** In vertical text a span's characters stand upright or lie on their side as `text-orientation` says: `mixed` (the initial value) by the script of each
+character (the ideographs, kana, Hangul and full-width forms upright, the rest on their side), `upright` for all of them (shaped on the vertical axis, with vertical advances), `sideways`
+for none. The SVG 1.1 `glyph-orientation-vertical` of `0` and `90` is read as `upright` and `sideways` when `text-orientation` says `mixed` (CSS Writing Modes 3, 5.1). In horizontal
+text it changes nothing.
+
+**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `lang` does not select a language system or a case tailoring. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
 gradient is refused (GVEC_LOWER_MASK), not half drawn. The root's `background` is not painted: a document's transparent background is the caller's to composite, and the references ignore it.
 `text-overflow` has no effect on SVG text.
 

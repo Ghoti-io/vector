@@ -313,6 +313,7 @@ typedef struct tstyle {
   double shift_length;     ///< The baseline-shifts of the span and its ancestors that are lengths, up positive, in user units.
   int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
   int italic;
+  int orientation;    ///< `text-orientation` in vertical text: 0 mixed, 1 upright, 2 sideways.
   double oblique;     ///< The angle of `font-style: oblique`, in degrees (14 when the style gives none).
   bool optical_none;  ///< `font-optical-sizing: none`: an `opsz` axis stays where the face has it.
   GFNT_Tag var_tags[VARIATION_MAX]; ///< `font-variation-settings`: the axes it sets, and to what.
@@ -353,7 +354,7 @@ static bool same_variations(const tstyle * a, const tstyle * b) {
 
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->oblique != b->oblique || a->optical_none != b->optical_none || !same_variations(a, b) || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->orientation != b->orientation || a->oblique != b->oblique || a->optical_none != b->optical_none || !same_variations(a, b) || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
       a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
     return false;
   }
@@ -854,6 +855,20 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     return r;
   }
   st->italic = gvec_lw_keyword_is(&v, "italic") ? 1 : (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword && strncmp(v.keyword, "oblique", 7) == 0) ? 2 : 0;
+  r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_ORIENTATION, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->orientation = gvec_lw_keyword_is(&v, "upright") ? 1 : gvec_lw_keyword_is(&v, "sideways") || gvec_lw_keyword_is(&v, "sideways-right") ? 2 : 0;
+  if (st->orientation == 0) {
+    /* The SVG 1.1 property that became it: 0 is upright and 90 lies the glyphs on their side (CSS Writing Modes 3, 5.1). */
+    char legacy[32];
+    double angle;
+    if (chain_value(inst, "glyph-orientation-vertical", true, true, legacy, sizeof legacy) && leading_number(legacy, &angle)) {
+      st->orientation = angle == 0 ? 1 : angle == 90 ? 2 : 0;
+    }
+  }
   st->oblique = 14;
   if (st->italic == 2 && v.keyword[7] == ' ') {
     double angle;
@@ -1802,10 +1817,15 @@ static bool same_coords(const tglyph * a, const tglyph * b) {
 
 /* Whether a character stands upright in vertical text (Unicode's Vertical_Orientation U and Tu, in the blocks that matter): the ideographs,
  * the kana, Hangul, the full-width forms and the punctuation of the CJK blocks. The others lie on their side. */
-static bool upright(uint32_t cp) {
+static bool upright_default(uint32_t cp) {
   return (cp >= 0x1100 && cp <= 0x11FF) || (cp >= 0x2E80 && cp <= 0x9FFF) || (cp >= 0xA960 && cp <= 0xA97F) || (cp >= 0xAC00 && cp <= 0xD7FF) ||
       (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFE10 && cp <= 0xFE1F) || (cp >= 0xFE30 && cp <= 0xFE6F) || (cp >= 0xFF00 && cp < 0xFF61) || (cp >= 0xFFE0 && cp <= 0xFFEF) ||
       (cp >= 0x20000 && cp <= 0x3FFFF) || (cp >= 0x1B000 && cp <= 0x1B16F);
+}
+
+/* Whether a character stands upright in a span's vertical text: as `text-orientation` says, or by its script when it says `mixed`. */
+static bool upright(const tstyle * st, uint32_t cp) {
+  return st->orientation == 1 ? true : st->orientation == 2 ? false : upright_default(cp);
 }
 
 /* The script a character belongs to for the stretches of an override: 1 Arabic, 2 Hebrew, 3 Devanagari, 0 for any other (it joins its neighbor). */
@@ -2059,10 +2079,10 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     /* Upright characters are shaped on the vertical axis (mode 2), the others lie on their side and are shaped as horizontal text (mode 0). */
     size_t start = 0;
     for (size_t i = 1; i <= count; i++) {
-      if (i == count || upright(cps[i]) != upright(cps[start])) {
+      if (i == count || upright(st, cps[i]) != upright(st, cps[start])) {
         SEG(seg_count, 0) = start;
         SEG(seg_count, 1) = i - start;
-        SEG(seg_count, 2) = upright(cps[start]) ? 2 : 0;
+        SEG(seg_count, 2) = upright(st, cps[start]) ? 2 : 0;
         seg_count++;
         start = i;
       }

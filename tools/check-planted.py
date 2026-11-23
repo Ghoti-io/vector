@@ -864,6 +864,9 @@ PLANTS = [
     ('VA8', 'src/codec/svg/lower/lower_text.c', '    while (j > 0 && ranks[j - 1] > rk) {', '    while (j > 0 && ranks[j - 1] > rk && false) {', 'the faces are not in the order of the families'),
     ('VA9', 'src/codec/svg/lower/lower_text.c', '      r = gvec_fonts_scene_face(fonts, glyphs[g].face, glyphs[g].coord_count ? &variation : NULL,', '      r = gvec_fonts_scene_face(fonts, glyphs[g].face, glyphs[g].coord_count && false ? &variation : NULL,', 'the glyphs are drawn at the default instance'),
     ('VA11', 'src/codec/svg/lower/lower_text.c', '\n    if (!close || close - tag != 4) {', '\n    if (!close || close - tag != 3) {', 'an axis tag is three letters'),
+    ('TO1', 'src/codec/svg/lower/lower_text.c', '  return st->orientation == 1 ? true : st->orientation == 2 ? false : upright_default(cp);', '  return st->orientation == 1 ? false : st->orientation == 2 ? false : upright_default(cp);', 'text-orientation: upright lies the letters on their side'),
+    ('TO2', 'src/codec/svg/lower/lower_text.c', '      st->orientation = angle == 0 ? 1 : angle == 90 ? 2 : 0;', '      st->orientation = angle == 0 ? 2 : angle == 90 ? 2 : 0;', 'glyph-orientation-vertical: 0 lies the letters on their side'),
+    ('TO3', 'src/codec/svg/lower/lower_text.c', '  st->orientation = gvec_lw_keyword_is(&v, "upright") ? 1 :', '  st->orientation = gvec_lw_keyword_is(&v, "upright") ? 0 :', 'text-orientation: upright is not read'),
     ('VA10', 'src/codec/svg/lower/lower_text.c', '  if (!moved) {\n    out->count = 0;', '  if (false) {\n    out->count = 0;', 'the default instance is not recognised'),
 ]
 

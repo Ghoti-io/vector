@@ -1724,3 +1724,27 @@ TEST(LowerText, MoreVariationSettingsThanTheLoweringKeepsIsRefused) {
   EXPECT_FALSE(LowerText(f, "font-family=\"Vector Test Variable\" style=\"font-variation-settings: " + settings + "\"", "AA", l));
   EXPECT_NE(l.Refusal(GVEC_LOWER_LIMIT), nullptr);
 }
+
+TEST(LowerText, TextOrientationStandsLatinLettersUprightInVerticalText) {
+  Fonts f;
+  Lowered mixed, upright, sideways, legacy, legacy_sideways, horizontal;
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\"", "AB", mixed));
+  EXPECT_EQ(mixed.Items(), (size_t) 2) << "mixed: the letters lie on their side, one turned run each";
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\" style=\"text-orientation: upright\"", "AB", upright));
+  ASSERT_EQ(upright.Items(), (size_t) 1) << "upright: the letters are not turned, so they are one run";
+  GSHSCENE_Glyph_Run run;
+  ASSERT_TRUE(ReadRun(upright, 0, run));
+  ASSERT_EQ(run.glyph_count, (size_t) 2);
+  EXPECT_GT(run.glyphs[1].y, run.glyphs[0].y) << "down the line";
+  EXPECT_EQ(run.glyphs[0].x, run.glyphs[1].x);
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\" style=\"text-orientation: sideways\"", "AB", sideways));
+  EXPECT_EQ(sideways.Items(), (size_t) 2);
+  // the SVG 1.1 property: 0 is upright, 90 is on the side
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\" glyph-orientation-vertical=\"0\"", "AB", legacy));
+  EXPECT_EQ(legacy.Items(), (size_t) 1);
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" writing-mode=\"tb\" glyph-orientation-vertical=\"90\"", "AB", legacy_sideways));
+  EXPECT_EQ(legacy_sideways.Items(), (size_t) 2);
+  // in horizontal text it changes nothing
+  ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" style=\"text-orientation: upright\"", "AB", horizontal));
+  EXPECT_EQ(horizontal.Items(), (size_t) 1);
+}

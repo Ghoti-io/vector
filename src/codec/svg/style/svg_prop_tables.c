@@ -108,6 +108,7 @@ const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {
   {"text-decoration-color", GVEC_SVG_PT_COLOR, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-decoration-color", NULL, NULL, NULL},
   {"text-decoration-style", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-decoration-style", NULL, NULL, NULL},
   {"text-decoration-thickness", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-decoration-thickness", NULL, NULL, NULL},
+  {"text-orientation", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-orientation", NULL, NULL, NULL},
   {"text-overflow", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-overflow", NULL, NULL, NULL},
   {"text-rendering", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-rendering", NULL, NULL, NULL},
   {"text-transform", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "text-transform", NULL, NULL, NULL},

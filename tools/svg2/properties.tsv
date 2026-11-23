@@ -99,6 +99,7 @@ text-decoration	KEYWORD	-	text-decoration-line	G
 text-decoration-color	COLOR	-		G				
 text-decoration-style	KEYWORD	-		G				
 text-decoration-thickness	KEYWORD	-		G				
+text-orientation	KEYWORD	-		G				
 text-overflow	KEYWORD	-		G				
 text-rendering	KEYWORD	-		G				
 text-transform	KEYWORD	-		G				

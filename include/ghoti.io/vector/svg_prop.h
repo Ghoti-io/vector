@@ -118,25 +118,26 @@ typedef enum GVEC_Svg_Property {
   GVEC_SVG_PROP_TEXT_DECORATION_COLOR = 76, ///< `text-decoration-color`
   GVEC_SVG_PROP_TEXT_DECORATION_STYLE = 77, ///< `text-decoration-style`
   GVEC_SVG_PROP_TEXT_DECORATION_THICKNESS = 78, ///< `text-decoration-thickness`
-  GVEC_SVG_PROP_TEXT_OVERFLOW = 79, ///< `text-overflow`
-  GVEC_SVG_PROP_TEXT_RENDERING = 80, ///< `text-rendering`
-  GVEC_SVG_PROP_TEXT_TRANSFORM = 81, ///< `text-transform`
-  GVEC_SVG_PROP_TEXT_UNDERLINE_OFFSET = 82, ///< `text-underline-offset`
-  GVEC_SVG_PROP_TRANSFORM = 83, ///< `transform`
-  GVEC_SVG_PROP_TRANSFORM_BOX = 84, ///< `transform-box`
-  GVEC_SVG_PROP_TRANSFORM_ORIGIN = 85, ///< `transform-origin`
-  GVEC_SVG_PROP_TRANSLATE = 86, ///< `translate`
-  GVEC_SVG_PROP_UNICODE_BIDI = 87, ///< `unicode-bidi`
-  GVEC_SVG_PROP_VECTOR_EFFECT = 88, ///< `vector-effect`
-  GVEC_SVG_PROP_VISIBILITY = 89, ///< `visibility`
-  GVEC_SVG_PROP_WHITE_SPACE = 90, ///< `white-space`
-  GVEC_SVG_PROP_WHITE_SPACE_COLLAPSE = 91, ///< `white-space-collapse`
-  GVEC_SVG_PROP_WIDTH = 92, ///< `width`
-  GVEC_SVG_PROP_WORD_SPACING = 93, ///< `word-spacing`
-  GVEC_SVG_PROP_WRITING_MODE = 94, ///< `writing-mode`
-  GVEC_SVG_PROP_X = 95, ///< `x`
-  GVEC_SVG_PROP_Y = 96, ///< `y`
-  GVEC_SVG_PROP_COUNT = 97 ///< Closes the enum.
+  GVEC_SVG_PROP_TEXT_ORIENTATION = 79, ///< `text-orientation`
+  GVEC_SVG_PROP_TEXT_OVERFLOW = 80, ///< `text-overflow`
+  GVEC_SVG_PROP_TEXT_RENDERING = 81, ///< `text-rendering`
+  GVEC_SVG_PROP_TEXT_TRANSFORM = 82, ///< `text-transform`
+  GVEC_SVG_PROP_TEXT_UNDERLINE_OFFSET = 83, ///< `text-underline-offset`
+  GVEC_SVG_PROP_TRANSFORM = 84, ///< `transform`
+  GVEC_SVG_PROP_TRANSFORM_BOX = 85, ///< `transform-box`
+  GVEC_SVG_PROP_TRANSFORM_ORIGIN = 86, ///< `transform-origin`
+  GVEC_SVG_PROP_TRANSLATE = 87, ///< `translate`
+  GVEC_SVG_PROP_UNICODE_BIDI = 88, ///< `unicode-bidi`
+  GVEC_SVG_PROP_VECTOR_EFFECT = 89, ///< `vector-effect`
+  GVEC_SVG_PROP_VISIBILITY = 90, ///< `visibility`
+  GVEC_SVG_PROP_WHITE_SPACE = 91, ///< `white-space`
+  GVEC_SVG_PROP_WHITE_SPACE_COLLAPSE = 92, ///< `white-space-collapse`
+  GVEC_SVG_PROP_WIDTH = 93, ///< `width`
+  GVEC_SVG_PROP_WORD_SPACING = 94, ///< `word-spacing`
+  GVEC_SVG_PROP_WRITING_MODE = 95, ///< `writing-mode`
+  GVEC_SVG_PROP_X = 96, ///< `x`
+  GVEC_SVG_PROP_Y = 97, ///< `y`
+  GVEC_SVG_PROP_COUNT = 98 ///< Closes the enum.
 } GVEC_Svg_Property;
 
 /** The CSS name of a property; NULL for a value that is not one. Static. */
