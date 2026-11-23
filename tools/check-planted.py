@@ -867,6 +867,14 @@ PLANTS = [
     ('TO1', 'src/codec/svg/lower/lower_text.c', '  return st->orientation == 1 ? true : st->orientation == 2 ? false : upright_default(cp);', '  return st->orientation == 1 ? false : st->orientation == 2 ? false : upright_default(cp);', 'text-orientation: upright lies the letters on their side'),
     ('TO2', 'src/codec/svg/lower/lower_text.c', '      st->orientation = angle == 0 ? 1 : angle == 90 ? 2 : 0;', '      st->orientation = angle == 0 ? 2 : angle == 90 ? 2 : 0;', 'glyph-orientation-vertical: 0 lies the letters on their side'),
     ('TO3', 'src/codec/svg/lower/lower_text.c', '  st->orientation = gvec_lw_keyword_is(&v, "upright") ? 1 :', '  st->orientation = gvec_lw_keyword_is(&v, "upright") ? 0 :', 'text-orientation: upright is not read'),
+    ('LG1', 'src/codec/svg/lower/lower_text.c', '  shape.language = st->language;', '  shape.language = 0;', 'the lang does not reach the shaper'),
+    ('LG2', 'src/codec/svg/lower/lower_text.c', 'guni_to_lower_at(source, count, i, (GUNI_CaseTailoring) st->tailoring,', 'guni_to_lower_at(source, count, i, GUNI_LANG_NONE,', 'a lowercase is not tailored by the language'),
+    ('LG3', 'src/codec/svg/lower/lower_text.c', 'guni_to_upper_at(source, count, i, (GUNI_CaseTailoring) st->tailoring,', 'guni_to_upper_at(source, count, i, GUNI_LANG_NONE,', 'an uppercase is not tailored by the language'),
+    ('LG4', 'src/codec/svg/lower/lower_text.c', 'find_attribute(e, "xml:lang");', 'find_attribute(e, "xml:lng");', 'xml:lang is not read'),
+    ('LG5', 'src/codec/svg/lower/lower_text.c', '    if (!tag || n == 0) {\n      return;', '    if (!tag || n == 0) {\n      continue;', 'an empty lang does not end the search'),
+    ('LG6', 'src/codec/svg/lower/lower_text.c', 'strncasecmp(tag, "az", 2) == 0', 'strncasecmp(tag, "aq", 2) == 0', 'Azerbaijani is not tailored'),
+    ('LG7', 'src/codec/svg/lower/lower_text.c', '    else if (k == 2 && strncasecmp(tag, "lt", 2) == 0) {', '    else if (k == 2 && strncasecmp(tag, "lq", 2) == 0) {', 'Lithuanian is not tailored'),
+    ('LG8', 'src/codec/svg/lower/lower_text.c', 'cps[i], st->language, &face, &found, &rank);', 'cps[i], 0, &face, &found, &rank);', 'the lang does not reach the face matching'),
     ('VA10', 'src/codec/svg/lower/lower_text.c', '  if (!moved) {\n    out->count = 0;', '  if (false) {\n    out->count = 0;', 'the default instance is not recognised'),
 ]
 

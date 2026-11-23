@@ -1748,3 +1748,54 @@ TEST(LowerText, TextOrientationStandsLatinLettersUprightInVerticalText) {
   ASSERT_TRUE(LowerText(f, "x=\"50\" y=\"10\" style=\"text-orientation: upright\"", "AB", horizontal));
   EXPECT_EQ(horizontal.Items(), (size_t) 1);
 }
+
+// The variable face of the test font turns `A` into `B` (glyph 1 into glyph 2) under the Turkish language system of the Latin script.
+TEST(LowerText, TheLangOfATextSelectsTheLanguageSystemOfTheShaper) {
+  Fonts f;
+  Lowered plain, turkish, english, inherited, overridden, xml, empty;
+  GSHSCENE_Glyph_Run a, b;
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\"", "A", plain));
+  ASSERT_TRUE(ReadRun(plain, 0, a));
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\" lang=\"tr\"", "A", turkish));
+  ASSERT_TRUE(ReadRun(turkish, 0, b));
+  EXPECT_NE(a.glyphs[0].id, b.glyphs[0].id) << "`locl` of TRK";
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\" lang=\"en-US\"", "A", english));
+  ASSERT_TRUE(ReadRun(english, 0, b));
+  EXPECT_EQ(a.glyphs[0].id, b.glyphs[0].id);
+  // the language is inherited from the root, an element's own replaces it, and `xml:lang` is read too
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\"", "A", inherited, "lang=\"tr-TR\""));
+  ASSERT_TRUE(ReadRun(inherited, 0, b));
+  EXPECT_NE(a.glyphs[0].id, b.glyphs[0].id);
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\" lang=\"en\"", "A", overridden, "lang=\"tr\""));
+  ASSERT_TRUE(ReadRun(overridden, 0, b));
+  EXPECT_EQ(a.glyphs[0].id, b.glyphs[0].id);
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\" xml:lang=\"tr\"", "A", xml, "xmlns:xml=\"http://www.w3.org/XML/1998/namespace\""));
+  ASSERT_TRUE(ReadRun(xml, 0, b));
+  EXPECT_NE(a.glyphs[0].id, b.glyphs[0].id);
+  // an empty lang says there is none, whatever an ancestor says
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\" lang=\"\"", "A", empty, "lang=\"tr\""));
+  ASSERT_TRUE(ReadRun(empty, 0, b));
+  EXPECT_EQ(a.glyphs[0].id, b.glyphs[0].id);
+}
+
+TEST(LowerText, TheLangOfATextTailorsItsCaseMappings) {
+  Fonts f;
+  Lowered l;
+  // the dotless i of Turkish is not in the test face: a text that needs it is refused, as any text of a character no face has
+  EXPECT_TRUE(LowerText(f, "lang=\"en\" style=\"text-transform: lowercase\"", "I", l));
+  EXPECT_FALSE(LowerText(f, "lang=\"tr\" style=\"text-transform: lowercase\"", "I", l));
+  EXPECT_FALSE(LowerText(f, "lang=\"az-Latn\" style=\"text-transform: uppercase\"", "i", l)) << "the dotted capital I";
+  EXPECT_TRUE(LowerText(f, "lang=\"fr\" style=\"text-transform: uppercase\"", "i", l));
+}
+
+TEST(LowerText, LithuanianKeepsTheDotOfALowercaseIBeforeAnAccent) {
+  Fonts f;
+  Lowered en, lt;
+  GSHSCENE_Glyph_Run a, b;
+  // I followed by a combining acute: Lithuanian lowercases it to i, the combining dot above, and the acute (SpecialCasing.txt, More_Above)
+  ASSERT_TRUE(LowerText(f, "lang=\"en\" style=\"text-transform: lowercase\"", "I\xCC\x81", en));
+  ASSERT_TRUE(LowerText(f, "lang=\"lt\" style=\"text-transform: lowercase\"", "I\xCC\x81", lt));
+  ASSERT_TRUE(ReadRun(en, 0, a));
+  ASSERT_TRUE(ReadRun(lt, 0, b));
+  EXPECT_EQ(b.glyph_count, a.glyph_count + 1);
+}

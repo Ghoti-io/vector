@@ -38,6 +38,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include <ghoti.io/font/bitmap.h>
 #include <ghoti.io/unicode/case.h>
@@ -313,6 +314,8 @@ typedef struct tstyle {
   double shift_length;     ///< The baseline-shifts of the span and its ancestors that are lengths, up positive, in user units.
   int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
   int italic;
+  GFNT_Tag language;  ///< The OpenType language system of the text's `lang`, or 0.
+  int tailoring;      ///< The case tailoring of that language (GUNI_LANG_*).
   int orientation;    ///< `text-orientation` in vertical text: 0 mixed, 1 upright, 2 sideways.
   double oblique;     ///< The angle of `font-style: oblique`, in degrees (14 when the style gives none).
   bool optical_none;  ///< `font-optical-sizing: none`: an `opsz` axis stays where the face has it.
@@ -354,7 +357,7 @@ static bool same_variations(const tstyle * a, const tstyle * b) {
 
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->orientation != b->orientation || a->oblique != b->oblique || a->optical_none != b->optical_none || !same_variations(a, b) || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->orientation != b->orientation || a->language != b->language || a->oblique != b->oblique || a->optical_none != b->optical_none || !same_variations(a, b) || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
       a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
     return false;
   }
@@ -817,6 +820,44 @@ static GVEC_Result read_variations(tctx * t, const GVEC_Svg_Instance * inst, tst
   return GVEC_OK;
 }
 
+/* The language of a span: `xml:lang`, or `lang`, of the nearest element that has either (an empty one says there is none), as the OpenType language
+ * system the shaper and the face matching take, and the case tailoring its rules give (Turkish and Azerbaijani, Lithuanian). */
+static void read_language(const GVEC_Svg_Instance * inst, tstyle * st) {
+  st->language = 0;
+  st->tailoring = GUNI_LANG_NONE;
+  for (; inst; inst = gvec_svg_instance_parent(inst)) {
+    const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
+    const GVEC_Svg_Attribute * a = gvec_svg_element_find_attribute(e, "xml:lang");
+    if (!a) {
+      a = gvec_svg_element_find_attribute(e, "lang");
+    }
+    if (!a) {
+      continue;
+    }
+    size_t n = 0;
+    const char * tag = gvec_svg_attribute_raw(a, &n);
+    if (!tag || n == 0) {
+      return;
+    }
+    GFNT_Tag script = 0, language = 0;
+    bool found = false;
+    if (gfnt_language_from_bcp47(tag, n, &script, &language, &found) == GFNT_OK && found) {
+      st->language = language;
+    }
+    size_t k = 0;
+    while (k < n && tag[k] != '-' && tag[k] != '_') {
+      k++;
+    }
+    if (k == 2 && (strncasecmp(tag, "tr", 2) == 0 || strncasecmp(tag, "az", 2) == 0)) {
+      st->tailoring = GUNI_LANG_TURKIC;
+    }
+    else if (k == 2 && strncasecmp(tag, "lt", 2) == 0) {
+      st->tailoring = GUNI_LANG_LITHUANIAN;
+    }
+    return;
+  }
+}
+
 static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const tstyle * parent, uint32_t * index) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -855,6 +896,13 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     return r;
   }
   st->italic = gvec_lw_keyword_is(&v, "italic") ? 1 : (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword && strncmp(v.keyword, "oblique", 7) == 0) ? 2 : 0;
+  st->oblique = 14;
+  if (st->italic == 2 && v.keyword[7] == ' ') {
+    double angle;
+    if (leading_number(v.keyword + 8, &angle)) {
+      st->oblique = angle < -90 ? -90 : angle > 90 ? 90 : angle;
+    }
+  }
   r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_ORIENTATION, &v, &ok);
   if (r != GVEC_OK || !ok) {
     t->refused = true;
@@ -867,13 +915,6 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     double angle;
     if (chain_value(inst, "glyph-orientation-vertical", true, true, legacy, sizeof legacy) && leading_number(legacy, &angle)) {
       st->orientation = angle == 0 ? 1 : angle == 90 ? 2 : 0;
-    }
-  }
-  st->oblique = 14;
-  if (st->italic == 2 && v.keyword[7] == ' ') {
-    double angle;
-    if (leading_number(v.keyword + 8, &angle)) {
-      st->oblique = angle < -90 ? -90 : angle > 90 ? 90 : angle;
     }
   }
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_STRETCH, &v, &ok);
@@ -960,6 +1001,7 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
   if (r != GVEC_OK || t->refused) {
     return r;
   }
+  read_language(inst, st);
   r = read_variations(t, inst, st);
   if (r != GVEC_OK || t->refused) {
     return r;
@@ -1076,13 +1118,13 @@ static void add_characters(tctx * t, const char * text, size_t n, bool preserve,
     size_t mapped_length = 1;
     mapped[0] = source[i];
     if (st->transform == 1) {
-      (void) guni_to_upper_at(source, count, i, GUNI_LANG_NONE, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
+      (void) guni_to_upper_at(source, count, i, (GUNI_CaseTailoring) st->tailoring, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
     }
     else if (st->transform == 2) {
-      (void) guni_to_lower_at(source, count, i, GUNI_LANG_NONE, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
+      (void) guni_to_lower_at(source, count, i, (GUNI_CaseTailoring) st->tailoring, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
     }
     else if (st->transform == 3 && !word_character(i ? source[i - 1] : previous) && word_character(source[i])) {
-      (void) guni_to_title_at(source, count, i, GUNI_LANG_NONE, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
+      (void) guni_to_title_at(source, count, i, (GUNI_CaseTailoring) st->tailoring, mapped, GUNI_CASE_MAX_EXPANSION, &mapped_length);
     }
     if (mapped_length == 0 || mapped_length > GUNI_CASE_MAX_EXPANSION) {
       mapped_length = 1;
@@ -1971,7 +2013,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       rank = previous_rank;
     }
     else {
-      GVEC_Result r = gvec_lw_font_face(ctx, st->families, st->family_count, st->weight, st->italic, st->width, cps[i], &face, &found, &rank);
+      GVEC_Result r = gvec_lw_font_face(ctx, st->families, st->family_count, st->weight, st->italic, st->width, cps[i], st->language, &face, &found, &rank);
       if (r != GVEC_OK) {
         return r;
       }
@@ -2065,6 +2107,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       }
     }
   }
+  shape.language = st->language;
   shape.features = feature_count ? features : NULL;
   shape.feature_count = feature_count;
   /* The stretches shaped on their own, in the order they are drawn: the whole text (the bidirectional algorithm orders it), or, under an
@@ -2966,7 +3009,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       const tstyle * ds = &t.styles[dec->style];
       const GFNT_Face * face = NULL;
       bool found = false;
-      r = gvec_lw_font_face(ctx, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, &face, &found, NULL);
+      r = gvec_lw_font_face(ctx, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, ds->language, &face, &found, NULL);
       if (r != GVEC_OK) {
         return r;
       }

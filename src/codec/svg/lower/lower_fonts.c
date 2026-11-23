@@ -30,6 +30,7 @@
 
 #include <ctype.h>
 #include <string.h>
+#include <ghoti.io/font/shape.h>
 
 #include <ghoti.io/cutil/mutex.h>
 #include <ghoti.io/font/blob.h>
@@ -140,7 +141,7 @@ static bool record_family_is(const GFNT_FontRecord * r, const GFNT_FontRecord * 
 
 /* The face of the caller's fonts that is of the family `name`, in the style of `query`, and maps `codepoint` (the fonts' fallback is asked for that family only). The
  * lock is held by the caller. */
-static GVEC_Result set_family_face(GVEC_Fonts * f, const char * name, GFNT_FontQuery * query, uint32_t codepoint, const GFNT_Face ** out, bool * found) {
+static GVEC_Result set_family_face(GVEC_Fonts * f, const char * name, GFNT_FontQuery * query, uint32_t codepoint, GFNT_Tag language, const GFNT_Face ** out, bool * found) {
   GFNT_FontMatch match;
   bool has = false;
   query->families = &name;
@@ -159,7 +160,7 @@ static GVEC_Result set_family_face(GVEC_Fonts * f, const char * name, GFNT_FontQ
   const GFNT_FontRecord * matched = gfnt_fontset_at(f->set, match.index);
   const char * real = matched ? matched->family : name;
   query->families = &real;
-  r = gfnt_fontfallback_face(f->fallback, codepoint, 0, 0, query, &face, &index, &mapped, NULL);
+  r = gfnt_fontfallback_face(f->fallback, codepoint, gfnt_shape_script_of(&codepoint, 1), language, query, &face, &index, &mapped, NULL);
   if (r == GFNT_ERR_OOM) {
     return GVEC_ERR_OOM;
   }
@@ -172,7 +173,7 @@ static GVEC_Result set_family_face(GVEC_Fonts * f, const char * name, GFNT_FontQ
 
 /* The fonts' own face for a character no family of the span gave: the `serif` family of the set (the usual initial `font-family`), then any face that maps it, as the
  * fallback of the font library chooses; the style asked for is kept. The lock is held by the caller. */
-static GVEC_Result set_fallback_face(GVEC_Fonts * f, GFNT_FontQuery * query, uint32_t codepoint, const GFNT_Face ** out, bool * found) {
+static GVEC_Result set_fallback_face(GVEC_Fonts * f, GFNT_FontQuery * query, uint32_t codepoint, GFNT_Tag language, const GFNT_Face ** out, bool * found) {
   const char * generic = "serif";
   GFNT_FontMatch match;
   bool has = false;
@@ -185,7 +186,7 @@ static GVEC_Result set_fallback_face(GVEC_Fonts * f, GFNT_FontQuery * query, uin
     size_t index = 0;
     bool mapped = false;
     query->families = &real;
-    if (gfnt_fontfallback_face(f->fallback, codepoint, 0, 0, query, &face, &index, &mapped, NULL) == GFNT_OK && mapped &&
+    if (gfnt_fontfallback_face(f->fallback, codepoint, gfnt_shape_script_of(&codepoint, 1), language, query, &face, &index, &mapped, NULL) == GFNT_OK && mapped &&
         record_family_is(gfnt_fontset_at(f->set, index), matched)) {
       *out = face;
       *found = true;
@@ -196,7 +197,7 @@ static GVEC_Result set_fallback_face(GVEC_Fonts * f, GFNT_FontQuery * query, uin
   bool mapped = false;
   query->families = NULL;
   query->family_count = 0;
-  GFNT_Result r = gfnt_fontfallback_face(f->fallback, codepoint, 0, 0, query, &face, NULL, &mapped, NULL);
+  GFNT_Result r = gfnt_fontfallback_face(f->fallback, codepoint, gfnt_shape_script_of(&codepoint, 1), language, query, &face, NULL, &mapped, NULL);
   if (r == GFNT_ERR_OOM) {
     return GVEC_ERR_OOM;
   }
@@ -215,7 +216,7 @@ static void query_of(GFNT_FontQuery * query, double weight, int italic, double w
 }
 
 GVEC_Result gvec_fonts_face(const GVEC_Fonts * constant, const char * const * families, size_t family_count, double weight, int italic, double width,
-    uint32_t codepoint, const GFNT_Face ** out, bool * found) {
+    uint32_t codepoint, GFNT_Tag language, const GFNT_Face ** out, bool * found) {
   GVEC_Fonts * f = (GVEC_Fonts *) constant; /* The lock and the open faces are the fonts' own state, not the caller's. */
   *found = false;
   *out = NULL;
@@ -224,10 +225,10 @@ GVEC_Result gvec_fonts_face(const GVEC_Fonts * constant, const char * const * fa
   GFNT_FontQuery query;
   query_of(&query, weight, italic, width);
   for (size_t i = 0; i < family_count && !*found && result == GVEC_OK; i++) {
-    result = set_family_face(f, families[i], &query, codepoint, out, found);
+    result = set_family_face(f, families[i], &query, codepoint, language, out, found);
   }
   if (result == GVEC_OK && !*found) {
-    result = set_fallback_face(f, &query, codepoint, out, found);
+    result = set_fallback_face(f, &query, codepoint, language, out, found);
   }
   GCU_MUTEX_UNLOCK(f->lock);
   return result;
@@ -475,7 +476,7 @@ static GVEC_Result document_face(gvec_lw_ctx * ctx, const char * name, double we
 }
 
 GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, size_t family_count, double weight, int italic, double width, uint32_t codepoint,
-    const GFNT_Face ** out, bool * found, size_t * rank) {
+    GFNT_Tag language, const GFNT_Face ** out, bool * found, size_t * rank) {
   const GVEC_Fonts * fonts = ctx->options->fonts;
   GVEC_Fonts * f = (GVEC_Fonts *) fonts;
   *found = false;
@@ -494,7 +495,7 @@ GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, 
       break;
     }
     GCU_MUTEX_LOCK(f->lock);
-    r = set_family_face(f, families[i], &query, codepoint, out, found);
+    r = set_family_face(f, families[i], &query, codepoint, language, out, found);
     GCU_MUTEX_UNLOCK(f->lock);
     if (r != GVEC_OK) {
       return r;
@@ -509,7 +510,7 @@ GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, 
   if (rank) {
     *rank = family_count; /* the fonts' own fallback comes after every family named */
   }
-  return gvec_fonts_face(fonts, NULL, 0, weight, italic, width, codepoint, out, found);
+  return gvec_fonts_face(fonts, NULL, 0, weight, italic, width, codepoint, language, out, found);
 }
 
 GVEC_Result gvec_fonts_scene_face(const GVEC_Fonts * constant, const GFNT_Face * face, const GFNT_Variation * variation, GSHSCENE_Store * store, const GSHSCENE_Resource ** out) {

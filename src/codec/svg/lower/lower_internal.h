@@ -409,7 +409,7 @@ typedef enum gvec_lw_clip_state {
  * The face is owned by the fonts and is open for their life.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_fonts_face(const GVEC_Fonts * fonts, const char * const * families, size_t family_count, double weight,
-    int italic, double width, uint32_t codepoint, const GFNT_Face ** out, bool * found);
+    int italic, double width, uint32_t codepoint, GFNT_Tag language, const GFNT_Face ** out, bool * found);
 
 /** The face resource of `face` in `store`, with a reference the caller releases (the scene font is made on first use and kept). */
 struct gvec_svg_font_hooks;
@@ -423,7 +423,7 @@ GVEC_INTERNAL_API void gvec_fonts_style_hooks(const GVEC_Fonts * fonts, struct g
  * kept by `ctx->options->fonts` as long as they are.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, size_t family_count, double weight, int italic, double width,
-    uint32_t codepoint, const GFNT_Face ** out, bool * found, size_t * rank);
+    uint32_t codepoint, GFNT_Tag language, const GFNT_Face ** out, bool * found, size_t * rank);
 
 GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
     const GVEC_Fonts * fonts, const GFNT_Face * face, const GFNT_Variation * variation, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);

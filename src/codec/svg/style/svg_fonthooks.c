@@ -91,7 +91,7 @@ static const GFNT_Face * query_face(const GVEC_Fonts * fonts, const GTEXT_CSS_Fo
   }
   const GFNT_Face * face = NULL;
   bool found = false;
-  GVEC_Result r = count ? gvec_fonts_face(fonts, names, count, q->weight, q->italic ? 1 : 0, q->width_percent, cp, &face, &found) : GVEC_OK;
+  GVEC_Result r = count ? gvec_fonts_face(fonts, names, count, q->weight, q->italic ? 1 : 0, q->width_percent, cp, 0, &face, &found) : GVEC_OK;
   if (buffer) {
     gtext_css_serialize_buffer_free(NULL, buffer);
   }

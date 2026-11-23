@@ -899,7 +899,13 @@ character (the ideographs, kana, Hangul and full-width forms upright, the rest o
 for none. The SVG 1.1 `glyph-orientation-vertical` of `0` and `90` is read as `upright` and `sideways` when `text-orientation` says `mixed` (CSS Writing Modes 3, 5.1). In horizontal
 text it changes nothing.
 
-**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `lang` does not select a language system or a case tailoring. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
+**S14 `lang`.** The language of a span is the `xml:lang` (else the `lang`) of the nearest element that has either; an empty one says there is none. It is read as a BCP 47 tag and
+gives three things: the OpenType language system the text is shaped in (so `locl` and the language systems of a font's other features apply), the language the fallback is asked
+for a face in (a Han character in a text marked Japanese can be drawn from the face the caller's fonts prefer for Japanese), and the case tailoring of `text-transform`
+(Turkish and Azerbaijani's dotted and dotless i, Lithuanian's retained dot above). Two spans of different languages are not shaped together. A tag that names no language the font
+library knows leaves the text in the script's default language system.
+
+**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
 gradient is refused (GVEC_LOWER_MASK), not half drawn. The root's `background` is not painted: a document's transparent background is the caller's to composite, and the references ignore it.
 `text-overflow` has no effect on SVG text.
 

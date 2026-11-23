@@ -457,6 +457,19 @@ def test_font(bold, variable=False):
         for tag, lo, default, hi, name_id in axes:
             fvar += tag + fixed(lo) + fixed(default) + fixed(hi) + struct.pack(">HH", 0, name_id)
         tables[b"fvar"] = fvar
+        # GSUB: under the Latin script's `TRK ` language system the feature `locl` turns `A` (glyph 1) into `B` (glyph 2), so a language is read off a glyph
+        coverage = struct.pack(">HHH", 1, 1, 1)
+        subst = struct.pack(">HHHH", 2, 8, 1, 2) + coverage
+        lookup = struct.pack(">HHHH", 1, 0, 1, 8) + subst
+        lookup_list = struct.pack(">HH", 1, 4) + lookup
+        feature = struct.pack(">HHH", 0, 1, 0)
+        feature_list = struct.pack(">H", 1) + b"locl" + struct.pack(">H", 8) + feature
+        langsys = struct.pack(">HHHH", 0, 0xFFFF, 1, 0)
+        script = struct.pack(">HH", 0, 1) + b"TRK " + struct.pack(">H", 10) + langsys
+        script_list = struct.pack(">H", 1) + b"latn" + struct.pack(">H", 8) + script
+        header = 10
+        gsub = struct.pack(">HHHHH", 1, 0, header, header + len(script_list), header + len(script_list) + len(feature_list)) + script_list + feature_list + lookup_list
+        tables[b"GSUB"] = gsub
         # gvar: each box's right edge (points 1 and 2) and its advance (the second phantom point, 5) move with each axis, by the units of
         # (axis, side of the default, units at the end of the axis); the sides are -1 (toward the minimum) and +1
         moves = [(0, 1, 200), (0, -1, -100), (1, 1, 100), (1, -1, -50), (2, -1, -400), (2, 1, 400), (3, 1, 300), (4, -1, -100)]
