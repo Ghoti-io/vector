@@ -2366,6 +2366,63 @@ static GVEC_Result refuse_stylesheets(gvec_lw_ctx * ctx) {
   return e ? gvec_lw_refuse(ctx, e, GVEC_LOWER_STYLESHEET, why) : GVEC_OK;
 }
 
+/* The `background-color` of the root element is the color of the viewport (CSS Backgrounds 3, 2.11.2: the root's background is the canvas's; the browsers
+ * paint a standalone document's so): a fill of the whole viewport, under everything the document draws. Other elements' backgrounds are boxes of CSS
+ * layout, which SVG does not have, and `background-image` is not painted. */
+static GVEC_Result lw_background(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * root, const GVEC_Svg_Element * root_element) {
+  GVEC_Svg_Style_Value v;
+  bool usable;
+  GVEC_Result r = gvec_lw_read_property(ctx, root, GVEC_SVG_PROP_BACKGROUND_COLOR, GVEC_LOWER_STYLE, &v, &usable);
+  if (r != GVEC_OK || !usable) {
+    return r;
+  }
+  const GVEC_Svg_Color * c = v.kind == GVEC_SVG_STYLE_COLOR ? &v.color : v.kind == GVEC_SVG_STYLE_PAINT ? &v.paint.color : NULL;
+  if (!c) {
+    return GVEC_OK;
+  }
+  GVEC_Svg_Paint given;
+  memset(&given, 0, sizeof given);
+  given.kind = GVEC_SVG_PAINT_COLOR;
+  given.color = *c;
+  GSHSCENE_Paint paint;
+  gvec_lw_paint_decision decision;
+  r = gvec_lw_paint_of(ctx, root, &given, 1.0, &paint, &decision);
+  if (r != GVEC_OK || decision != GVEC_LW_PAINT_DRAW) {
+    return r;
+  }
+  double width, height;
+  r = gvec_lw_root_size(ctx, &width, &height);
+  if (r != GVEC_OK || !(width > 0) || !(height > 0) || width - width != 0 || height - height != 0) {
+    return r;
+  }
+  gvec_lw_geometry geometry;
+  const GSHSCENE_Resource * rect = NULL;
+  r = gvec_lw_rect_path(ctx, 0, 0, width, height, &geometry, &rect);
+  if (r != GVEC_OK || geometry != GVEC_LW_GEOMETRY_PATH) {
+    return r;
+  }
+  GSHGEOM_Map identity;
+  if (gshgeom_map_identity(2, &identity) != GSHGEOM_OK) {
+    return GVEC_ERR_INTERNAL;
+  }
+  gvec_lw_node * node = gvec_lw_new_node(ctx, GVEC_LW_FILL);
+  if (!node) {
+    return GVEC_ERR_OOM;
+  }
+  node->map = identity;
+  node->resource = rect;
+  node->rule = GSHGEOM_FILL_NONZERO;
+  node->paint = paint;
+  node->crisp = true;
+  node->content = true;
+  node->key = gvec_lw_key(root_element->key, ctx->chain, GVEC_LW_ROLE_BACKGROUND);
+  node->site = gvec_lw_new_site(ctx, root_element, node->key);
+  if (node->site == GVEC_LW_NO_SITE) {
+    return GVEC_ERR_OOM;
+  }
+  return gvec_lw_attach(ctx, &ctx->root, node);
+}
+
 GVEC_Result gvec_lw_walk(gvec_lw_ctx * ctx) {
   GVEC_Result sheets = refuse_stylesheets(ctx);
   if (sheets != GVEC_OK) {
@@ -2395,6 +2452,10 @@ GVEC_Result gvec_lw_walk(gvec_lw_ctx * ctx) {
           root_element->node.column, root_element->node.offset, root_element->name,
           "a negative width or height of the root disables the rendering of the document");
     }
+  }
+  GVEC_Result background = lw_background(ctx, root, root_element);
+  if (background != GVEC_OK) {
+    return background;
   }
   return lw_element(ctx, root, &identity, &ctx->root);
 }

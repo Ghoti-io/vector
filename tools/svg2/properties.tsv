@@ -21,6 +21,8 @@
 #
 # An override is reported: gvec_svg_style_context_override_at() lists them, and documentation/properties.md quotes the note.
 alignment-baseline	KEYWORD	-		G				
+background	SHORTHAND	-		G				
+background-color	COLOR	-		G				
 baseline-shift	KEYWORD	-		G				
 clip-path	REFS	-		G				
 clip-rule	KEYWORD	-		G				

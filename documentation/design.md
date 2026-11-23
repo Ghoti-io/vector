@@ -905,8 +905,12 @@ for a face in (a Han character in a text marked Japanese can be drawn from the f
 (Turkish and Azerbaijani's dotted and dotless i, Lithuanian's retained dot above). Two spans of different languages are not shaped together. A tag that names no language the font
 library knows leaves the text in the script's default language system.
 
+**S15 The root's background.** The `background-color` of the root element (the `background` shorthand sets it; `background-image` is not painted) is a fill of the whole viewport,
+the first item of the drawing, in the viewport's own space whatever the `viewBox` says. Browsers paint it for a standalone document, as the canvas's background (CSS Backgrounds 3, 2.11.2);
+a document that says nothing, or `transparent`, adds nothing, so the caller still composites it as it likes. The background of any other element is a box of CSS layout, which SVG does not have.
+
 **Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
-gradient is refused (GVEC_LOWER_MASK), not half drawn. The root's `background` is not painted: a document's transparent background is the caller's to composite, and the references ignore it.
+gradient is refused (GVEC_LOWER_MASK), not half drawn.
 `text-overflow` has no effect on SVG text.
 
 **S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The

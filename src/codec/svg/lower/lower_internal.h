@@ -83,7 +83,8 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_MASK_REGION, ///< The clip to a mask's region, in the mask's picture.
   GVEC_LW_ROLE_MASK_CONTAINER, ///< The hidden group that holds a mask's picture.
   GVEC_LW_ROLE_FILTER, ///< The group a `filter` makes around an element's content.
-  GVEC_LW_ROLE_FILTER_IMAGE ///< The hidden group that holds the picture of an element an feImage draws (lower_filter.c).
+  GVEC_LW_ROLE_FILTER_IMAGE, ///< The hidden group that holds the picture of an element an feImage draws (lower_filter.c).
+  GVEC_LW_ROLE_BACKGROUND   ///< The fill of the viewport with the root's `background-color`.
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;

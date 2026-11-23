@@ -875,6 +875,10 @@ PLANTS = [
     ('LG6', 'src/codec/svg/lower/lower_text.c', 'strncasecmp(tag, "az", 2) == 0', 'strncasecmp(tag, "aq", 2) == 0', 'Azerbaijani is not tailored'),
     ('LG7', 'src/codec/svg/lower/lower_text.c', '    else if (k == 2 && strncasecmp(tag, "lt", 2) == 0) {', '    else if (k == 2 && strncasecmp(tag, "lq", 2) == 0) {', 'Lithuanian is not tailored'),
     ('LG8', 'src/codec/svg/lower/lower_text.c', 'cps[i], st->language, &face, &found, &rank);', 'cps[i], 0, &face, &found, &rank);', 'the lang does not reach the face matching'),
+    ('BG1', 'src/codec/svg/lower/lower_walk.c', '  if (r != GVEC_OK || decision != GVEC_LW_PAINT_DRAW) {\n    return r;\n  }\n  double width, height;', '  if (r != GVEC_OK) {\n    return r;\n  }\n  double width, height;', 'a transparent background is filled'),
+    ('BG2', 'src/codec/svg/lower/lower_walk.c', '  r = gvec_lw_rect_path(ctx, 0, 0, width, height, &geometry, &rect);', '  r = gvec_lw_rect_path(ctx, 0, 0, width / 2, height, &geometry, &rect);', 'the background fills half the viewport'),
+    ('BG3', 'src/codec/svg/lower/lower_walk.c', '  node->crisp = true;\n  node->content = true;\n  node->key = gvec_lw_key(root_element->key, ctx->chain, GVEC_LW_ROLE_BACKGROUND);', '  node->crisp = true;\n  node->content = false;\n  node->key = gvec_lw_key(root_element->key, ctx->chain, GVEC_LW_ROLE_BACKGROUND);', 'the background is not content'),
+    ('BG4', 'src/codec/svg/lower/lower_walk.c', '  GVEC_Result background = lw_background(ctx, root, root_element);', '  GVEC_Result background = GVEC_OK; (void) lw_background;', 'the background is never drawn'),
     ('VA10', 'src/codec/svg/lower/lower_text.c', '  if (!moved) {\n    out->count = 0;', '  if (false) {\n    out->count = 0;', 'the default instance is not recognised'),
 ]
 

@@ -30,6 +30,8 @@
 
 const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {
   {"alignment-baseline", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "alignment-baseline", NULL, NULL, NULL},
+  {"background", GVEC_SVG_PT_SHORTHAND, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "background", NULL, NULL, NULL},
+  {"background-color", GVEC_SVG_PT_COLOR, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "background-color", NULL, NULL, NULL},
   {"baseline-shift", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "baseline-shift", NULL, NULL, NULL},
   {"clip-path", GVEC_SVG_PT_REFS, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "clip-path", NULL, NULL, NULL},
   {"clip-rule", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "clip-rule", NULL, NULL, NULL},
