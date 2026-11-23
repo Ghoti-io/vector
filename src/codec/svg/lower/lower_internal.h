@@ -423,10 +423,10 @@ GVEC_INTERNAL_API void gvec_fonts_style_hooks(const GVEC_Fonts * fonts, struct g
  * kept by `ctx->options->fonts` as long as they are.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, size_t family_count, double weight, int italic, double width,
-    uint32_t codepoint, const GFNT_Face ** out, bool * found);
+    uint32_t codepoint, const GFNT_Face ** out, bool * found, size_t * rank);
 
 GVEC_INTERNAL_API GVEC_Result gvec_fonts_scene_face(
-    const GVEC_Fonts * fonts, const GFNT_Face * face, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);
+    const GVEC_Fonts * fonts, const GFNT_Face * face, const GFNT_Variation * variation, GSHSCENE_Store * store, const GSHSCENE_Resource ** out);
 
 /** The glyph runs of a `text` element, each in the element's own user space (the glyphs carry their absolute positions, y down). */
 typedef struct gvec_lw_text_piece {

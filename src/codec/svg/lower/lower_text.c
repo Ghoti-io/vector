@@ -50,6 +50,7 @@
 #include <ghoti.io/shape-geometry/arc.h>
 #include <ghoti.io/shape-geometry/map.h>
 #include <ghoti.io/font/shape.h>
+#include <ghoti.io/font/variation.h>
 
 #include "../svg_grammar.h"
 #include "../style/svg_style.h"
@@ -298,6 +299,8 @@ static bool spacing_of(const GVEC_Svg_Instance * inst, const GVEC_Svg_Style_Valu
 //-----------------------------------------------------------------------------
 
 #define FEATURE_MAX 40u
+#define VARIATION_MAX 16u ///< How many axes of `font-variation-settings` a span keeps.
+#define AXES_MAX 32u      ///< How many axes of one face a location holds.
 
 /** What a span says about the face and the line: read once for each element of the text. */
 typedef struct tstyle {
@@ -310,6 +313,11 @@ typedef struct tstyle {
   double shift_length;     ///< The baseline-shifts of the span and its ancestors that are lengths, up positive, in user units.
   int shift_sub, shift_super; ///< How many of them are `sub` and `super`: the face says how far each is.
   int italic;
+  double oblique;     ///< The angle of `font-style: oblique`, in degrees (14 when the style gives none).
+  bool optical_none;  ///< `font-optical-sizing: none`: an `opsz` axis stays where the face has it.
+  GFNT_Tag var_tags[VARIATION_MAX]; ///< `font-variation-settings`: the axes it sets, and to what.
+  double var_values[VARIATION_MAX];
+  size_t var_count;
   bool visible;
   GFNT_ShapeFeature features[FEATURE_MAX]; ///< The OpenType features the span asks for, as the shaper takes them: kerning, ligatures, caps, numerals, settings.
   size_t feature_count;
@@ -331,9 +339,21 @@ static bool same_features(const tstyle * a, const tstyle * b) {
   return true;
 }
 
+static bool same_variations(const tstyle * a, const tstyle * b) {
+  if (a->var_count != b->var_count) {
+    return false;
+  }
+  for (size_t i = 0; i < a->var_count; i++) {
+    if (a->var_tags[i] != b->var_tags[i] || a->var_values[i] != b->var_values[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /* Whether two spans ask for one font: their characters are shaped together, so kerning and joining run across the boundary. */
 static bool same_font(const tstyle * a, const tstyle * b) {
-  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
+  if (a->size != b->size || a->weight != b->weight || a->width != b->width || a->italic != b->italic || a->oblique != b->oblique || a->optical_none != b->optical_none || !same_variations(a, b) || a->family_count != b->family_count || !same_features(a, b) || a->size_adjust != b->size_adjust || a->rtl != b->rtl || a->bidi_override != b->bidi_override || a->dominant != b->dominant || a->alignment != b->alignment ||
       a->shift_length != b->shift_length || a->shift_sub != b->shift_sub || a->shift_super != b->shift_super) {
     return false;
   }
@@ -731,6 +751,71 @@ static GVEC_Result read_features(tctx * t, const GVEC_Svg_Instance * inst, tstyl
   return GVEC_OK;
 }
 
+/* The axes a span sets by hand: `font-variation-settings` (`"wght" 650, "wdth" 80`, or `normal`), and `font-optical-sizing`. The axes the font
+ * matching sets (weight, width, slant, italic, and the optical size from the font's size) are the face's, found when its location is made. */
+static GVEC_Result read_variations(tctx * t, const GVEC_Svg_Instance * inst, tstyle * st) {
+  gvec_lw_ctx * ctx = t->lw;
+  st->var_count = 0;
+  st->optical_none = false;
+  GVEC_Svg_Style_Value v;
+  bool ok;
+  GVEC_Result r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_OPTICAL_SIZING, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->optical_none = gvec_lw_keyword_is(&v, "none");
+  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_VARIATION_SETTINGS, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  if (v.kind != GVEC_SVG_STYLE_KEYWORD || !v.keyword || strcmp(v.keyword, "normal") == 0) {
+    return GVEC_OK;
+  }
+  const char * p = v.keyword;
+  while (*p) {
+    while (*p == ' ' || *p == ',') {
+      p++;
+    }
+    if (*p != '"' && *p != '\'') {
+      break;
+    }
+    const char quote = *p;
+    const char * tag = p + 1;
+    const char * close = strchr(tag, quote);
+    if (!close || close - tag != 4) {
+      break;
+    }
+    p = close + 1;
+    while (*p == ' ') {
+      p++;
+    }
+    double value;
+    if (!leading_number(p, &value)) {
+      break; /* A setting with no number is not one (CSS Fonts 4: the declaration is invalid). */
+    }
+    while (*p && *p != ',' && *p != ' ') {
+      p++;
+    }
+    const GFNT_Tag wanted = GFNT_TAG(tag[0], tag[1], tag[2], tag[3]);
+    size_t k = 0;
+    while (k < st->var_count && st->var_tags[k] != wanted) {
+      k++; /* A later setting of an axis replaces an earlier one. */
+    }
+    if (k == st->var_count) {
+      if (st->var_count == VARIATION_MAX) {
+        t->refused = true;
+        return gvec_lw_refuse(ctx, gvec_svg_instance_element(inst), GVEC_LOWER_LIMIT, "the text sets more font variations than the lowering keeps");
+      }
+      st->var_count++;
+    }
+    st->var_tags[k] = wanted;
+    st->var_values[k] = value;
+  }
+  return GVEC_OK;
+}
+
 static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const tstyle * parent, uint32_t * index) {
   gvec_lw_ctx * ctx = t->lw;
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
@@ -769,6 +854,13 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
     return r;
   }
   st->italic = gvec_lw_keyword_is(&v, "italic") ? 1 : (v.kind == GVEC_SVG_STYLE_KEYWORD && v.keyword && strncmp(v.keyword, "oblique", 7) == 0) ? 2 : 0;
+  st->oblique = 14;
+  if (st->italic == 2 && v.keyword[7] == ' ') {
+    double angle;
+    if (leading_number(v.keyword + 8, &angle)) {
+      st->oblique = angle < -90 ? -90 : angle > 90 ? 90 : angle;
+    }
+  }
   r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_STRETCH, &v, &ok);
   if (r != GVEC_OK || !ok) {
     t->refused = true;
@@ -850,6 +942,10 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
   /* The features: `font-kerning` (a presentation attribute of it is ignored, as the references do, and `kerning` of 0 is the same), the
    * `font-variant-*` longhands and `font-feature-settings`, through the cascade. */
   r = read_features(t, inst, st);
+  if (r != GVEC_OK || t->refused) {
+    return r;
+  }
+  r = read_variations(t, inst, st);
   if (r != GVEC_OK || t->refused) {
     return r;
   }
@@ -1677,6 +1773,8 @@ static bool combining(uint32_t cp) {
 
 typedef struct tglyph {
   const GFNT_Face * face;
+  const GFNT_F2Dot14 * coords; ///< The place of the face in its design space this glyph is drawn at (normalised), or NULL for the face's default.
+  size_t coord_count;
   uint32_t id;
   double x, y;
   double cell_x0, cell_x1, cell_y0, cell_y1; ///< The glyph's cell: its advance wide, the face's ascent above its baseline and descent below.
@@ -1697,6 +1795,10 @@ typedef struct tglyph {
   bool placed;      ///< On a path: `placed_box` holds the box of the glyph's cell where the path puts it (the cell itself is along the line, unplaced).
   double placed_box[4]; ///< min x, min y, max x, max y of the turned cell, in the element's space.
 } tglyph;
+
+static bool same_coords(const tglyph * a, const tglyph * b) {
+  return a->coord_count == b->coord_count && (a->coord_count == 0 || a->coords == b->coords || memcmp(a->coords, b->coords, a->coord_count * sizeof a->coords[0]) == 0);
+}
 
 /* Whether a character stands upright in vertical text (Unicode's Vertical_Orientation U and Tu, in the blocks that matter): the ideographs,
  * the kana, Hangul, the full-width forms and the punctuation of the CJK blocks. The others lie on their side. */
@@ -1723,6 +1825,98 @@ static int script_class(uint32_t cp) {
   return 0;
 }
 
+/* Where a face is drawn in its design space for a span: the font matching's axes (CSS Fonts 4, "apply font matching variations": `wght` is the
+ * weight, `wdth` the stretch, `slnt` the negated oblique angle and `ital` 1 for italic, each clamped to the axis), then `opsz` from the font size
+ * (`font-optical-sizing: auto`), then the settings the author gave, which have the last word. Every face of a fallback has its own axes, so each
+ * has its own location; an axis a face lacks is ignored, and a face with none (or one this cannot move) is drawn at its default. */
+typedef struct tloc {
+  GFNT_F2Dot14 coords[AXES_MAX];
+  size_t count;
+} tloc;
+
+static GFNT_F16Dot16 fixed_of(double v) {
+  const double scaled = v * 65536.0;
+  return (GFNT_F16Dot16) (scaled > 2147483000.0 ? 2147483000.0 : scaled < -2147483000.0 ? -2147483000.0 : scaled);
+}
+
+static void location_of(const GFNT_Face * face, const tstyle * st, tloc * out) {
+  out->count = 0;
+  size_t n = 0;
+  if (!face || gfnt_face_axis_count(face, &n, NULL) != GFNT_OK || n == 0 || n > AXES_MAX) {
+    return;
+  }
+  GFNT_F16Dot16 user[AXES_MAX];
+  bool has_ital = false;
+  for (size_t a = 0; a < n; a++) {
+    GFNT_Axis axis;
+    if (gfnt_face_axis_at(face, a, &axis, NULL) != GFNT_OK) {
+      return;
+    }
+    has_ital = has_ital || axis.tag == GFNT_TAG('i', 't', 'a', 'l');
+  }
+  for (size_t a = 0; a < n; a++) {
+    GFNT_Axis axis;
+    gfnt_face_axis_at(face, a, &axis, NULL);
+    double value = (double) axis.def / 65536.0;
+    if (axis.tag == GFNT_TAG('w', 'g', 'h', 't')) {
+      value = st->weight;
+    }
+    else if (axis.tag == GFNT_TAG('w', 'd', 't', 'h')) {
+      value = st->width;
+    }
+    else if (axis.tag == GFNT_TAG('s', 'l', 'n', 't')) {
+      if (st->italic == 2 || (st->italic == 1 && !has_ital)) {
+        value = -st->oblique;
+      }
+    }
+    else if (axis.tag == GFNT_TAG('i', 't', 'a', 'l')) {
+      if (st->italic == 1) {
+        value = 1;
+      }
+    }
+    else if (axis.tag == GFNT_TAG('o', 'p', 's', 'z')) {
+      if (!st->optical_none) {
+        value = st->size;
+      }
+    }
+    for (size_t k = 0; k < st->var_count; k++) {
+      if (st->var_tags[k] == axis.tag) {
+        value = st->var_values[k];
+      }
+    }
+    user[a] = fixed_of(value);
+  }
+  if (gfnt_face_normalize(face, user, n, out->coords, AXES_MAX, NULL) != GFNT_OK) {
+    return; /* No `fvar`, or an `avar` this does not read: the face is drawn at its default. */
+  }
+  out->count = n;
+  bool moved = false;
+  for (size_t a = 0; a < n; a++) {
+    moved = moved || out->coords[a] != 0;
+  }
+  if (!moved) {
+    out->count = 0; /* The default instance: the same as no location, and the same resource. */
+  }
+}
+
+static bool same_loc(const tloc * a, const tloc * b) {
+  return a->count == b->count && (a->count == 0 || memcmp(a->coords, b->coords, a->count * sizeof a->coords[0]) == 0);
+}
+
+/* One segment of a span shaped with a fallback list at a location: upright and overridden stretches are shaped in the direction they are in, the
+ * rest by the bidirectional algorithm. */
+static GFNT_Result shape_segment(const GFNT_Face * const * faces, size_t face_count, const uint32_t * cps, size_t count, int mode, bool rtl, GFNT_ShapeOptions * shape,
+    const tloc * loc, GFNT_FaceRuns * out) {
+  GFNT_Variation variation = {loc->coords, loc->count, 0};
+  shape->variation = loc->count ? &variation : NULL;
+  if (mode == 1 || mode == 2) {
+    shape->direction = mode == 2 ? GFNT_DIRECTION_TTB : rtl ? GFNT_DIRECTION_RTL : GFNT_DIRECTION_LTR;
+    return gfnt_faces_shape(faces, face_count, cps, count, shape, NULL, out, NULL);
+  }
+  shape->direction = GFNT_DIRECTION_LTR; /* A vertical direction left by an upright stretch would shape this one as a single vertical run. */
+  return gfnt_faces_shape_bidi(faces, face_count, cps, count, rtl ? GFNT_BIDI_RTL : GFNT_BIDI_LTR, shape, NULL, out, NULL);
+}
+
 /* Shape the characters [from, to) of one span: the faces its characters need (the first name of the list that maps each), shaped with fallback;
  * the glyphs are appended to `glyphs` in visual order, positioned from `pen` and with the dx and dy of their characters, which move the pen. */
 static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, size_t to, double * pen_x, double * pen_y, tglyph * glyphs, size_t * glyph_count) {
@@ -1743,17 +1937,21 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     cps[i] = t->chars[from + i].cp;
   }
   const GFNT_Face * faces[16];
+  size_t ranks[16]; /* the place in the font-family list of the family each face is of: the shaper prefers the earlier */
   size_t face_count = 0;
   const GFNT_Face * previous = NULL;
+  size_t previous_rank = 0;
   uint32_t previous_cp = 0xFFFFFFFFu;
   for (size_t i = 0; i < count; i++) {
     const GFNT_Face * face = NULL;
+    size_t rank = 0;
     bool found;
     if (cps[i] == previous_cp && previous) {
       face = previous;
+      rank = previous_rank;
     }
     else {
-      GVEC_Result r = gvec_lw_font_face(ctx, st->families, st->family_count, st->weight, st->italic, st->width, cps[i], &face, &found);
+      GVEC_Result r = gvec_lw_font_face(ctx, st->families, st->family_count, st->weight, st->italic, st->width, cps[i], &face, &found, &rank);
       if (r != GVEC_OK) {
         return r;
       }
@@ -1761,6 +1959,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
         face = face_count ? faces[0] : NULL;
       }
       previous = face;
+      previous_rank = rank;
       previous_cp = cps[i];
     }
     if (!face) {
@@ -1768,17 +1967,58 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     }
     bool have = false;
     for (size_t k = 0; k < face_count; k++) {
-      have = have || faces[k] == face;
+      if (faces[k] == face) {
+        have = true;
+        ranks[k] = rank < ranks[k] ? rank : ranks[k];
+      }
     }
     if (!have) {
       if (face_count == sizeof faces / sizeof faces[0]) {
         return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text needs more faces than the lowering keeps");
       }
+      ranks[face_count] = rank;
       faces[face_count++] = face;
     }
   }
+  /* The shaper takes each character from the first face of the list that maps it, so the list is in the order of the families: a character the
+   * first family has is not taken from a later one because the text began with a character only the later one had. A stable insertion sort. */
+  for (size_t k = 1; k < face_count; k++) {
+    const GFNT_Face * fk = faces[k];
+    const size_t rk = ranks[k];
+    size_t j = k;
+    while (j > 0 && ranks[j - 1] > rk) {
+      faces[j] = faces[j - 1];
+      ranks[j] = ranks[j - 1];
+      j--;
+    }
+    faces[j] = fk;
+    ranks[j] = rk;
+  }
   if (face_count == 0) {
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "no face of the fonts given has the text's characters");
+  }
+  /* Each face has its own axes, so its own place in them; the faces that share one are shaped together. */
+  tloc locs[16];
+  size_t cls[16];
+  const GFNT_F2Dot14 * stable[16];
+  for (size_t k = 0; k < face_count; k++) {
+    location_of(faces[k], st, &locs[k]);
+    cls[k] = k;
+    for (size_t j = 0; j < k; j++) {
+      if (cls[j] == j && same_loc(&locs[j], &locs[k])) {
+        cls[k] = j;
+        break;
+      }
+    }
+    stable[k] = NULL;
+    if (locs[k].count) {
+      GFNT_F2Dot14 * kept = gvec_arena_array(&ctx->arena, locs[k].count, sizeof *kept, sizeof *kept);
+      if (!kept) {
+        return GVEC_ERR_OOM;
+      }
+      memcpy(kept, locs[k].coords, locs[k].count * sizeof *kept);
+      stable[k] = kept;
+    }
   }
   GFNT_ShapeOptions shape;
   memset(&shape, 0, sizeof shape);
@@ -1865,20 +2105,42 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
   const bool is_upright = SEG(si, 2) == 2;
   GFNT_FaceRuns runs;
   memset(&runs, 0, sizeof runs);
-  GFNT_Result sr;
-  if (SEG(si, 2) == 1 || is_upright) {
-    shape.direction = is_upright ? GFNT_DIRECTION_TTB : st->rtl ? GFNT_DIRECTION_RTL : GFNT_DIRECTION_LTR;
-    sr = gfnt_faces_shape(faces, face_count, cps + seg_from, seg_len, &shape, NULL, &runs, NULL);
-  }
-  else {
-    shape.direction = GFNT_DIRECTION_LTR; /* A vertical direction left by an upright stretch would shape this one as a single vertical run. */
-    sr = gfnt_faces_shape_bidi(faces, face_count, cps + seg_from, seg_len, st->rtl ? GFNT_BIDI_RTL : GFNT_BIDI_LTR, &shape, NULL, &runs, NULL);
-  }
+  GFNT_FaceRuns other[16];
+  memset(other, 0, sizeof other);
+  GFNT_Result sr = shape_segment(faces, face_count, cps + seg_from, seg_len, SEG(si, 2), st->rtl, &shape, &locs[0], &runs);
   if (sr != GFNT_OK) {
     return sr == GFNT_ERR_OOM ? GVEC_ERR_OOM : gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "the text could not be shaped with the fonts given");
   }
+  /* The stretches are the same whatever the location (the face that has a character does not depend on it), so the stretch of a face in another
+   * class is taken from a shaping at that class's location; a shaping that does not agree on the stretches is not used. */
+  for (size_t k = 1; k < face_count; k++) {
+    if (cls[k] != k || cls[k] == cls[0]) {
+      continue;
+    }
+    GFNT_Result ar = shape_segment(faces, face_count, cps + seg_from, seg_len, SEG(si, 2), st->rtl, &shape, &locs[k], &other[k]);
+    if (ar == GFNT_ERR_OOM) {
+      gfnt_face_runs_free(&runs);
+      for (size_t c = 0; c < 16; c++) {
+        gfnt_face_runs_free(&other[c]);
+      }
+      return GVEC_ERR_OOM;
+    }
+    bool agree = ar == GFNT_OK && other[k].count == runs.count;
+    for (size_t i = 0; agree && i < runs.count; i++) {
+      agree = other[k].runs[i].face == runs.runs[i].face && other[k].runs[i].start == runs.runs[i].start && other[k].runs[i].length == runs.runs[i].length;
+    }
+    if (!agree) {
+      gfnt_face_runs_free(&other[k]);
+      memset(&other[k], 0, sizeof other[k]);
+    }
+  }
   for (size_t i = 0; result == GVEC_OK && i < runs.count; i++) {
     const GFNT_FaceRun * fr = &runs.runs[i];
+    if (other[cls[fr->face]].runs) {
+      fr = &other[cls[fr->face]].runs[i];
+    }
+    GFNT_Variation here = {locs[fr->face].coords, locs[fr->face].count, 0};
+    const GFNT_Variation * here_ptr = locs[fr->face].count ? &here : NULL;
     uint16_t upem = 0;
     if (gfnt_face_units_per_em(faces[fr->face], &upem, NULL) != GFNT_OK || upem == 0) {
       result = gvec_lw_refuse(ctx, e, GVEC_LOWER_TEXT, "a face of the fonts has no size to scale by");
@@ -1897,7 +2159,7 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     }
     double s = size / (double) upem;
     GFNT_LineMetrics line;
-    if (gfnt_face_line_metrics(faces[fr->face], GFNT_LINE_METRICS_FONT, NULL, &line, NULL) != GFNT_OK) {
+    if (gfnt_face_line_metrics(faces[fr->face], GFNT_LINE_METRICS_FONT, here_ptr, &line, NULL) != GFNT_OK) {
       line.ascent = upem;
       line.descent = 0;
     }
@@ -1937,6 +2199,8 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
       t->chars[ch].dx = t->chars[ch].dy = 0; /* A character shaped into several glyphs moves the pen once. */
       tglyph * out = &glyphs[(*glyph_count)++];
       out->face = faces[fr->face];
+      out->coords = stable[fr->face];
+      out->coord_count = locs[fr->face].count;
       out->id = sg->glyph;
       out->sideways = t->vertical && !is_upright;
       if (is_upright) {
@@ -2000,6 +2264,9 @@ static GVEC_Result shape_run(tctx * t, const GVEC_Fonts * fonts, size_t from, si
     }
   }
   gfnt_face_runs_free(&runs);
+  for (size_t c = 0; c < 16; c++) {
+    gfnt_face_runs_free(&other[c]);
+  }
   }
   return result;
 }
@@ -2679,7 +2946,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       const tstyle * ds = &t.styles[dec->style];
       const GFNT_Face * face = NULL;
       bool found = false;
-      r = gvec_lw_font_face(ctx, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, &face, &found);
+      r = gvec_lw_font_face(ctx, ds->families, ds->family_count, ds->weight, ds->italic, ds->width, t.chars[dec->start].cp, &face, &found, NULL);
       if (r != GVEC_OK) {
         return r;
       }
@@ -2909,7 +3176,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         g = h;
         continue;
       }
-      while (!is_colour && h < glyph_count && !(glyphs[g].on_path && glyphs[g].group) && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && glyphs[h].group == glyphs[g].group &&
+      while (!is_colour && h < glyph_count && !(glyphs[g].on_path && glyphs[g].group) && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && same_coords(&glyphs[h], &glyphs[g]) && glyphs[h].group == glyphs[g].group &&
           glyphs[h].size == glyphs[g].size && glyphs[h].hidden == glyphs[g].hidden && glyphs[h].rotate == glyphs[g].rotate && (glyphs[g].rotate == 0 || glyphs[h].pivot == glyphs[g].pivot)) {
         h++;
       }
@@ -2943,7 +3210,8 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         list[k - g].outline = NULL;
       }
       const GSHSCENE_Resource * face_resource = NULL;
-      r = gvec_fonts_scene_face(fonts, glyphs[g].face, ctx->store, &face_resource);
+      GFNT_Variation variation = {glyphs[g].coords, glyphs[g].coord_count, 0};
+      r = gvec_fonts_scene_face(fonts, glyphs[g].face, glyphs[g].coord_count ? &variation : NULL, ctx->store, &face_resource);
       if (r != GVEC_OK) {
         break;
       }

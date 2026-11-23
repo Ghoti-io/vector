@@ -381,12 +381,15 @@ def lower_corpus():
     return c
 
 
-def test_font(bold):
+def test_font(bold, variable=False):
     """A TrueType font of boxes, for the text tests: every character of ASCII from space to tilde maps to a glyph that is a rectangle as
     wide as the glyph's advance less 50 units each side and as high as its code point says, so a shaped line is checked by arithmetic and
-    needs no real font. The bold face is wider (700 against 600 units) and says so in `OS/2`, so matching by weight has two faces to pick."""
+    needs no real font. The bold face is wider (700 against 600 units) and says so in `OS/2`, so matching by weight has two faces to pick.
+    The variable face has the capital letters only, and five axes (`wght` 100 to 900 from 400, `wdth` 50 to 200 from 100, `slnt` -90 to 90
+    from 0, `ital` 0 to 1, `opsz` 6 to 72 from 72) that move the right edge of every box and its advance, by the units `moves` names at the
+    end of each axis, so a location is read off a glyph's advance."""
     upem = 1000
-    first, last = 32, 126
+    first, last = (65, 90) if variable else (32, 126)
     advance = 700 if bold else 600
     glyphs = [b""]  # .notdef is filled in below
     widths = [advance]
@@ -427,10 +430,13 @@ def test_font(bold):
     sub += b"".join(struct.pack(">H", 0) for _ in seg)
     cmap = struct.pack(">HH", 0, 1) + struct.pack(">HHI", 3, 1, 12) + sub
     style = "Bold" if bold else "Regular"
+    family = "Vector Test Variable" if variable else "Vector Test"
 
     def name_rec(nid, text):
         return (3, 1, 0x409, nid, text.encode("utf-16-be"))
-    recs = [name_rec(1, "Vector Test"), name_rec(2, style), name_rec(4, "Vector Test " + style), name_rec(6, "VectorTest-" + style)]
+    recs = [name_rec(1, family), name_rec(2, style), name_rec(4, family + " " + style), name_rec(6, family.replace(" ", "") + "-" + style)]
+    if variable:
+        recs += [name_rec(256, "Weight"), name_rec(257, "Width"), name_rec(258, "Slant"), name_rec(259, "Italic"), name_rec(260, "Optical size")]
     strings = b""
     entries = b""
     for plat, enc, lang, nid, data in recs:
@@ -443,6 +449,42 @@ def test_font(bold):
     post = struct.pack(">IIhhIIIII", 0x00030000, 0, -100, 50, 0, 0, 0, 0, 0)
     tables = {b"OS/2": os2, b"cmap": cmap, b"glyf": glyf, b"head": head, b"hhea": hhea, b"hmtx": hmtx, b"loca": loca_t, b"maxp": maxp,
               b"name": name, b"post": post}
+    if variable:
+        def fixed(v):
+            return struct.pack(">i", int(v * 65536))
+        axes = [(b"wght", 100, 400, 900, 256), (b"wdth", 50, 100, 200, 257), (b"slnt", -90, 0, 90, 258), (b"ital", 0, 0, 1, 259), (b"opsz", 6, 72, 72, 260)]
+        fvar = struct.pack(">HHHHHHHH", 1, 0, 16, 2, len(axes), 20, 0, 4 + 4 * len(axes))
+        for tag, lo, default, hi, name_id in axes:
+            fvar += tag + fixed(lo) + fixed(default) + fixed(hi) + struct.pack(">HH", 0, name_id)
+        tables[b"fvar"] = fvar
+        # gvar: each box's right edge (points 1 and 2) and its advance (the second phantom point, 5) move with each axis, by the units of
+        # (axis, side of the default, units at the end of the axis); the sides are -1 (toward the minimum) and +1
+        moves = [(0, 1, 200), (0, -1, -100), (1, 1, 100), (1, -1, -50), (2, -1, -400), (2, 1, 400), (3, 1, 300), (4, -1, -100)]
+
+        def deltas(units):
+            return b"\0" + bytes([0x40 | 7]) + struct.pack(">8h", 0, units, units, 0, 0, units, 0, 0) + bytes([0x80 | 7])
+        varied = []
+        for g in glyphs:
+            if not g:
+                varied.append(b"")
+                continue
+            heads = b""
+            data = b""
+            for axis, side, units in moves:
+                peak = [0] * len(axes)
+                peak[axis] = side * 16384
+                one = deltas(units)
+                heads += struct.pack(">HH", len(one), 0x8000 | 0x2000) + struct.pack(">%dh" % len(axes), *peak)
+                data += one
+            blob = struct.pack(">HH", len(moves), 4 + len(heads)) + heads + data
+            varied.append(blob + b"\0" * (len(blob) % 2))
+        offsets = [0]
+        for v in varied:
+            offsets.append(offsets[-1] + len(v))
+        array_at = 20 + 2 * (n + 1)
+        gvar = struct.pack(">HHHHIHHI", 1, 0, len(axes), 0, array_at, n, 0, array_at)
+        gvar += b"".join(struct.pack(">H", o // 2) for o in offsets) + b"".join(varied)
+        tables[b"gvar"] = gvar
     tags = sorted(tables)
     offset = 12 + 16 * len(tags)
     directory = b""
@@ -468,7 +510,7 @@ def test_font(bold):
 
 
 def font_fixtures():
-    return {"vector-test.ttf": test_font(False), "vector-test-bold.ttf": test_font(True)}
+    return {"vector-test.ttf": test_font(False), "vector-test-bold.ttf": test_font(True), "vector-test-variable.ttf": test_font(False, True)}
 
 
 def resolver_corpus():

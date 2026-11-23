@@ -885,9 +885,16 @@ path over it. `translate`, `rotate` (about z; an axis other than z is three-dime
 element's `media` is answered by the environment of a screen of the viewport's size in the document's color scheme, and a list that cannot be read is `not all`. A `drop-shadow()` color is any
 color the style layer reads, in its own space.
 
-**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. A variable font is drawn at its default instance: `font-weight`
-and `font-variation-settings` do not move an axis, because the shaper's variation location applies to every face of a fallback run and the axes of two faces are not the same (the weights of the
-caller's fonts, and of the document's `@font-face` rules, choose among static faces). `lang` does not select a language system or a case tailoring. `text-orientation` is not read: Latin in
+**S12 Variable fonts.** A face with an `fvar` is drawn at a place in its design space made for the span (CSS Fonts 4, "apply font matching variations"): `wght` is the
+weight, `wdth` the stretch, `slnt` the negated angle of an `oblique` (14 degrees when it gives none; an `italic` sets it too when the face has no `ital` axis), `ital` is 1 for an
+`italic`, `opsz` is the font size in user units unless `font-optical-sizing` is `none`, and `font-variation-settings` has the last word on any axis it names. Each axis is clamped to the
+face's range and an axis a face lacks is left alone. Every face of a fallback has its own axes, so each has its own location: the text is shaped once for each distinct location among the faces
+it needs, and a stretch of a face is taken from the shaping at that face's location (the faces a character is drawn from do not depend on the location; a shaping that disagrees about the
+stretches is not used). The glyph runs carry the location, so one face at two locations is two face resources. A face whose outlines do not move in its design space is drawn at its default.
+The faces of a text are put in the order of the `font-family` list, the fonts' own fallback last, which is the order the shaper prefers them in; they used to be in the order the text first
+needed them, so that a text beginning with a character only a later family had took the other characters from that family.
+
+**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `lang` does not select a language system or a case tailoring. `text-orientation` is not read: Latin in
 vertical text always lies on its side. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
 gradient is refused (GVEC_LOWER_MASK), not half drawn. The root's `background` is not painted: a document's transparent background is the caller's to composite, and the references ignore it.
 `text-overflow` has no effect on SVG text.

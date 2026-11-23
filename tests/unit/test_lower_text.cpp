@@ -1606,3 +1606,121 @@ TEST(LowerText, AFontFaceRuleOfTheDocumentGivesTheFaceOfAFamilyTheFontsDoNotHave
   ASSERT_TRUE(SecondAdvance(f, two, "font-family=\"Embedded\" font-weight=\"700\"", &advance));
   EXPECT_EQ(advance, 70.0);
 }
+
+// The variable face of the test font has the capital letters only; its advance is 60 at the default weight (400), 70 more at 700 less... see the
+// generator: +200 units at the top of `wght` (900), -100 at the bottom (100), linear between, and the default instance in between.
+TEST(LowerText, AWeightMovesTheWghtAxisOfAVariableFace) {
+  Fonts f;
+  double advance = 0;
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\"", &advance));
+  EXPECT_EQ(advance, 60.0) << "the default weight is the default instance";
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" font-weight=\"900\"", &advance));
+  EXPECT_NEAR(advance, 80.0, 0.01) << "the top of the axis adds 200 units";
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" font-weight=\"100\"", &advance));
+  EXPECT_NEAR(advance, 50.0, 0.01) << "the bottom takes 100 away";
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" font-weight=\"650\"", &advance));
+  EXPECT_NEAR(advance, 60.0 + 0.5 * 20.0, 0.05) << "halfway up the upper half";
+  // a weight beyond the axis is clamped to it
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" font-weight=\"1000\"", &advance));
+  EXPECT_NEAR(advance, 80.0, 0.01);
+}
+
+TEST(LowerText, FontVariationSettingsHaveTheLastWordOnAnAxis) {
+  Fonts f;
+  double advance = 0;
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" style=\"font-variation-settings: 'wght' 900\"", &advance));
+  EXPECT_NEAR(advance, 80.0, 0.01);
+  // over the weight the font matching sets
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" font-weight=\"100\" style=\"font-variation-settings: 'wght' 900\"", &advance));
+  EXPECT_NEAR(advance, 80.0, 0.01);
+  // an axis the face does not have is ignored
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" style=\"font-variation-settings: 'XQRY' 5\"", &advance));
+  EXPECT_EQ(advance, 60.0);
+  // `normal` sets nothing
+  ASSERT_TRUE(SecondAdvance(f, "", "font-family=\"Vector Test Variable\" style=\"font-variation-settings: normal\"", &advance));
+  EXPECT_EQ(advance, 60.0);
+}
+
+TEST(LowerText, EachFaceOfAFallbackIsDrawnAtItsOwnLocation) {
+  Fonts f;
+  Lowered l;
+  // `A` is in the variable face, `b` only in the static one: the static face has no axes, and the weight of 900 must not reach it
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable, Vector Test\" font-weight=\"900\"", "AbA", l));
+  // a glyph run is of one face, so the three letters are three runs
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  GSHSCENE_Glyph_Run a, b, c;
+  ASSERT_TRUE(ReadRun(l, 0, a));
+  ASSERT_TRUE(ReadRun(l, 1, b));
+  ASSERT_TRUE(ReadRun(l, 2, c));
+  EXPECT_NEAR(b.glyphs[0].x - a.glyphs[0].x, 80.0, 0.01) << "the variable face at its top weight";
+  // the static face is the bold one of the test font at a weight of 900: 70, not moved by an axis it lacks
+  EXPECT_NEAR(c.glyphs[0].x - b.glyphs[0].x, 70.0, 0.01);
+  EXPECT_NE(a.face, b.face);
+  EXPECT_EQ(a.face, c.face) << "the same face at the same location is one resource";
+}
+
+TEST(LowerText, TheFaceOfAFallbackThatIsNotTheFirstIsShapedAtItsOwnLocationToo) {
+  Fonts f;
+  Lowered l;
+  // `b` is in the static face only, so the static face is the first the text needs; `A` is in the variable face, the second
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable, Vector Test\" font-weight=\"900\"", "bAb", l));
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  GSHSCENE_Glyph_Run a, b, c;
+  ASSERT_TRUE(ReadRun(l, 0, a));
+  ASSERT_TRUE(ReadRun(l, 1, b));
+  ASSERT_TRUE(ReadRun(l, 2, c));
+  EXPECT_NEAR(b.glyphs[0].x - a.glyphs[0].x, 70.0, 0.01) << "the static face's advance";
+  EXPECT_NEAR(c.glyphs[0].x - b.glyphs[0].x, 80.0, 0.01) << "the variable face, at its own weight though the first face has no axes";
+}
+
+TEST(LowerText, TheSameFaceAtTwoLocationsIsTwoFaceResources) {
+  Fonts f;
+  Lowered l;
+  ASSERT_TRUE(LowerText(f, "font-family=\"Vector Test Variable\"", "A<tspan font-weight=\"900\">A</tspan>A", l));
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  GSHSCENE_Glyph_Run a, b, c;
+  ASSERT_TRUE(ReadRun(l, 0, a));
+  ASSERT_TRUE(ReadRun(l, 1, b));
+  ASSERT_TRUE(ReadRun(l, 2, c));
+  EXPECT_NE(a.face, b.face);
+  EXPECT_EQ(a.face, c.face);
+}
+
+// The face's axes move the advance by (units at the end of the axis, in thousandths of the em): wdth +100 at 200 and -50 at 50, slnt -400 at -90,
+// ital +300 at 1, opsz -100 at 6 (from 72, so a text of a large size is at the default).
+TEST(LowerText, TheMatchedStyleMovesTheWdthSlntItalAndOpszAxes) {
+  Fonts f;
+  double advance = 0;
+  const std::string family = "font-family=\"Vector Test Variable\" ";
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-stretch=\"200%\"", &advance));
+  EXPECT_NEAR(advance, 70.0, 0.01) << "wdth is the stretch";
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-stretch=\"50%\"", &advance));
+  EXPECT_NEAR(advance, 55.0, 0.01);
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-stretch=\"ultra-expanded\"", &advance));
+  EXPECT_NEAR(advance, 70.0, 0.01) << "a keyword is its percentage";
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-style=\"oblique 20deg\"", &advance));
+  EXPECT_NEAR(advance, 60.0 - 40.0 * 20.0 / 90.0, 0.05) << "slnt is the negated angle";
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-style=\"oblique\"", &advance));
+  EXPECT_NEAR(advance, 60.0 - 40.0 * 14.0 / 90.0, 0.05) << "an oblique with no angle is 14 degrees";
+  // italic is the ital axis where the face has one, and then the slant is left alone
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-style=\"italic\"", &advance));
+  EXPECT_NEAR(advance, 90.0, 0.01);
+  // the optical size is the font size, clamped to the axis: at 42 it is 30 of the 66 units below the default
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-size=\"42\"", &advance));
+  EXPECT_NEAR(advance, 0.042 * (600.0 - 100.0 * 30.0 / 66.0), 0.03) << "the advance is a whole number of font units";
+  ASSERT_TRUE(SecondAdvance(f, "", family + "font-size=\"42\" style=\"font-optical-sizing: none\"", &advance));
+  EXPECT_NEAR(advance, 0.042 * 600.0, 0.01) << "`none` leaves the axis at its default";
+  ASSERT_TRUE(SecondAdvance(f, "", family, &advance));
+  EXPECT_NEAR(advance, 60.0, 0.01) << "at 100 the axis is at its default";
+}
+
+TEST(LowerText, MoreVariationSettingsThanTheLoweringKeepsIsRefused) {
+  Fonts f;
+  Lowered l;
+  std::string settings;
+  for (int i = 0; i < 17; i++) {
+    settings += std::string(i ? "," : "") + "'a" + char('a' + i) + "bc' 1";
+  }
+  EXPECT_FALSE(LowerText(f, "font-family=\"Vector Test Variable\" style=\"font-variation-settings: " + settings + "\"", "AA", l));
+  EXPECT_NE(l.Refusal(GVEC_LOWER_LIMIT), nullptr);
+}

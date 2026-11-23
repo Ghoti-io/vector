@@ -854,6 +854,17 @@ PLANTS = [
      'the first of a list of masks is drawn and the rest dropped'),
     ('NF13', 'src/codec/svg/style/svg_transform.c', '    if (!individual_ops(translate, rotate, scale, ops, &count)) {', '    if (false && !individual_ops(translate, rotate, scale, ops, &count)) {',
      'translate, rotate and scale are not applied'),
+    ('VA1', 'src/codec/svg/lower/lower_text.c', '      value = st->weight;', '      value = (double) axis.def / 65536.0;', 'font-weight does not move the wght axis'),
+    ('VA2', 'src/codec/svg/lower/lower_text.c', '      value = st->width;', '      value = (double) axis.def / 65536.0;', 'font-stretch does not move the wdth axis'),
+    ('VA3', 'src/codec/svg/lower/lower_text.c', '        value = -st->oblique;', '        value = st->oblique;', 'an oblique slants the wrong way'),
+    ('VA4', 'src/codec/svg/lower/lower_text.c', '      if (st->italic == 1) {\n        value = 1;', '      if (st->italic == 0) {\n        value = 1;', 'italic does not set the ital axis'),
+    ('VA5', 'src/codec/svg/lower/lower_text.c', '      if (!st->optical_none) {\n        value = st->size;', '      if (st->optical_none) {\n        value = st->size;', 'the optical size ignores font-optical-sizing'),
+    ('VA6', 'src/codec/svg/lower/lower_text.c', '        value = st->var_values[k];', '        (void) st->var_values[k];', 'font-variation-settings do not move an axis'),
+    ('VA7', 'src/codec/svg/lower/lower_text.c', '    if (other[cls[fr->face]].runs) {', '    if (false && other[cls[fr->face]].runs) {', 'a face of a fallback is shaped at the location of the first'),
+    ('VA8', 'src/codec/svg/lower/lower_text.c', '    while (j > 0 && ranks[j - 1] > rk) {', '    while (j > 0 && ranks[j - 1] > rk && false) {', 'the faces are not in the order of the families'),
+    ('VA9', 'src/codec/svg/lower/lower_text.c', '      r = gvec_fonts_scene_face(fonts, glyphs[g].face, glyphs[g].coord_count ? &variation : NULL,', '      r = gvec_fonts_scene_face(fonts, glyphs[g].face, glyphs[g].coord_count && false ? &variation : NULL,', 'the glyphs are drawn at the default instance'),
+    ('VA11', 'src/codec/svg/lower/lower_text.c', '\n    if (!close || close - tag != 4) {', '\n    if (!close || close - tag != 3) {', 'an axis tag is three letters'),
+    ('VA10', 'src/codec/svg/lower/lower_text.c', '  if (!moved) {\n    out->count = 0;', '  if (false) {\n    out->count = 0;', 'the default instance is not recognised'),
 ]
 
 PLANTS += [
@@ -897,7 +908,7 @@ PLANTS += [
     ("FV5", TX, "{\"discretionary-ligatures\", {\"dlig\", NULL}, true}", "{\"discretionary-ligatures\", {\"hlig\", NULL}, true}", "discretionary ligatures are the historical ones"),
     ("FV7", TX, "      const GFNT_Tag off = offs[o];\n      bool asked = false;", "      const GFNT_Tag off = offs[o];\n      bool asked = true;", "letter-spacing keeps a ligature the text asks for off"),
     ("FV8", TX, "      else if (strncmp(p, \"off\", 3) == 0) {\n        value = 0;", "      else if (strncmp(p, \"off\", 3) == 0) {\n        value = 1;", "off is on"),
-    ("FV9", TX, "if (!close || close - tag != 4) {", "if (!close || close - tag != 3) {", "a feature tag is three letters"),
+    ("FV9", TX, "      if (!close || close - tag != 4) {", "      if (!close || close - tag != 3) {", "a feature tag is three letters"),
     ("FV11", TX, "  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_FEATURE_SETTINGS, &v, &ok);", "  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_KERNING, &v, &ok);", "font-feature-settings is not read"),
     # the units of a length attribute (gvec_lw_unit_length): font-relative, the root's, the window's, and whose style an em is in
     ("UL1", W, "(length->unit == GVEC_SVG_UNIT_EM ? 1.0 : 0.5)", "(length->unit == GVEC_SVG_UNIT_EM ? 0.5 : 1.0)", "an em is half a font size and an ex a whole one"),

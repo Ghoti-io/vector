@@ -29,7 +29,6 @@
 #include <ghoti.io/vector/macros.h>
 
 #include <ctype.h>
-#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/cutil/mutex.h>
@@ -476,7 +475,7 @@ static GVEC_Result document_face(gvec_lw_ctx * ctx, const char * name, double we
 }
 
 GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, size_t family_count, double weight, int italic, double width, uint32_t codepoint,
-    const GFNT_Face ** out, bool * found) {
+    const GFNT_Face ** out, bool * found, size_t * rank) {
   const GVEC_Fonts * fonts = ctx->options->fonts;
   GVEC_Fonts * f = (GVEC_Fonts *) fonts;
   *found = false;
@@ -489,6 +488,9 @@ GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, 
       return r;
     }
     if (*found) {
+      if (rank) {
+        *rank = i;
+      }
       break;
     }
     GCU_MUTEX_LOCK(f->lock);
@@ -497,14 +499,20 @@ GVEC_Result gvec_lw_font_face(gvec_lw_ctx * ctx, const char * const * families, 
     if (r != GVEC_OK) {
       return r;
     }
+    if (*found && rank) {
+      *rank = i;
+    }
   }
   if (*found) {
     return GVEC_OK;
   }
+  if (rank) {
+    *rank = family_count; /* the fonts' own fallback comes after every family named */
+  }
   return gvec_fonts_face(fonts, NULL, 0, weight, italic, width, codepoint, out, found);
 }
 
-GVEC_Result gvec_fonts_scene_face(const GVEC_Fonts * constant, const GFNT_Face * face, GSHSCENE_Store * store, const GSHSCENE_Resource ** out) {
+GVEC_Result gvec_fonts_scene_face(const GVEC_Fonts * constant, const GFNT_Face * face, const GFNT_Variation * variation, GSHSCENE_Store * store, const GSHSCENE_Resource ** out) {
   GVEC_Fonts * f = (GVEC_Fonts *) constant;
   GVEC_Result result = GVEC_OK;
   GFNT_SceneFont * scene = NULL;
@@ -544,7 +552,11 @@ GVEC_Result gvec_fonts_scene_face(const GVEC_Fonts * constant, const GFNT_Face *
   if (result != GVEC_OK) {
     return result;
   }
-  GFNT_Result r = gfnt_scene_intern_face(scene, store, NULL, out, NULL);
+  GFNT_Result r = gfnt_scene_intern_face(scene, store, variation, out, NULL);
+  if (variation && (r == GFNT_ERR_UNSUPPORTED || r == GFNT_ERR_INVALID)) {
+    /* A face whose outlines do not move in its design space is drawn at its default, as it was shaped. */
+    r = gfnt_scene_intern_face(scene, store, NULL, out, NULL);
+  }
   if (r == GFNT_ERR_OOM) {
     return GVEC_ERR_OOM;
   }
