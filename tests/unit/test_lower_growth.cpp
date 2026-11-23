@@ -253,6 +253,21 @@ TEST(LowerGrowth, AFontFaceOfTheDocumentIsLoadedThroughTheAllocatorAndEveryFailu
       f.fonts, 23);
 }
 
+TEST(LowerGrowth, ATextToTransformThatNeedsABlockOfItsOwnFallsBackToTheTextAsWritten) {
+  Fonts f;
+  std::string text(3000, 'a');
+  // the transformed copy of the text is three buffers of more than a block: when one cannot be had the text is drawn as written, which is not an error
+  EXPECT_GT(SweepLowering(Root("<text y=\"50\" style=\"text-transform: uppercase\">" + text + "</text>"), f.fonts), 0);
+}
+
+TEST(LowerGrowth, TheMemoOfTheFaceRulesIsTakenFromTheAllocatorAndEveryFailureIsOutOfMemory) {
+  Fonts f;
+  // every allocation in turn, the memo's first block of eight entries among them
+  SweepEveryAllocation(Root("<style>@font-face { font-family: E; src: url(data:font/ttf;base64," + Base64Of("tests/data/fonts/vector-test-bold.ttf") +
+                            "); }</style><text y=\"50\" font-family=\"E\">A</text>"),
+      f.fonts, 7);
+}
+
 int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

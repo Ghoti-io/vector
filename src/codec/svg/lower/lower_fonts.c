@@ -393,12 +393,9 @@ static GVEC_Result rule_face(gvec_lw_ctx * ctx, const GTEXT_CSS_Font_Face * rule
   }
   if (ctx->font_face_count == ctx->font_face_capacity) {
     size_t capacity = ctx->font_face_capacity ? ctx->font_face_capacity * 2 : 8;
-    face_memo * grown = gvec_arena_array(&ctx->arena, capacity, sizeof *grown, sizeof(void *));
+    face_memo * grown = gvec_realloc(ctx->allocator, memos, capacity * sizeof *grown); /* freed by gvec_lw_end */
     if (!grown) {
       return GVEC_ERR_OOM;
-    }
-    if (ctx->font_face_count) {
-      memcpy(grown, memos, ctx->font_face_count * sizeof *grown);
     }
     ctx->font_faces = memos = grown;
     ctx->font_face_capacity = capacity;

@@ -1780,12 +1780,12 @@ TEST(LowerText, TheLangOfATextSelectsTheLanguageSystemOfTheShaper) {
 
 TEST(LowerText, TheLangOfATextTailorsItsCaseMappings) {
   Fonts f;
-  Lowered l;
+  Lowered english, turkish, azeri, french;
   // the dotless i of Turkish is not in the test face: a text that needs it is refused, as any text of a character no face has
-  EXPECT_TRUE(LowerText(f, "lang=\"en\" style=\"text-transform: lowercase\"", "I", l));
-  EXPECT_FALSE(LowerText(f, "lang=\"tr\" style=\"text-transform: lowercase\"", "I", l));
-  EXPECT_FALSE(LowerText(f, "lang=\"az-Latn\" style=\"text-transform: uppercase\"", "i", l)) << "the dotted capital I";
-  EXPECT_TRUE(LowerText(f, "lang=\"fr\" style=\"text-transform: uppercase\"", "i", l));
+  EXPECT_TRUE(LowerText(f, "lang=\"en\" style=\"text-transform: lowercase\"", "I", english));
+  EXPECT_FALSE(LowerText(f, "lang=\"tr\" style=\"text-transform: lowercase\"", "I", turkish));
+  EXPECT_FALSE(LowerText(f, "lang=\"az-Latn\" style=\"text-transform: uppercase\"", "i", azeri)) << "the dotted capital I";
+  EXPECT_TRUE(LowerText(f, "lang=\"fr\" style=\"text-transform: uppercase\"", "i", french));
 }
 
 TEST(LowerText, LithuanianKeepsTheDotOfALowercaseIBeforeAnAccent) {

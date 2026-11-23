@@ -353,6 +353,7 @@ void gvec_lw_end(gvec_lw_ctx * ctx) {
   gvec_free(ctx->allocator, (void *) ctx->held);
   gvec_free(ctx->allocator, ctx->sites);
   gvec_free(ctx->allocator, ctx->refused);
+  gvec_free(ctx->allocator, ctx->font_faces);
   gvec_free(ctx->allocator, ctx->use_stack);
   gvec_lw_image_cache_free(ctx);
   for (size_t i = 0; i < ctx->table_count; i++) {
