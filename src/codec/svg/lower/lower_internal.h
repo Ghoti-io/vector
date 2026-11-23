@@ -84,7 +84,9 @@ typedef enum gvec_lw_role {
   GVEC_LW_ROLE_MASK_CONTAINER, ///< The hidden group that holds a mask's picture.
   GVEC_LW_ROLE_FILTER, ///< The group a `filter` makes around an element's content.
   GVEC_LW_ROLE_FILTER_IMAGE, ///< The hidden group that holds the picture of an element an feImage draws (lower_filter.c).
-  GVEC_LW_ROLE_BACKGROUND   ///< The fill of the viewport with the root's `background-color`.
+  GVEC_LW_ROLE_BACKGROUND,  ///< The fill of the viewport with the root's `background-color`.
+  GVEC_LW_ROLE_MASK_LAYER,  ///< A layer of a `mask` list (its clip, and the group that composites it).
+  GVEC_LW_ROLE_MASK_TILE    ///< One tile of a mask image.
 } gvec_lw_role;
 
 typedef struct gvec_lw_node gvec_lw_node;
@@ -495,6 +497,19 @@ typedef enum gvec_lw_mask_state {
   GVEC_LW_MASK_REFUSED   ///< The element is refused (already reported).
 } gvec_lw_mask_state;
 
+/** Whether the computed text of `mask` is exactly one `url()` of an element (a `mask` element of this document or another: the lowering of one, as it always was), not a list or an image. */
+GVEC_INTERNAL_API bool gvec_lw_mask_is_element_reference(const char * text);
+
+/** The mask resource of the `mask` element `mask` for `masked`, in the space `local` (lower_mask.c). `*state` is NODE when `*out` is set. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, const GVEC_Svg_Element * mask,
+    gvec_lw_mask_state * state, const GSHSCENE_Resource ** out);
+
+/**
+ * The mask of the `mask` property of `masked` when it is a list of layers or names an image or a gradient (lower_mask_layers.c): the layers drawn in one
+ * picture, composited, in the space `local`. `*state` is NODE when `*out` is set, NONE when no layer is there, ALL when they cover nothing.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_mask_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, gvec_lw_mask_state * state, const GSHSCENE_Resource ** out);
+
 /**
  * The soft mask of an element's `mask` (lower_mask.c): a group of the waist that names the mask, to draw the element under. The mask's
  * picture is the content of the `mask` element in the element's own space (`frame`, the element's transform included) clipped to the
@@ -741,6 +756,12 @@ GVEC_INTERNAL_API void gvec_lw_external_done(gvec_lw_ctx * ctx, gvec_lw_ctx * ne
  * is kept for the element, so a `use` that draws it again decodes nothing.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_image_load(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, gvec_lw_image_state * state, gvec_lw_image * out);
+
+/**
+ * The image a url names, read as the `href` of an element is but not kept (a CSS `url()` of a style, which has no attribute of its own): `e` is the element
+ * the problems are reported for. The decoded image is the context's to hold; a repeated use is decoded again.
+ */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_image_load_url(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * url, gvec_lw_image_state * state, gvec_lw_image * out);
 
 /** Free what the context kept of the images (not the resources: the context holds those). */
 GVEC_INTERNAL_API void gvec_lw_image_cache_free(gvec_lw_ctx * ctx);

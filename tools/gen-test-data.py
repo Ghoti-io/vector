@@ -376,6 +376,10 @@ def lower_corpus():
     c["image-nested-in-picture"] = seed('<svg %s><defs><pattern id="p" width="4" height="4" patternUnits="userSpaceOnUse"><image width="4" height="4" href="%s"/></pattern><mask id="m"><image width="8" height="8" href="%s"/></mask>'
                                         '<marker id="k" markerWidth="4" markerHeight="4"><image width="4" height="4" href="%s"/></marker></defs><rect width="9" height="9" fill="url(#p)" mask="url(#m)"/>'
                                         '<path d="M2 2L9 9" stroke="black" marker-end="url(#k)"/><use href="#i"/><image id="i" width="4" height="4" clip-path="circle(40%%)" href="%s"/></svg>' % (ns, uri, uri, uri, uri))
+    layers = ("mask: linear-gradient(30deg, black 10%, transparent 60%) 0 0 / 7px 5px round, radial-gradient(circle 4px at 20% 30%, red, rgba(0,0,0,.5) 80%) space subtract, "
+              "repeating-linear-gradient(to top right, black 0 3px, white 3px 6px) intersect, url(#m), none, url(a.png) 10% 90% / contain no-repeat exclude, conic-gradient(black, white)")
+    c["mask-layers"] = seed('<svg %s width="40" height="30"><mask id="m"><rect width="9" height="9" fill="white"/></mask><rect width="40" height="30" stroke="black" stroke-width="3" style="%s"/></svg>' % (ns, layers))
+    c["mask-tiles"] = seed('<svg %s width="400" height="300"><rect width="400" height="300" style="mask: linear-gradient(black, white) 0 0 / 1px 1px repeat"/></svg>' % ns)
     c["not-svg"] = seed(b"this is not xml")
     c["short"] = bytes([0x0f])
     return c

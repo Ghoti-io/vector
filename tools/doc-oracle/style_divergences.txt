@@ -28,6 +28,7 @@ height:length: ours # browser auto	reference-old	Chromium and Firefox have no `h
 height:length: ours auto browser #px	unspecified	the resolved value of `height` is the used height of the box; this library reads the computed value, `auto`, and resolves a percentage and not `auto`	132
 image-rendering:keyword: ours 'optimizespeed' browser 'auto'	legacy-compat	the SVG 1.1 keyword `optimizeSpeed` is kept here, as Firefox and the reference renderer keep it (the lowering draws it without smoothing); Chromium ignores it and computes `auto`	3
 overflow:keyword: ours 'visible' browser 'hidden'	legacy-compat	the SVG 1.1 style sheet clips a foreignObject and the browsers keep that; the CR's (6.8) does not list it	2
+mask-repeat:keyword: ours 'repeat repeat' browser 'repeat'	unspecified	the browsers write the shortest form of `mask-repeat` (CSS Values 4: `repeat` for `repeat repeat`); this library writes the two keywords	452
 paint-order:keyword: ours 'markers fill' browser 'markers'	unspecified	Chromium writes the shortest form of `paint-order`; this library writes the keywords as specified	2
 paint-order:keyword: ours 'stroke fill' browser 'stroke'	unspecified	Chromium writes the shortest form of `paint-order`; this library writes the keywords as specified	2
 rx:length: ours auto browser #px	unspecified	the resolved value of `rx` is the used radius; this library reads the computed `auto`	1

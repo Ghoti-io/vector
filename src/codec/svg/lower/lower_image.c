@@ -188,21 +188,16 @@ static GVEC_Result resolver_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   return GVEC_OK;
 }
 
-static GVEC_Result image_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, unsigned char ** bytes, size_t * size, bool * svg,
-    const char ** uri, bool * borrowed, bytes_state * state) {
+static GVEC_Result image_bytes_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GVEC_Svg_Reference * given, unsigned char ** bytes, size_t * size,
+    bool * svg, const char ** uri, bool * borrowed, bytes_state * state) {
   const GVEC_Limits * limits = &ctx->document->limits;
+  GVEC_Svg_Reference ref = *given;
   *bytes = NULL;
   *size = 0;
   *svg = false;
   *uri = NULL;
   *borrowed = false;
   *state = BYTES_NOTHING;
-  const GVEC_Svg_Attribute * href = href_attribute(e);
-  GVEC_Svg_Reference ref;
-  if (!href || gvec_svg_attribute_class(href) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_reference(href, &ref) ||
-      ref.kind == GVEC_SVG_REF_EMPTY) {
-    return unusable(ctx, e, GVEC_IMAGE_NO_DATA, "the image names no data");
-  }
   if (ref.kind == GVEC_SVG_REF_INTERNAL) {
     return unusable(ctx, e, GVEC_IMAGE_NOT_AN_IMAGE, "the image names an element of the document, which is not an image");
   }
@@ -304,6 +299,23 @@ static GVEC_Result image_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, un
   *svg = is_svg_document(contents, contents_size, NULL);
   *state = BYTES_READY;
   return GVEC_OK;
+}
+
+static GVEC_Result image_bytes(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, unsigned char ** bytes, size_t * size, bool * svg,
+    const char ** uri, bool * borrowed, bytes_state * state) {
+  *bytes = NULL;
+  *size = 0;
+  *svg = false;
+  *uri = NULL;
+  *borrowed = false;
+  *state = BYTES_NOTHING;
+  const GVEC_Svg_Attribute * href = href_attribute(e);
+  GVEC_Svg_Reference ref;
+  if (!href || gvec_svg_attribute_class(href) != GVEC_SVG_ATTR_TYPED || !gvec_svg_attribute_reference(href, &ref) ||
+      ref.kind == GVEC_SVG_REF_EMPTY) {
+    return unusable(ctx, e, GVEC_IMAGE_NO_DATA, "the image names no data");
+  }
+  return image_bytes_of(ctx, e, &ref, bytes, size, svg, uri, borrowed, state);
 }
 
 //-----------------------------------------------------------------------------
@@ -647,6 +659,43 @@ static GVEC_Result load_svg_image(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e,
   out->width = w;
   out->height = h;
   *state = GVEC_LW_IMAGE_READY;
+  return GVEC_OK;
+}
+
+GVEC_Result gvec_lw_image_load_url(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const char * url, gvec_lw_image_state * state, gvec_lw_image * out) {
+  unsigned char * bytes = NULL;
+  size_t size = 0;
+  bool svg = false, borrowed = false;
+  const char * uri = NULL;
+  bytes_state bs;
+  gvec_lw_image result;
+  memset(&result, 0, sizeof result);
+  *state = GVEC_LW_IMAGE_NOTHING;
+  GVEC_Svg_Reference ref;
+  gvec_svg_parse_context pc;
+  memset(&pc, 0, sizeof pc);
+  pc.arena = &ctx->arena;
+  pc.allocator = ctx->allocator;
+  pc.max_list_items = ctx->document->limits.max_list_items;
+  pc.max_path_segments = ctx->document->limits.max_path_segments;
+  gvec_svg_parse_error err;
+  if (gvec_svg_parse_reference(url, strlen(url), &pc, &ref, &err) != GVEC_SVG_PARSE_OK || ref.kind == GVEC_SVG_REF_EMPTY) {
+    return unusable(ctx, e, GVEC_IMAGE_NO_DATA, "the mask image names no data");
+  }
+  GVEC_Result r = image_bytes_of(ctx, e, &ref, &bytes, &size, &svg, &uri, &borrowed, &bs);
+  if (r == GVEC_OK && bs == BYTES_READY) {
+    r = svg ? load_svg_image(ctx, e, bytes, size, uri, &result, state) : decode_image(ctx, e, bytes, size, &result, state);
+  }
+  else if (bs == BYTES_REFUSED) {
+    *state = GVEC_LW_IMAGE_REFUSED;
+  }
+  if (borrowed == false) { /* what the resolver gave is its own */
+    gvec_free(ctx->allocator, bytes);
+  }
+  if (r != GVEC_OK) {
+    return r;
+  }
+  *out = result;
   return GVEC_OK;
 }
 

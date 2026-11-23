@@ -79,6 +79,8 @@ static uint64_t hash2(uint64_t a, uint64_t b) {
 
 /* The `mask` of `inst`: 0 when it names nothing a mask can be made of (nothing, a reference to what is no `mask`, or one a cycle cut and
  * that is already being made), 1 with the element in `*target`, -1 for what this does not lower. */
+#define make_mask gvec_lw_mask_of_element
+
 static GVEC_Result mask_reference(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, int * kind, const GVEC_Svg_Element ** target) {
   GVEC_Svg_Style_Value v;
   bool usable;
@@ -89,7 +91,29 @@ static GVEC_Result mask_reference(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
     *kind = usable ? 0 : -1;
     return r;
   }
-  /* A list of masks is composited (CSS Masking 1, mask-composite), and an image or a gradient is a mask image of its own: neither is a `mask` element. */
+  /* Anything but one `url()` of this document is a list of layers, an image or a gradient (CSS Masking 1): lower_mask_layers.c makes that mask. */
+  GVEC_Svg_Style_Specified specified;
+  r = gvec_svg_get_specified(ctx->style, inst, GVEC_SVG_PROP_MASK, &specified);
+  if (r != GVEC_OK) {
+    *kind = -1;
+    return r;
+  }
+  if (!specified.computed || strcmp(specified.computed, "none") == 0) {
+    GVEC_Svg_Style_Specified border;
+    r = gvec_svg_get_specified(ctx->style, inst, GVEC_SVG_PROP_MASK_BORDER_SOURCE, &border);
+    if (r != GVEC_OK) {
+      *kind = -1;
+      return r;
+    }
+    if (border.computed && strcmp(border.computed, "none") != 0) {
+      *kind = 2; /* a mask-border: the layers' reading refuses it */
+    }
+    return GVEC_OK;
+  }
+  if (!gvec_lw_mask_is_element_reference(specified.computed)) {
+    *kind = 2;
+    return GVEC_OK;
+  }
   for (size_t i = 0; i < v.reference_count; i++) {
     if (!v.references[i].is_url || !v.references[i].local || v.reference_count > 1) {
       *kind = -1;
@@ -166,7 +190,7 @@ static GVEC_Result on_loop(gvec_lw_ctx * ctx, const GVEC_Svg_Element * mask, boo
 }
 
 /* The mask resource of `mask` for the element `masked` (whose own space is `local`); *state is NODE when `*out` is set. */
-static GVEC_Result make_mask(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, const GVEC_Svg_Element * mask,
+GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, const GVEC_Svg_Element * mask,
     gvec_lw_mask_state * state, const GSHSCENE_Resource ** out) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(masked);
   *state = GVEC_LW_MASK_REFUSED;
@@ -240,8 +264,8 @@ static GVEC_Result make_mask(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
   if (r != GVEC_OK) {
     return r;
   }
-  if (nested_kind == -1) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that is a list of masks, an image or a gradient, or names an element the resolver does not supply, is not lowered");
+  if (nested_kind == -1 || nested_kind == 2) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask element that has a list of masks, an image or a gradient for a mask of its own, or names an element the resolver does not supply, is not lowered");
   }
   const GSHSCENE_Resource * nested = NULL;
   bool loops = false;
@@ -403,9 +427,9 @@ GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
   }
   if (kind == -1) {
     *state = GVEC_LW_MASK_REFUSED;
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that is a list of masks, an image or a gradient, or names an element the resolver does not supply, is not lowered");
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask that names an element the resolver does not supply is not lowered");
   }
-  if (kind == 0 || in_stack(ctx, mask)) {
+  if (kind == 0 || (kind == 1 && in_stack(ctx, mask))) {
     return GVEC_OK; /* A reference to nothing, or one that comes back to a mask being made, draws the element unmasked. */
   }
   /* The space is the element's own: its frame and its transform. */
@@ -429,7 +453,7 @@ GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
   const GSHSCENE_Resource * resource = NULL;
-  r = make_mask(ctx, inst, &local, mask, state, &resource);
+  r = kind == 2 ? gvec_lw_mask_layers(ctx, inst, &local, state, &resource) : make_mask(ctx, inst, &local, mask, state, &resource);
   if (r != GVEC_OK || *state != GVEC_LW_MASK_NODE) {
     return r;
   }

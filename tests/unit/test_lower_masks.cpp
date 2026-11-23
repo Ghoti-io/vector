@@ -212,14 +212,3 @@ int main(int argc, char ** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
-
-TEST(LowerMask, AListOfMasksAnImageOrAGradientAsAMaskIsRefusedNotHalfDrawn) {
-  // CSS Masking composites a list of masks, and a gradient or an image is a mask image of its own: none is a single `mask` element, and the first of a list
-  // alone would draw the wrong picture.
-  for (const char * target : {"mask=\"url(#mask1), url(#mask1)\"", "style=\"mask: linear-gradient(black, transparent)\"", "style=\"mask-image: url(#mask1), url(#mask1)\""}) {
-    Lowered l;
-    Lower("", kContent, l, target);
-    EXPECT_NE(l.Refusal(GVEC_LOWER_MASK), nullptr) << target;
-    EXPECT_EQ(l.Items(), (size_t) 0) << target;
-  }
-}

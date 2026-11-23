@@ -909,8 +909,20 @@ library knows leaves the text in the script's default language system.
 the first item of the drawing, in the viewport's own space whatever the `viewBox` says. Browsers paint it for a standalone document, as the canvas's background (CSS Backgrounds 3, 2.11.2);
 a document that says nothing, or `transparent`, adds nothing, so the caller still composites it as it likes. The background of any other element is a box of CSS layout, which SVG does not have.
 
-**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line. A mask that is a list, an image or a
-gradient is refused (GVEC_LOWER_MASK), not half drawn.
+**S16 `mask` layers.** A `mask` that is not one `url()` of a `mask` element is a list of layers (CSS Masking 1): each is `none`, a `url()` of an image (a raster, or an SVG document, read as an
+`image` is, under the same resource policy), a `url()` of a `mask` element of this document, or a CSS gradient (`linear-gradient`, `radial-gradient` and their `repeating-` forms; stops with
+one or two positions, an angle or `to` a side or a corner, a circle or an ellipse with a size or a keyword and a center; a gradient is interpolated premultiplied, as CSS does). The
+longhands `mask-mode`, `mask-repeat` (all four), `mask-position`, `mask-size` (`auto`, `contain`, `cover`, lengths and percentages), `mask-origin`, `mask-clip` and `mask-composite` are
+read, a shorter list being used again from its first value. The boxes of an SVG element are the fill-box (`fill-box`, `content-box`, `padding-box`), the stroke-box (`stroke-box`,
+`border-box`, `margin-box`; the stroke's half width on each side) and the view-box; `no-clip` paints in the stroke-box. A layer is drawn as the tiles of its image, each a fill, inside a clip to
+its painting area: at most 4096 tiles, and more are refused (GVEC_LOWER_LIMIT). The layers are put in one picture, the last first, each over what is under it in a group with its
+composite: `add` is source-over, `subtract` source-out, `intersect` source-in and `exclude` xor. The mask is the picture's alpha; the mode of a layer (`match-source` is luminance for a
+`mask` element and alpha for an image or a gradient) matters when there are several, where a luminance layer is first made into the alpha its luminance is, by a mask of its own; one layer
+passes its mode on to the mask. A layer of `none` is not there, and a list of nothing is no mask. A conic gradient, an interpolation hint or a color space in a gradient, a `mask-border`, a
+position of three or four values, a mask element of another document in a list and more than 16 layers are refused (GVEC_LOWER_MASK), not half drawn. Where a repeated image's tiles meet,
+the edge of one tile does not blend into the next, as it does in Chromium; the size of a `round` tile is not snapped to a whole pixel, as it is there.
+
+**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have. `inline-size` and `shape-inside` (SVG 2's wrapped text) are not read: no reference renderer wraps, and the text stays on one line.
 `text-overflow` has no effect on SVG text.
 
 **S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The

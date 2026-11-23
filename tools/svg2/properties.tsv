@@ -74,6 +74,14 @@ marker-end	REFS	-		G
 marker-mid	REFS	-		G				
 marker-start	REFS	-		G				
 mask	REFS	-	mask-image	G				
+mask-border-source	KEYWORD	-		G				
+mask-clip	KEYWORD	-		G				
+mask-composite	KEYWORD	-		G				
+mask-mode	KEYWORD	-		G				
+mask-origin	KEYWORD	-		G				
+mask-position	KEYWORD	-		G				
+mask-repeat	KEYWORD	-		G				
+mask-size	KEYWORD	-		G				
 mask-type	KEYWORD	-		G				
 mix-blend-mode	KEYWORD	-		G				
 opacity	NUMBER	-		G				
