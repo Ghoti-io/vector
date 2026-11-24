@@ -762,7 +762,7 @@ TEST(SvgStyleDump, ACanonicalTextAndAHash) {
   std::string text((const char *) data, size);
   gvec_stream_destroy(out);
   EXPECT_EQ(text.rfind("css-computed ", 0), 0u);  /* the version after it is the text library's */
-  EXPECT_NE(text.find("\nfill: red\n"), std::string::npos);
+  EXPECT_NE(text.find("\nfill: rgb(255, 0, 0)\n"), std::string::npos) << "a named color is computed to the sRGB color it names";
   EXPECT_NE(text.find("\nstroke-width: 2px\n"), std::string::npos);
   uint64_t a = 0, b = 0;
   ASSERT_EQ(gvec_svg_style_hash(s.context, &a), GVEC_OK);
