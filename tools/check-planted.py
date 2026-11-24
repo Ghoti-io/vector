@@ -1188,6 +1188,11 @@ def main():
         if start not in names:
             sys.exit("check-planted: PLANT_FROM names no rule: %s" % start)
         cases = cases[names.index(start):]
+    # One slice of the list, so that the plants can be run by several jobs at once: "k/n" runs the plants whose position is k modulo n.
+    shard = os.environ.get("PLANT_SHARD")
+    if shard:
+        k, n = (int(x) for x in shard.split("/"))
+        cases = [c for i, c in enumerate(cases) if i % n == k]
     # A change to some files is held to the plants in those files: a comma-separated list of source paths, as the plants name them.
     files = os.environ.get("PLANT_FILES")
     if files:
