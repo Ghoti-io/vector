@@ -186,6 +186,7 @@ typedef struct layer {
   amount size[2];
   int origin, clip;     ///< 0 fill-box, 1 stroke-box, 2 view-box, 3 no-clip.
   int composite;        ///< 0 add, 1 subtract, 2 intersect, 3 exclude.
+  int named_mode;       ///< The `mask-mode` the layer names: 0 match-source, 1 alpha, 2 luminance.
 } layer;
 
 static int box_keyword(span s) {
@@ -313,7 +314,8 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   for (size_t i = from; i < count; i++) {
     span tokens[TOKENS_MAX];
     size_t n = split(args[i], true, tokens, TOKENS_MAX);
-    if (n == 0 || n > 3 || n > TOKENS_MAX) {
+    /* A color and at most one position: the computed value of a stop with two positions is already two stops. */
+    if (n == 0 || n > 2 || n > TOKENS_MAX) {
       return GVEC_OK;
     }
     GVEC_Svg_Color c;
@@ -342,7 +344,7 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     else if (decision != GVEC_LW_PAINT_DRAW) {
       return GVEC_OK;
     }
-    double fractions[2];
+    double fraction_given = 0;
     size_t positions = 0;
     for (size_t k = 1; k < n; k++) {
       double v;
@@ -366,19 +368,16 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
         }
         fraction = percent ? v / 100.0 : v / length;
       }
-      fractions[positions++] = fraction;
+      fraction_given = fraction;
+      positions++;
     }
-    /* A stop with two positions is two stops of one color. */
-    const size_t stops_here = positions == 2 ? 2 : 1;
-    if (out->count + stops_here > STOPS_MAX) {
+    if (out->count + 1 > STOPS_MAX) {
       return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a gradient of a mask has more stops than the lowering keeps");
     }
-    for (size_t k = 0; k < stops_here; k++) {
-      out->stops[out->count].color = paint;
-      out->position[out->count] = positions ? fractions[k] : 0;
-      out->given[out->count] = positions != 0;
-      out->count++;
-    }
+    out->stops[out->count].color = paint;
+    out->position[out->count] = positions ? fraction_given : 0;
+    out->given[out->count] = positions != 0;
+    out->count++;
   }
   if (out->count < 2) {
     return GVEC_OK;
@@ -1136,7 +1135,8 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
       return refuse_layer(ctx, e, "a mask image that is not a url, a gradient or none is not lowered");
     }
     span mode = trim(entry(mode_list, nm, i));
-    l->mode = is(mode, "alpha") ? 1 : is(mode, "luminance") ? 0 : l->kind == LAYER_ELEMENT ? 0 : 1;
+    l->named_mode = is(mode, "alpha") ? 1 : is(mode, "luminance") ? 2 : 0;
+    l->mode = l->named_mode == 1 ? 1 : l->named_mode == 2 ? 0 : l->kind == LAYER_ELEMENT ? 0 : 1;
     span rep[2];
     span rp = trim(entry(repeat_list, nr, i));
     size_t rn = split(rp, true, rep, 2);
@@ -1282,7 +1282,7 @@ GVEC_Result gvec_lw_mask_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
       }
       gvec_lw_mask_state inner_state;
       const GSHSCENE_Resource * element_mask = NULL;
-      r = gvec_lw_mask_of_element(ctx, masked, local, target, &inner_state, &element_mask);
+      r = gvec_lw_mask_of_element(ctx, masked, local, target, l->named_mode == 1 ? GSHSCENE_MASK_ALPHA : l->named_mode == 2 ? GSHSCENE_MASK_LUMINANCE : 0, &inner_state, &element_mask);
       if (r != GVEC_OK) {
         return r;
       }

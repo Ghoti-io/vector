@@ -114,8 +114,19 @@ static GVEC_Result mask_reference(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * i
     *kind = 2;
     return GVEC_OK;
   }
+  /* One `url()` that a layer gives a `mask-mode` is a layer, not the element's own mask: the mode is the layer's to say. */
+  GVEC_Svg_Style_Specified mode;
+  r = gvec_svg_get_specified(ctx->style, inst, GVEC_SVG_PROP_MASK_MODE, &mode);
+  if (r != GVEC_OK) {
+    *kind = -1;
+    return r;
+  }
+  if (mode.computed && strcmp(mode.computed, "match-source") != 0) {
+    *kind = 2;
+    return GVEC_OK;
+  }
   for (size_t i = 0; i < v.reference_count; i++) {
-    if (!v.references[i].is_url || !v.references[i].local || v.reference_count > 1) {
+    if (!v.references[i].is_url || !v.references[i].local) {
       *kind = -1;
       return GVEC_OK;
     }
@@ -191,7 +202,7 @@ static GVEC_Result on_loop(gvec_lw_ctx * ctx, const GVEC_Svg_Element * mask, boo
 
 /* The mask resource of `mask` for the element `masked` (whose own space is `local`); *state is NODE when `*out` is set. */
 GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, const GVEC_Svg_Element * mask,
-    gvec_lw_mask_state * state, const GSHSCENE_Resource ** out) {
+    uint32_t forced_mode, gvec_lw_mask_state * state, const GSHSCENE_Resource ** out) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(masked);
   *state = GVEC_LW_MASK_REFUSED;
   *out = NULL;
@@ -278,7 +289,7 @@ GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
   if (nested_kind == 1 && !loops && !in_stack(ctx, nested_target) && nested_target != mask) {
     ctx->mask_stack[ctx->mask_depth++] = mask;
     gvec_lw_mask_state inner;
-    r = make_mask(ctx, masked, local, nested_target, &inner, &nested);
+    r = make_mask(ctx, masked, local, nested_target, 0, &inner, &nested);
     ctx->mask_depth--;
     if (r != GVEC_OK || inner != GVEC_LW_MASK_NODE) {
       *state = inner;
@@ -383,7 +394,8 @@ GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
     gshscene_resource_release(picture);
     return r;
   }
-  m.mode = gvec_lw_keyword_is(&v, "alpha") ? GSHSCENE_MASK_ALPHA : GSHSCENE_MASK_LUMINANCE;
+  /* match-source is the `mask-type` of the element; an `alpha` or `luminance` of the layer says which, whatever the element says. */
+  m.mode = forced_mode ? forced_mode : gvec_lw_keyword_is(&v, "alpha") ? GSHSCENE_MASK_ALPHA : GSHSCENE_MASK_LUMINANCE;
   if (m.mode == GSHSCENE_MASK_LUMINANCE) {
     r = gvec_lw_read_property(ctx, mask_inst, GVEC_SVG_PROP_COLOR_INTERPOLATION, GVEC_LOWER_STYLE, &v, &usable);
     if (r != GVEC_OK || !usable) {
@@ -453,7 +465,7 @@ GVEC_Result gvec_lw_mask_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the element's transform leaves the range the waist can carry");
   }
   const GSHSCENE_Resource * resource = NULL;
-  r = kind == 2 ? gvec_lw_mask_layers(ctx, inst, &local, state, &resource) : make_mask(ctx, inst, &local, mask, state, &resource);
+  r = kind == 2 ? gvec_lw_mask_layers(ctx, inst, &local, state, &resource) : make_mask(ctx, inst, &local, mask, 0, state, &resource);
   if (r != GVEC_OK || *state != GVEC_LW_MASK_NODE) {
     return r;
   }

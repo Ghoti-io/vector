@@ -150,7 +150,9 @@ TEST(LowerMaskLayers, TheStopsAreFixedUpAsCssSays) {
   Masked back;
   Lower("mask: linear-gradient(black 50%, white 20%)", back);
   ASSERT_TRUE(back.has_mask && GradientOf(FillsOf(back)[0], g));
-  EXPECT_NEAR(g.stops[1].offset, 0.5, 1e-9);
+  ASSERT_EQ(g.stop_count, (size_t) 2);
+  EXPECT_NEAR(g.stops[0].offset, 0.5, 1e-9);
+  EXPECT_NEAR(g.stops[1].offset, 0.5, 1e-9) << "the scene sorts the stops by position, so only raised to 50% can the first stay the first";
 }
 
 TEST(LowerMaskLayers, ARepeatingGradientRepeatsItsStops) {
@@ -253,6 +255,26 @@ TEST(LowerMaskLayers, TheOriginAndTheClipAreBoxesOfTheElement) {
   EXPECT_EQ(box.min.x, 0.0);
   EXPECT_EQ(box.max.x, 100.0);
   EXPECT_EQ(box.max.y, 100.0);
+  // a view box that is not square: its width and its height are not exchanged
+  Masked wide;
+  GVEC_Lower_Options wide_options;
+  std::memset(&wide_options, 0, sizeof wide_options);
+  LowerSvg(Svg("width=\"200\" height=\"100\"", "<rect x=\"20\" y=\"20\" width=\"40\" height=\"20\" style=\"mask: linear-gradient(black, white) view-box\"/>"), wide.l, 0, 0, &wide_options);
+  ASSERT_GE(wide.l.Items(), 1u);
+  ASSERT_EQ(wide.l.Item(0).kind, GSHSCENE_ITEM_GROUP_PUSH);
+  ASSERT_NE(wide.l.Item(0).group.soft_mask, nullptr);
+  ASSERT_EQ(gshscene_resource_mask(wide.l.Item(0).group.soft_mask, &wide.mask), GSHSCENE_OK);
+  const GSHSCENE_List * wide_list = gshscene_resource_picture(wide.mask.picture);
+  ASSERT_NE(wide_list, nullptr);
+  for (size_t i = 0; i < gshscene_list_count(wide_list); i++) {
+    const GSHSCENE_Item * item = nullptr;
+    ASSERT_EQ(gshscene_list_item(wide_list, i, &item), GSHSCENE_OK);
+    wide.items.push_back(*item);
+  }
+  ASSERT_GE(Fills(wide), 1u);
+  box = BoundsOf(FillsOf(wide)[0]);
+  EXPECT_EQ(box.max.x, 200.0) << "the view box is as wide as the viewport";
+  EXPECT_EQ(box.max.y, 100.0);
   // the origin and the clip are separate: the picture is placed in one, painted in the other
   Masked split;
   Lower("mask-image: linear-gradient(black, white); mask-repeat: no-repeat; mask-origin: view-box; mask-clip: fill-box", split);
@@ -272,6 +294,35 @@ TEST(LowerMaskLayers, AModeOfLuminanceIsTheMaskModeOfASingleLayer) {
   ASSERT_TRUE(luminance.has_mask && alpha.has_mask);
   EXPECT_EQ(luminance.mask.mode, (uint32_t) GSHSCENE_MASK_LUMINANCE);
   EXPECT_EQ(alpha.mask.mode, (uint32_t) GSHSCENE_MASK_ALPHA);
+}
+
+TEST(LowerMaskLayers, AMaskElementIsItsOwnMaskTypeUntilALayerNamesAMode) {
+  Masked implicit, alpha, luminance;
+  Lower("mask: url(#mask1)", implicit);
+  Lower("mask: url(#mask1) alpha", alpha);
+  Lower("mask: url(#mask1) luminance", luminance);
+  ASSERT_TRUE(implicit.has_mask && alpha.has_mask && luminance.has_mask);
+  EXPECT_EQ(implicit.mask.mode, (uint32_t) GSHSCENE_MASK_LUMINANCE) << "match-source: the element's mask-type is luminance";
+  EXPECT_EQ(alpha.mask.mode, (uint32_t) GSHSCENE_MASK_ALPHA) << "a layer that names alpha overrides the element's mask-type";
+  EXPECT_EQ(luminance.mask.mode, (uint32_t) GSHSCENE_MASK_LUMINANCE);
+  Masked typed;
+  Lower("mask: url(#typed)", typed, "", "<mask id=\"typed\" style=\"mask-type: alpha\"><rect width=\"100\" height=\"100\" fill=\"white\"/></mask>");
+  Masked typed_luminance;
+  Lower("mask: url(#typed) luminance", typed_luminance, "", "<mask id=\"typed\" style=\"mask-type: alpha\"><rect width=\"100\" height=\"100\" fill=\"white\"/></mask>");
+  ASSERT_TRUE(typed.has_mask && typed_luminance.has_mask);
+  EXPECT_EQ(typed.mask.mode, (uint32_t) GSHSCENE_MASK_ALPHA) << "match-source reads mask-type: alpha";
+  EXPECT_EQ(typed_luminance.mask.mode, (uint32_t) GSHSCENE_MASK_LUMINANCE) << "a layer that names luminance overrides mask-type: alpha";
+}
+
+TEST(LowerMaskLayers, AMaskElementInAListMatchesItsSourceAsLuminance) {
+  Masked implicit, luminance, alpha;
+  Lower("mask: url(#mask1), url(#mask1) intersect", implicit);
+  Lower("mask: url(#mask1) luminance, url(#mask1) luminance intersect", luminance);
+  Lower("mask: url(#mask1) alpha, url(#mask1) alpha intersect", alpha);
+  ASSERT_TRUE(implicit.has_mask && luminance.has_mask && alpha.has_mask);
+  EXPECT_EQ(gshscene_resource_hash(implicit.mask.picture), gshscene_resource_hash(luminance.mask.picture)) << "match-source: a mask element is its luminance";
+  EXPECT_NE(gshscene_resource_hash(implicit.mask.picture), gshscene_resource_hash(alpha.mask.picture))
+      << "a luminance layer is made into its alpha first; an alpha one is not";
 }
 
 TEST(LowerMaskLayers, TheLayersAreCompositedWithThoseUnderThem) {
@@ -363,7 +414,19 @@ TEST(LowerMaskLayers, WhatThisDoesNotReadIsRefusedNotHalfDrawn) {
   GVEC_Lower_Options options;
   std::memset(&options, 0, sizeof options);
   LowerSvg(Svg("width=\"1000\" height=\"1000\"", "<rect width=\"1000\" height=\"1000\" style=\"mask: linear-gradient(black, white) 0 0 / 1px 1px repeat\"/>"), huge.l, 0, 0, &options);
-  EXPECT_NE(huge.l.Refusal(GVEC_LOWER_LIMIT), nullptr) << "a million tiles are not";
+  ASSERT_NE(huge.l.Refusal(GVEC_LOWER_LIMIT), nullptr) << "a million tiles are not";
+  EXPECT_NE(std::string(huge.l.Refusal(GVEC_LOWER_LIMIT)->message).find("repeated"), std::string::npos) << "the refusal is the one of the tiles, not some other limit";
+  // seventeen layers are one more than are kept; sixteen are kept
+  std::string sixteen = "linear-gradient(black, white)", seventeen;
+  for (int i = 1; i < 16; i++) {
+    sixteen += ", linear-gradient(black, white)";
+  }
+  seventeen = sixteen + ", linear-gradient(black, white)";
+  Masked kept, over;
+  Lower("mask-image: " + sixteen, kept);
+  EXPECT_EQ(kept.l.Refusal(GVEC_LOWER_LIMIT), nullptr);
+  Lower("mask-image: " + seventeen, over);
+  EXPECT_NE(over.l.Refusal(GVEC_LOWER_LIMIT), nullptr) << "more layers than the lowering keeps are refused, not dropped";
   // a mask element whose own mask is a layered one
   Masked nested;
   LowerSvg(Svg("width=\"100\" height=\"100\"", "<mask id=\"m\" style=\"mask: linear-gradient(black, white)\"><rect width=\"9\" height=\"9\" fill=\"white\"/></mask><rect width=\"9\" height=\"9\" mask=\"url(#m)\"/>"),

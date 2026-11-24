@@ -500,9 +500,12 @@ typedef enum gvec_lw_mask_state {
 /** Whether the computed text of `mask` is exactly one `url()` of an element (a `mask` element of this document or another: the lowering of one, as it always was), not a list or an image. */
 GVEC_INTERNAL_API bool gvec_lw_mask_is_element_reference(const char * text);
 
-/** The mask resource of the `mask` element `mask` for `masked`, in the space `local` (lower_mask.c). `*state` is NODE when `*out` is set. */
+/**
+ * The mask resource of the `mask` element `mask` for `masked`, in the space `local` (lower_mask.c). `*state` is NODE when `*out` is set. `forced_mode` is
+ * GSHSCENE_MASK_ALPHA or GSHSCENE_MASK_LUMINANCE when a layer of the `mask` property names its `mask-mode`, and 0 for the element's own `mask-type`.
+ */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, const GVEC_Svg_Element * mask,
-    gvec_lw_mask_state * state, const GSHSCENE_Resource ** out);
+    uint32_t forced_mode, gvec_lw_mask_state * state, const GSHSCENE_Resource ** out);
 
 /**
  * The mask of the `mask` property of `masked` when it is a list of layers or names an image or a gradient (lower_mask_layers.c): the layers drawn in one

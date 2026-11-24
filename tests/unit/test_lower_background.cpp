@@ -4,6 +4,7 @@
  * The background of the root element: its `background-color` is the color of the whole viewport, drawn under everything else.
  */
 
+#include <ghoti.io/shape-scene/resource.h>
 #include "../lower_helpers.h"
 
 using namespace gvec_test;
@@ -26,6 +27,15 @@ TEST(LowerBackground, TheRootsBackgroundColorFillsTheViewportUnderTheDrawing) {
   EXPECT_EQ(first.paint.kind, GSHSCENE_PAINT_SOLID);
   EXPECT_NEAR(first.paint.rgba[1], 1.0, 1e-6);
   EXPECT_NEAR(first.paint.rgba[0], 0.0, 1e-6);
+  GSHGEOM_Bounds box;
+  box.empty = 1;
+  const GSHGEOM_Path * path = gshscene_resource_path(first.resource);
+  ASSERT_NE(path, nullptr);
+  ASSERT_EQ(gshgeom_path_bounds(path, &box), GSHGEOM_OK);
+  EXPECT_EQ(box.min.x, 0.0);
+  EXPECT_EQ(box.min.y, 0.0);
+  EXPECT_EQ(box.max.x, 100.0) << "the whole width of the viewport";
+  EXPECT_EQ(box.max.y, 50.0) << "the whole height of the viewport";
   // it is the whole viewport, drawn first: the drawing's own fill is the second item
   EXPECT_EQ(painted.Item(1).kind, GSHSCENE_ITEM_FILL);
   EXPECT_NEAR(painted.Item(1).paint.rgba[0], 1.0, 1e-6);
