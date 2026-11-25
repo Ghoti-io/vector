@@ -947,7 +947,7 @@ turn from the left (from the right in a right-to-left text), a line feed ending 
 `inline-size`. What does not fit the shape is not drawn, as `flowRoot` of SVG 1.2 did. A reference to nothing, or to what is not a shape, is as if the property were not given; more than one shape in a
 `shape-inside` (the text would flow from one into the next), `outside-shape`, an image and `display` are refused (GVEC_LOWER_TEXT). A line that ends at a soft hyphen shows a hyphen (U+2010 when the face has it, else U+002D) and counts its width; one that does not hides it. Not done: `text-indent`, `tab-size`, `text-align: justify` and hyphenation by dictionary (`hyphens: auto` is `manual`).
 
-**Not done, and why.** `foreignObject`, `audio`, `video`, `canvas` and `iframe` need an HTML layout engine the suite does not have.
+**Not done, and why.** `foreignObject` needs an HTML layout engine the suite does not have yet, so it stays refused (and so does the box of anything that holds one) until one exists. `audio`, `video`, `canvas` and `iframe` as SVG-namespace elements are not drawn by browsers either: in Chromium each is an unknown `SVGElement` with a 0 by 0 box that paints nothing, whatever its `x`, `y`, `width`, `height` or `poster`; the lowering matches that (it draws nothing and reports the element as embedded content that is not rendered). The HTML elements of those names inside a `foreignObject` wait for the same engine.
 `text-overflow` has no effect on SVG text.
 
 **S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The
