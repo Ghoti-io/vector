@@ -1215,15 +1215,12 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
         b->invalid = true;
         return GVEC_OK;
       }
-      if (b->prim_box) {
-        /* The scale is a fraction of the box: of its width along x and of its height along y. The waist's displacement has one scale for both axes, so a box
-         * that is not square (to a thousandth) cannot be carried. */
-        const double w = b->box[2], h = b->box[3];
-        if (!(w > 0) || !(h > 0) || w > h * 1.001 || h > w * 1.001) {
-          return refuse_with(b, "a displacement map in the units of a bounding box that is not square needs a scale for each axis, which the waist's displacement does not have");
-        }
-        scale *= (w + h) / 2;
-      }
+      /* The scale is a length along each axis (a fraction of the box's width and height in box units), put into the list's space through the element's map, as a
+       * deviation is: the waist's displacement has a scale for each axis. */
+      double along[2] = {scale, scale};
+      lengths_to_list(b, along);
+      p->scale_y = along[1];
+      scale = along[0];
       p->scale = scale;
       p->x_channel = p->y_channel = GSHSCENE_FILTER_CHANNEL_A;
       static const char * const sel[2] = {"xChannelSelector", "yChannelSelector"};

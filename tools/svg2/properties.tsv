@@ -52,6 +52,8 @@ font-size	LENGTH	-		G
 font-size-adjust	KEYWORD	-		G				
 font-stretch	KEYWORD	-	font-width	G				
 font-style	KEYWORD	-		G				
+font-synthesis-style	KEYWORD	-		G				
+font-synthesis-weight	KEYWORD	-		G				
 font-variant	KEYWORD	-		G				
 font-variant-alternates	KEYWORD	-		G				
 font-variant-caps	KEYWORD	-		G				

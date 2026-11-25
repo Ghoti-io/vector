@@ -190,6 +190,7 @@ typedef struct layer {
   int origin, clip;     ///< 0 fill-box, 1 stroke-box, 2 view-box, 3 no-clip.
   int composite;        ///< 0 add, 1 subtract, 2 intersect, 3 exclude.
   int named_mode;       ///< The `mask-mode` the layer names: 0 match-source, 1 alpha, 2 luminance.
+  double resolution;    ///< The pixels of the image for each CSS pixel (an `image-set()` candidate's `2x`); 0 for 1.
   /* LAYER_BORDER: the mask border (CSS Masking 1, 6.2), `image` being its source. */
   double slice[4];      ///< `mask-border-slice`, top right bottom left: a number of pixels of the image, or a percentage of it (`slice_percent`).
   bool slice_percent[4];
@@ -1368,7 +1369,7 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
   }
   gvec_lw_image image;
   memset(&image, 0, sizeof image);
-  double iw = 0, ih = 0;
+  double iw = 0, ih = 0, pixel_w = 0, pixel_h = 0;
   if (l->kind == LAYER_IMAGE) {
     int state;
     GVEC_Result r = load_source(ctx, e, l->image, &image, &iw, &ih, &state);
@@ -1378,6 +1379,12 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
     if (state == 2) {
       *ok = true; /* an image that cannot be used covers nothing */
       return GVEC_OK;
+    }
+    pixel_w = iw;
+    pixel_h = ih;
+    if (l->resolution > 0) {
+      iw /= l->resolution; /* the size in CSS pixels */
+      ih /= l->resolution;
     }
   }
   double tw, th;
@@ -1480,7 +1487,7 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
       }
       else if (image.resource) {
         GSHGEOM_Map place, shift, scale, map;
-        if (gshgeom_map_translate(2, x, y, 0, &shift) != GSHGEOM_OK || gshgeom_map_scale(2, tw / iw, th / ih, 1, &scale) != GSHGEOM_OK || !gvec_lw_compose(&shift, &scale, &place)) {
+        if (gshgeom_map_translate(2, x, y, 0, &shift) != GSHGEOM_OK || gshgeom_map_scale(2, tw / pixel_w, th / pixel_h, 1, &scale) != GSHGEOM_OK || !gvec_lw_compose(&shift, &scale, &place)) {
           return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a mask image's map is past the range the waist can carry");
         }
         map = place;
@@ -1503,7 +1510,7 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
       }
       else if (image.svg) {
         GSHGEOM_Map shift, scale, placed;
-        if (gshgeom_map_translate(2, x, y, 0, &shift) != GSHGEOM_OK || gshgeom_map_scale(2, tw / iw, th / ih, 1, &scale) != GSHGEOM_OK || !gvec_lw_compose(&shift, &scale, &placed)) {
+        if (gshgeom_map_translate(2, x, y, 0, &shift) != GSHGEOM_OK || gshgeom_map_scale(2, tw / pixel_w, th / pixel_h, 1, &scale) != GSHGEOM_OK || !gvec_lw_compose(&shift, &scale, &placed)) {
           return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a mask image's map is past the range the waist can carry");
         }
         r = gvec_lw_svg_image_node(ctx, e, local, &image, &placed, &node);
@@ -1572,6 +1579,8 @@ static GVEC_Result mask_of_art(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, gv
 // The mask border (CSS Masking 1, 6.2; CSS Backgrounds 3, 6.2 for what a border image is)
 //-----------------------------------------------------------------------------
 
+static GVEC_Result image_function(gvec_lw_ctx * ctx, span text, span * out, double * resolution, bool * ok);
+
 /* One to four values, as the four sides: top right bottom left (the missing ones are those the one before says, as for `margin`). */
 static void four_sides(size_t n, size_t index[4]) {
   index[0] = 0;
@@ -1605,6 +1614,17 @@ static GVEC_Result parse_border(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
   }
   if (r != GVEC_OK) {
     return r;
+  }
+  if (starts(source, "image-set(") || starts(source, "-webkit-image-set(") || starts(source, "image(")) {
+    bool picked;
+    r = image_function(ctx, source, &l->image, &l->resolution, &picked);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (!picked) {
+      return refuse_layer(ctx, e, "an image-set() or image() of a mask that this does not read is not lowered");
+    }
+    source = l->image;
   }
   if (!(starts(source, "url(") || starts(source, "linear-gradient(") || starts(source, "radial-gradient(") || starts(source, "conic-gradient(") ||
         starts(source, "repeating-linear-gradient(") || starts(source, "repeating-radial-gradient(") || starts(source, "repeating-conic-gradient("))) {
@@ -1924,7 +1944,7 @@ static GVEC_Result border_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * maske
       *ok = true; /* an image that cannot be used covers nothing */
       return GVEC_OK;
     }
-    intrinsic = iw > 0 && ih > 0;
+    intrinsic = iw > 0 && ih > 0; /* slices are in the pixels of the image, whatever its density */
     if (!intrinsic) {
       iw = area_w;
       ih = area_h;
@@ -1959,7 +1979,7 @@ static GVEC_Result border_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * maske
   for (int k = 0; k < 4; k++) {
     const amount a = l->width[k];
     const double basis = (k == 0 || k == 2) ? area_h : area_w;
-    wide[k] = a.kind == 0 ? (intrinsic ? slice[k] : 0) : a.kind == 1 ? a.v : a.kind == 2 ? a.v * basis / 100.0 : 0;
+    wide[k] = a.kind == 0 ? (intrinsic ? slice[k] / (l->resolution > 0 ? l->resolution : 1) : 0) : a.kind == 1 ? a.v : a.kind == 2 ? a.v * basis / 100.0 : 0;
   }
   /* sides that together are more than the area are shrunk, together, to fit it */
   double shrink = 1;
@@ -2036,6 +2056,75 @@ static GVEC_Result border_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * maske
   return GVEC_OK;
 }
 
+/*
+ * `image-set()` (CSS Images 4, 3.3) and `image()`: the `url()` of the image to use, and how many of its pixels make a CSS pixel. A target has one pixel for each CSS pixel, so
+ * the candidate is the one of the least resolution that is at least 1x, or else the greatest; a candidate is `<url> | <string>`, then a resolution (`2x`, `192dpi`, `1dppx`), and
+ * a `type()` the loader decides by the bytes, not the label. `image()` is its first argument. *ok is false for anything this does not read.
+ */
+static GVEC_Result image_function(gvec_lw_ctx * ctx, span text, span * out, double * resolution, bool * ok) {
+  *ok = false;
+  *resolution = 1;
+  const bool set = starts(text, "image-set(") || starts(text, "-webkit-image-set(");
+  const size_t open = starts(text, "-webkit-image-set(") ? 18 : starts(text, "image-set(") ? 10 : 6;
+  if ((!set && !starts(text, "image(")) || text.n < open + 1 || text.p[text.n - 1] != ')') {
+    return GVEC_OK;
+  }
+  span args[17];
+  const size_t count = split(trim((span) {text.p + open, text.n - open - 1}), false, args, 17);
+  if (count == 0 || count > 16 || (!set && count != 1 && count != 2)) {
+    return GVEC_OK;
+  }
+  double best = -1;
+  span best_source = {NULL, 0};
+  for (size_t i = 0; i < (set ? count : 1); i++) {
+    span tokens[4];
+    const size_t n = split(args[i], true, tokens, 4);
+    if (n == 0 || n > 3) {
+      return GVEC_OK;
+    }
+    double resolution_of = 1;
+    for (size_t k = 1; k < n; k++) {
+      double v;
+      span unit;
+      if (starts(tokens[k], "type(")) {
+        continue;
+      }
+      if (!set || !number_unit(tokens[k], &v, &unit) || !(v > 0)) {
+        return GVEC_OK;
+      }
+      resolution_of = is(unit, "x") || is(unit, "dppx") ? v : is(unit, "dpi") ? v / 96.0 : is(unit, "dpcm") ? v * 2.54 / 96.0 : 0;
+      if (!(resolution_of > 0)) {
+        return GVEC_OK;
+      }
+    }
+    const bool better = best < 0 || (resolution_of >= 1 ? (best < 1 || resolution_of < best) : (best < 1 && resolution_of > best));
+    if (better) {
+      best = resolution_of;
+      best_source = tokens[0];
+    }
+  }
+  span source = best_source;
+  if (source.n >= 2 && (source.p[0] == '"' || source.p[0] == '\'') && source.p[source.n - 1] == source.p[0]) {
+    /* a string is the url of an image: `url("...")` */
+    char * made = gvec_arena_alloc(&ctx->arena, source.n + 6, 1);
+    if (!made) {
+      return GVEC_ERR_OOM;
+    }
+    memcpy(made, "url(", 4);
+    memcpy(made + 4, source.p, source.n);
+    made[4 + source.n] = ')';
+    made[5 + source.n] = 0;
+    source = (span) {made, source.n + 5};
+  }
+  if (!starts(source, "url(")) {
+    return GVEC_OK;
+  }
+  *out = source;
+  *resolution = best;
+  *ok = true;
+  return GVEC_OK;
+}
+
 static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, layer * layers, size_t * count, bool * ok) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(masked);
   *ok = false;
@@ -2102,6 +2191,17 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
     l->image = image;
     if (is(image, "none")) {
       l->kind = LAYER_NONE;
+    }
+    else if (starts(image, "image-set(") || starts(image, "-webkit-image-set(") || starts(image, "image(")) {
+      bool picked;
+      GVEC_Result pr = image_function(ctx, image, &l->image, &l->resolution, &picked);
+      if (pr != GVEC_OK) {
+        return pr;
+      }
+      if (!picked) {
+        return refuse_layer(ctx, e, "an image-set() or image() of a mask that this does not read is not lowered");
+      }
+      l->kind = LAYER_IMAGE;
     }
     else if (starts(image, "url(")) {
       l->kind = local_url(image) ? LAYER_ELEMENT : LAYER_IMAGE;
@@ -2241,25 +2341,7 @@ GVEC_Result gvec_lw_mask_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
       continue;
     }
     gvec_lw_node * art = NULL;
-    if (l->kind == LAYER_BORDER) {
-      bool border_ok;
-      r = border_art(ctx, masked, local, l, i, origin_box, &art, &border_ok);
-      if (r != GVEC_OK || !border_ok) {
-        return r;
-      }
-      if (!art) {
-        continue;
-      }
-      if (single) {
-        final_mode = l->mode == 0 ? GSHSCENE_MASK_LUMINANCE : GSHSCENE_MASK_ALPHA;
-        accumulated = art;
-        break;
-      }
-      if (!l->mode) {
-        return refuse_layer(ctx, e, "a luminance mask border over other mask layers is not lowered");
-      }
-    }
-    else if (l->kind == LAYER_ELEMENT) {
+    if (l->kind == LAYER_ELEMENT) {
       /* A `mask` element names a mask of its own: white where that mask lets through, under the layer's clip. */
       span text = trim(l->image);
       span inner = trim((span) {text.p + 4, text.n - 5});
@@ -2323,7 +2405,8 @@ GVEC_Result gvec_lw_mask_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
     }
     else {
       bool layer_ok;
-      r = layer_art(ctx, masked, local, l, i, origin_box, clip_box, &art, &layer_ok);
+      r = l->kind == LAYER_BORDER ? border_art(ctx, masked, local, l, i, origin_box, &art, &layer_ok)
+                                  : layer_art(ctx, masked, local, l, i, origin_box, clip_box, &art, &layer_ok);
       if (r != GVEC_OK || !layer_ok) {
         return r;
       }

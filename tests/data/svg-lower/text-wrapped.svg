@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- Wrapped text (SVG 2, 11.4.1; written by tools/gen-lower-fixtures.py): an inline-size rectangle, with text-indent (a first line, hanging), text-align (center, end) and
+     justified text with its last line, in the test font. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" font-family="sans-serif" font-size="8">
+  <style>text { inline-size: 56px }</style>
+  <text x="2" y="10" style="text-indent: 8px">AA BB CC DD EE</text>
+  <text x="62" y="10" style="text-indent: 8px hanging">AA BB CC DD EE</text>
+  <text x="2" y="40" style="text-align: center">AA BB CC DD EE</text>
+  <text x="62" y="40" style="text-align: end">AA BB CC DD EE</text>
+  <text x="2" y="70" style="text-align: justify">AA BB CC DD EE FF GG</text>
+  <text x="62" y="70" style="text-align: justify; text-align-last: justify; text-justify: inter-character">AA BB CC DD EE</text>
+</svg>

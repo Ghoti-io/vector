@@ -53,6 +53,8 @@ typedef struct tstyle {
   const char ** families;
   size_t family_count;
   double size, weight, width, anchor;
+  bool synthesis_weight;    ///< `font-synthesis-weight` allows emboldening a face that is lighter than the weight asked for (`none` does not).
+  bool synthesis_style;     ///< `font-synthesis-style` allows leaning an upright face where italic or oblique is asked for (`none` does not; `oblique-only` allows only an oblique).
   double letter_spacing, word_spacing;
   double line_height;       ///< `line-height`, in user units, unless it is `normal`.
   bool line_normal;         ///< `line-height: normal` (or a value this does not read): the face's own ascent, descent and gap make the line.

@@ -390,6 +390,9 @@ typedef struct gvec_lw_stroke {
 /** Read the stroke properties of an instance and make the style and the paint; refuses the element whole when it cannot. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_stroke * out);
 
+/** A solid stroke style of this width with the default miter join and butt cap (held by the context): what synthetic bold strokes a glyph run with. */
+GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_plain(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, double width, const GSHSCENE_Resource ** out);
+
 /** The box of the stroke of an element's centerline in the space `map` leads to: `*box` holds the fill box there and is grown by the stroker's
  * outline. `*ok` is false when the stroke cannot be boxed. No stroke leaves the box as it is. */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_stroke_bounds(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHSCENE_Resource * centerline,
@@ -443,6 +446,7 @@ typedef struct gvec_lw_text_piece {
   GSHGEOM_Map image_map;              ///< The image's pixels to the element's space: the strike's scale, and the glyph's place by the bearings of the bitmap.
   GSHGEOM_Map map;                    ///< The map of the run in the element's space: the identity, or the stretch of a textLength that scales the glyphs.
   GSHGEOM_Bounds box;                 ///< The cells of the glyphs of the run, as the text's box takes them (empty for a decoration): what a filter on the span is placed in.
+  double embolden;                    ///< Synthetic bold: the outline of the run grows by half of this on each side (a stroke of this width in the fill's paint); 0 for none.
 } gvec_lw_text_piece;
 
 typedef struct gvec_lw_text {

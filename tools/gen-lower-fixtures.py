@@ -92,6 +92,35 @@ FILTER_SVG = """<?xml version="1.0"?>
 """
 
 
+MASKS_CSS_SVG = """<?xml version="1.0"?>
+<!-- CSS masks (CSS Masking 1; written by tools/gen-lower-fixtures.py from tests/data/images): a conic gradient, a hint, a color interpolation method, a position with
+     offsets from the far edges, a mask border, and an image-set() of an image. Each is a rectangle of its own, masked by what is in its style. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="64" viewBox="0 0 96 64">
+  <rect width="96" height="64" fill="#ecf0f1"/>
+  <rect x="2" y="2" width="28" height="28" fill="#c0392b" style="mask: conic-gradient(from 45deg at 50% 50%, black, transparent)"/>
+  <rect x="34" y="2" width="28" height="28" fill="#2980b9" style="mask: linear-gradient(90deg, black, 25%, transparent)"/>
+  <rect x="66" y="2" width="28" height="28" fill="#27ae60" style="mask: linear-gradient(in oklab 90deg, black, transparent)"/>
+  <rect x="2" y="34" width="28" height="28" fill="#8e44ad" style="mask-image: radial-gradient(circle 6px, black, transparent); mask-size: 14px 14px; mask-repeat: no-repeat; mask-position: right 3px bottom 2px"/>
+  <rect x="34" y="34" width="28" height="28" fill="#f39c12" style="mask-border-source: linear-gradient(black, transparent); mask-border-slice: 6; mask-border-width: 6px; mask-border-repeat: round"/>
+  <rect x="66" y="34" width="28" height="28" fill="#16a085" style="mask-image: image-set(url(@RGB@) 0.125x); mask-mode: luminance; mask-repeat: no-repeat"/>
+</svg>
+"""
+
+TEXT_WRAPPED_SVG = """<?xml version="1.0"?>
+<!-- Wrapped text (SVG 2, 11.4.1; written by tools/gen-lower-fixtures.py): an inline-size rectangle, with text-indent (a first line, hanging), text-align (center, end) and
+     justified text with its last line, in the test font. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120" font-family="sans-serif" font-size="8">
+  <style>text { inline-size: 56px }</style>
+  <text x="2" y="10" style="text-indent: 8px">AA BB CC DD EE</text>
+  <text x="62" y="10" style="text-indent: 8px hanging">AA BB CC DD EE</text>
+  <text x="2" y="40" style="text-align: center">AA BB CC DD EE</text>
+  <text x="62" y="40" style="text-align: end">AA BB CC DD EE</text>
+  <text x="2" y="70" style="text-align: justify">AA BB CC DD EE FF GG</text>
+  <text x="62" y="70" style="text-align: justify; text-align-last: justify; text-justify: inter-character">AA BB CC DD EE</text>
+</svg>
+"""
+
+
 def images_text(template):
     return template % {
         "rgb": data_uri("rgb-3x2.png"),
@@ -110,6 +139,8 @@ def files():
     yield "images.svg", images_text(IMAGES_SVG)
     yield "images-files.svg", FILES_SVG % {}
     yield "images-filter.svg", images_text(FILTER_SVG)
+    yield "masks-css.svg", MASKS_CSS_SVG.replace("@RGB@", data_uri("rgb-3x2.png"))
+    yield "text-wrapped.svg", TEXT_WRAPPED_SVG
     for align in ALIGNS:
         for mode in ([""] if align == "none" else ["meet", "slice"]):
             par = (align + " " + mode).strip()

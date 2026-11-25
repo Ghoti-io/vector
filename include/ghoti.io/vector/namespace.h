@@ -193,6 +193,7 @@
 #define gvec_lw_stroke_bounds GHOTIIO_VECTOR(gvec_lw_stroke_bounds)
 #define gvec_lw_stroke_first GHOTIIO_VECTOR(gvec_lw_stroke_first)
 #define gvec_lw_stroke_of GHOTIIO_VECTOR(gvec_lw_stroke_of)
+#define gvec_lw_stroke_plain GHOTIIO_VECTOR(gvec_lw_stroke_plain)
 #define gvec_lw_svg_image_node GHOTIIO_VECTOR(gvec_lw_svg_image_node)
 #define gvec_lw_table_add GHOTIIO_VECTOR(gvec_lw_table_add)
 #define gvec_lw_table_new GHOTIIO_VECTOR(gvec_lw_table_new)

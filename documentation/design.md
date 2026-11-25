@@ -894,6 +894,10 @@ stretches is not used). The glyph runs carry the location, so one face at two lo
 The faces of a text are put in the order of the `font-family` list, the fonts' own fallback last, which is the order the shaper prefers them in; they used to be in the order the text first
 needed them, so that a text beginning with a character only a later family had took the other characters from that family.
 
+**Synthetic slant and bold.** A text asked for in `italic` or `oblique` whose face is upright (no italic or oblique flag in its `OS/2` or `post`, no `slnt` or `ital` axis to move) is leaned about its baseline, by the angle of the oblique (14 degrees for
+`italic` and for an oblique with none, the browsers' 1/4 skew), a run at a time (a run is cut where the baseline changes); a text asked for at a weight of 600 or more whose face is lighter than 600 and has no `wght` axis is emboldened by a stroke in
+the fill's paint of 1/24 of the size at 9 and below to 1/32 at 36 and above, as the browsers do. `font-synthesis-style: none` (and `oblique-only`, for an italic) and `font-synthesis-weight: none` say no. Vertical text is not leaned or emboldened.
+
 **S13 `text-orientation`.** In vertical text a span's characters stand upright or lie on their side as `text-orientation` says: `mixed` (the initial value) by the script of each
 character (the ideographs, kana, Hangul and full-width forms upright, the rest on their side), `upright` for all of them (shaped on the vertical axis, with vertical advances), `sideways`
 for none. The SVG 1.1 `glyph-orientation-vertical` of `0` and `90` is read as `upright` and `sideways` when `text-orientation` says `mixed` (CSS Writing Modes 3, 5.1). In horizontal
@@ -922,7 +926,8 @@ passes its mode on to the mask. A layer of `none` is not there, and a list of no
 (GVEC_LOWER_MASK), not half drawn. Where a repeated image's tiles meet, the edge of one tile does not blend into the next, as it does in Chromium; the size of a `round` tile is not snapped
 to a whole pixel, as it is there.
 
-The gradients of a layer are `linear-gradient`, `radial-gradient`, `conic-gradient` and the repeating forms. A conic gradient is the waist's sweep (CSS starts at the top and runs clockwise, the
+An image of a layer is a `url()`, an `image-set()` (or `-webkit-image-set()`: the candidate of the least resolution that is at least 1x, else the greatest, its image sized by its density) or an
+`image()` of one `url()`; a `cross-fade()` and an `element()` are not read (no browser reads either, unprefixed). The gradients of a layer are `linear-gradient`, `radial-gradient`, `conic-gradient` and the repeating forms. A conic gradient is the waist's sweep (CSS starts at the top and runs clockwise, the
 sweep at +x toward +y, so the sweep's angle is CSS's less 90 degrees), repeating by the turn, with a stop at each end of the turn so that the colors before the first stop and after the last are
 the end colors. A hint between two stops (CSS Images 3, 3.4.3) and a color interpolation method (`in oklab`, `in hsl longer hue`: any space and hue method `color-mix()` takes) are not lines
 in an RGB space, which is all the waist interpolates, so they are given to it as stops that sample the curve: the colors between two stops are made by `color-mix()` in that space and a stop is added wherever the

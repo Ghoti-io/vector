@@ -61,6 +61,8 @@ const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {
   {"font-size-adjust", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-size-adjust", NULL, NULL, NULL},
   {"font-stretch", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-width", NULL, NULL, NULL},
   {"font-style", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-style", NULL, NULL, NULL},
+  {"font-synthesis-style", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-synthesis-style", NULL, NULL, NULL},
+  {"font-synthesis-weight", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-synthesis-weight", NULL, NULL, NULL},
   {"font-variant", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant", NULL, NULL, NULL},
   {"font-variant-alternates", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant-alternates", NULL, NULL, NULL},
   {"font-variant-caps", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "font-variant-caps", NULL, NULL, NULL},

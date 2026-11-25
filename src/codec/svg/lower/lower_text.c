@@ -749,6 +749,18 @@ static GVEC_Result span_style(tctx * t, const GVEC_Svg_Instance * inst, const ts
       st->oblique = angle < -90 ? -90 : angle > 90 ? 90 : angle;
     }
   }
+  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_SYNTHESIS_STYLE, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->synthesis_style = !gvec_lw_keyword_is(&v, "none") && !(gvec_lw_keyword_is(&v, "oblique-only") && st->italic != 2);
+  r = read_style(ctx, inst, GVEC_SVG_PROP_FONT_SYNTHESIS_WEIGHT, &v, &ok);
+  if (r != GVEC_OK || !ok) {
+    t->refused = true;
+    return r;
+  }
+  st->synthesis_weight = !gvec_lw_keyword_is(&v, "none");
   r = read_style(ctx, inst, GVEC_SVG_PROP_TEXT_ORIENTATION, &v, &ok);
   if (r != GVEC_OK || !ok) {
     t->refused = true;
@@ -1766,6 +1778,61 @@ typedef struct tloc {
   GFNT_F2Dot14 coords[AXES_MAX];
   size_t count;
 } tloc;
+
+/*
+ * Synthetic slant (CSS Fonts 4, 5.2.1: `font-synthesis-style`): a text asked for in italic or oblique whose face is upright is leaned, by the angle of the
+ * oblique (14 degrees for italic and for an oblique with none, as the browsers do), about the baseline. A face that leans already (its `OS/2` or `post` says so),
+ * or has a `slnt` or `ital` axis the location moves, is not leaned again. `font-synthesis: none` (and `style` left out of it) says no.
+ */
+static double synthetic_slant(const GFNT_Face * face, const tstyle * st) {
+  if (!face || st->italic == 0 || !st->synthesis_style) {
+    return 0;
+  }
+  size_t axes = 0;
+  if (gfnt_face_axis_count(face, &axes, NULL) == GFNT_OK) {
+    for (size_t a = 0; a < axes && a < 64; a++) {
+      GFNT_Axis axis;
+      if (gfnt_face_axis_at(face, a, &axis, NULL) == GFNT_OK && (axis.tag == GFNT_TAG('s', 'l', 'n', 't') || axis.tag == GFNT_TAG('i', 't', 'a', 'l'))) {
+        return 0;
+      }
+    }
+  }
+  const GFNT_Os2 * os2 = NULL;
+  const GFNT_Post * post = NULL;
+  if (gfnt_face_os2(face, &os2, NULL) == GFNT_OK && os2 && (os2->fs_selection & 0x0201u) != 0) {
+    return 0;
+  }
+  if (gfnt_face_post(face, &post, NULL) == GFNT_OK && post && post->italic_angle != 0) {
+    return 0;
+  }
+  const double degrees = st->italic == 2 ? st->oblique : 14.0;
+  return degrees == 0 ? 0 : (double) gmath_tan(degrees * 3.14159265358979323846 / 180.0);
+}
+
+/*
+ * Synthetic bold: a face lighter than 600 asked for at a weight of 600 or more (and with no `wght` axis to move) is emboldened, as the browsers do it, by a stroke in
+ * the fill's paint whose width is a fraction of the size that falls from 1/24 (at 9 and below) to 1/32 (at 36 and above), the outline growing by half of it each way.
+ */
+static double synthetic_embolden(const GFNT_Face * face, const tstyle * st, double size) {
+  if (!face || !st->synthesis_weight || !(st->weight >= 600)) {
+    return 0;
+  }
+  size_t axes = 0;
+  if (gfnt_face_axis_count(face, &axes, NULL) == GFNT_OK) {
+    for (size_t a = 0; a < axes && a < 64; a++) {
+      GFNT_Axis axis;
+      if (gfnt_face_axis_at(face, a, &axis, NULL) == GFNT_OK && axis.tag == GFNT_TAG('w', 'g', 'h', 't')) {
+        return 0;
+      }
+    }
+  }
+  const GFNT_Os2 * os2 = NULL;
+  if (gfnt_face_os2(face, &os2, NULL) == GFNT_OK && os2 && os2->weight_class >= 600) {
+    return 0;
+  }
+  const double fraction = size <= 9 ? 1.0 / 24.0 : size >= 36 ? 1.0 / 32.0 : 1.0 / 24.0 + (1.0 / 32.0 - 1.0 / 24.0) * (size - 9.0) / 27.0;
+  return size * fraction;
+}
 
 static GFNT_F16Dot16 fixed_of(double v) {
   const double scaled = v * 65536.0;
@@ -3104,6 +3171,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         out->pieces[out->count].has_color = rects[k].has_color;
         out->pieces[out->count].color = rects[k].color;
         out->pieces[out->count].box.empty = 1;
+        out->pieces[out->count].embolden = 0;
         gshgeom_map_identity(2, &out->pieces[out->count].map);
         out->count++;
       }
@@ -3126,7 +3194,8 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         g = h;
         continue;
       }
-      while (!is_colour && h < glyph_count && !(glyphs[g].on_path && glyphs[g].group) && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && same_coords(&glyphs[h], &glyphs[g]) && glyphs[h].group == glyphs[g].group &&
+      const double slant = is_colour || t.vertical ? 0 : synthetic_slant(glyphs[g].face, &t.styles[glyphs[g].style]);
+      while (!is_colour && h < glyph_count && !(glyphs[g].on_path && glyphs[g].group) && (slant == 0 || glyphs[h].y == glyphs[g].y) && glyphs[h].style == glyphs[g].style && glyphs[h].face == glyphs[g].face && same_coords(&glyphs[h], &glyphs[g]) && glyphs[h].group == glyphs[g].group &&
           glyphs[h].size == glyphs[g].size && glyphs[h].hidden == glyphs[g].hidden && glyphs[h].rotate == glyphs[g].rotate && (glyphs[g].rotate == 0 || glyphs[h].pivot == glyphs[g].pivot)) {
         h++;
       }
@@ -3188,6 +3257,7 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       piece->run = resource;
       piece->inst = st->inst;
       piece->decoration = false;
+      piece->embolden = t.vertical ? 0 : synthetic_embolden(glyphs[g].face, st, glyphs[g].size);
       cells_box(glyphs, g, h, t.vertical, &piece->box);
       /* The glyph's own turn (the rotate list, a sideways glyph's quarter, the path's), and the stretch of its text's length, which comes
        * after: the stretch is along the line, and a glyph on a path has its own line. */
@@ -3241,6 +3311,16 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
           r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a turn or a stretch of a glyph is past the range the waist can carry");
           break;
         }
+      }
+      if (slant != 0) {
+        /* leaned about the baseline the run sits on: x' = x - slant * (y - baseline), before the glyph's own turn */
+        const double lean[4] = {1, -slant, 0, 1}, shift[2] = {slant * glyphs[g].y, 0};
+        GSHGEOM_Map skew, composed;
+        if (gshgeom_map_from_matrix(2, lean, shift, &skew) != GSHGEOM_OK || !gvec_lw_compose(&piece->map, &skew, &composed)) {
+          r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the lean of a glyph is past the range the waist can carry");
+          break;
+        }
+        piece->map = composed;
       }
       out->count++;
       g = h;

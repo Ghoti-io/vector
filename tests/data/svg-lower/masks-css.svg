@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- CSS masks (CSS Masking 1; written by tools/gen-lower-fixtures.py from tests/data/images): a conic gradient, a hint, a color interpolation method, a position with
+     offsets from the far edges, a mask border, and an image-set() of an image. Each is a rectangle of its own, masked by what is in its style. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="64" viewBox="0 0 96 64">
+  <rect width="96" height="64" fill="#ecf0f1"/>
+  <rect x="2" y="2" width="28" height="28" fill="#c0392b" style="mask: conic-gradient(from 45deg at 50% 50%, black, transparent)"/>
+  <rect x="34" y="2" width="28" height="28" fill="#2980b9" style="mask: linear-gradient(90deg, black, 25%, transparent)"/>
+  <rect x="66" y="2" width="28" height="28" fill="#27ae60" style="mask: linear-gradient(in oklab 90deg, black, transparent)"/>
+  <rect x="2" y="34" width="28" height="28" fill="#8e44ad" style="mask-image: radial-gradient(circle 6px, black, transparent); mask-size: 14px 14px; mask-repeat: no-repeat; mask-position: right 3px bottom 2px"/>
+  <rect x="34" y="34" width="28" height="28" fill="#f39c12" style="mask-border-source: linear-gradient(black, transparent); mask-border-slice: 6; mask-border-width: 6px; mask-border-repeat: round"/>
+  <rect x="66" y="34" width="28" height="28" fill="#16a085" style="mask-image: image-set(url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAE0lEQVR42mP4z8DAAMX///8HYwBKyQj4CDRrHAAAAABJRU5ErkJggg==) 0.125x); mask-mode: luminance; mask-repeat: no-repeat"/>
+</svg>

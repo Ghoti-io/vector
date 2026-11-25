@@ -10,6 +10,7 @@
 #include <ghoti.io/shape-scene/glyph.h>
 #include <ghoti.io/shape-scene/glyph_provider.h>
 
+#include <cmath>
 #include "../lower_helpers.h"
 
 using namespace gvec_test;
@@ -47,6 +48,34 @@ bool ReadRun(const Lowered & l, size_t index, GSHSCENE_Glyph_Run & out) {
 }
 
 }  // namespace
+
+TEST(LowerText, AnUprightFaceAskedForInItalicOrObliqueIsLeanedAboutItsBaseline) {
+  Fonts f;
+  const double tan14 = std::tan(14.0 * M_PI / 180.0), tan20 = std::tan(20.0 * M_PI / 180.0);
+  struct Case {
+    const char * attributes;
+    double lean; ///< x' = x - lean * (y - baseline); 0 for none
+  };
+  const Case cases[] = {
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\" font-style=\"italic\"", tan14},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\" font-style=\"oblique\"", tan14},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\" font-style=\"oblique 20deg\"", tan20},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\"", 0},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\" font-style=\"italic\" style=\"font-synthesis-style: none\"", 0},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\" font-style=\"italic\" style=\"font-synthesis-style: oblique-only\"", 0},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test\" font-style=\"oblique 20deg\" style=\"font-synthesis-style: oblique-only\"", tan20},
+      {"x=\"10\" y=\"50\" font-family=\"Vector Test Variable\" font-style=\"italic\"", 0},  // the face has an ital axis: it leans itself
+  };
+  for (const Case & c : cases) {
+    Lowered l;
+    ASSERT_TRUE(LowerText(f, c.attributes, "AB", l)) << c.attributes;
+    const GSHGEOM_Map & m = l.Item(0).map;
+    EXPECT_NEAR(m.m[0][1], -c.lean, 1e-9) << c.attributes;
+    EXPECT_NEAR(m.m[0][1] * 50.0 + m.t[0], 0.0, 1e-9) << c.attributes << ": the baseline stays where it is";
+    EXPECT_EQ(m.m[0][0], 1.0) << c.attributes;
+    EXPECT_EQ(m.m[1][1], 1.0) << c.attributes;
+  }
+}
 
 TEST(LowerText, ACharacterIsAGlyphOfTheFaceThatMapsItAtTheFontSize) {
   Fonts f;
@@ -1605,6 +1634,33 @@ TEST(LowerText, AFontFaceRuleOfTheDocumentGivesTheFaceOfAFamilyTheFontsDoNotHave
   EXPECT_EQ(advance, 60.0);
   ASSERT_TRUE(SecondAdvance(f, two, "font-family=\"Embedded\" font-weight=\"700\"", &advance));
   EXPECT_EQ(advance, 70.0);
+}
+
+TEST(LowerText, AFaceLighterThanTheWeightAskedForIsEmboldenedByAStrokeInTheFillsPaint) {
+  Fonts f;
+  const std::string regular = Base64(FileBytes("tests/data/fonts/vector-test.ttf"));
+  const std::string only_regular = "@font-face { font-family: Embedded; font-weight: 400; src: url(data:font/ttf;base64," + regular + "); }";
+  auto items = [&](const std::string & attributes, const std::string & style, double * width) {
+    Lowered l;
+    EXPECT_TRUE(LowerText(f, attributes, "AB", l, "", style)) << attributes;
+    if (width && l.Items() >= 2) {
+      GSHSCENE_Stroke_Style stroke;
+      EXPECT_EQ(gshscene_resource_stroke_style(l.Item(1).style, &stroke), GSHSCENE_OK);
+      *width = stroke.width;
+      EXPECT_EQ(l.Item(1).kind, GSHSCENE_ITEM_STROKE);
+      EXPECT_EQ(l.Item(1).paint.rgba[0], l.Item(0).paint.rgba[0]) << "the fill's paint";
+    }
+    return l.Items();
+  };
+  double width = 0;
+  EXPECT_EQ(items("font-family=\"Embedded\" font-weight=\"700\"", only_regular, &width), (size_t) 2) << "the fill and the stroke that grows it";
+  EXPECT_NEAR(width, 100.0 / 32.0, 1e-9) << "at a size of 100 the fraction is 1/32";
+  EXPECT_EQ(items("font-family=\"Embedded\" font-weight=\"700\" font-size=\"20\"", only_regular, &width), (size_t) 2);
+  EXPECT_NEAR(width, 20.0 * (1.0 / 24.0 + (1.0 / 32.0 - 1.0 / 24.0) * 11.0 / 27.0), 1e-9) << "between 9 and 36 the fraction is interpolated";
+  EXPECT_EQ(items("font-family=\"Embedded\" font-weight=\"400\"", only_regular, nullptr), (size_t) 1) << "the weight asked for is the face's";
+  EXPECT_EQ(items("font-family=\"Embedded\" font-weight=\"700\" style=\"font-synthesis-weight: none\"", only_regular, nullptr), (size_t) 1);
+  EXPECT_EQ(items("font-family=\"Vector Test\" font-weight=\"700\"", "", nullptr), (size_t) 1) << "the family has a bold face, which is chosen";
+  EXPECT_EQ(items("font-family=\"Vector Test Variable\" font-weight=\"700\"", "", nullptr), (size_t) 1) << "the weight axis moves";
 }
 
 // The variable face of the test font has the capital letters only; its advance is 60 at the default weight (400), 70 more at 700 less... see the

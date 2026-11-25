@@ -540,6 +540,42 @@ TEST(LowerMaskLayers, AMaskBorderOfAnImageTakesAutoWidthsFromItsSlices) {
   Lower("mask-border-source: url(red-blue-2x1.png); mask-border-slice: 0 1; mask-border-mode: luminance", mode);
   ASSERT_TRUE(mode.has_mask);
   EXPECT_EQ(mode.mask.mode, (uint32_t) GSHSCENE_MASK_LUMINANCE);
+  // over the layers of `mask`, a luminance border is made into the alpha its luminance is, as any luminance layer is
+  Masked over;
+  Lower("mask-image: linear-gradient(black, white); mask-border-source: url(red-blue-2x1.png); mask-border-slice: 0 1; mask-border-mode: luminance", over);
+  EXPECT_EQ(over.l.Refusals(), (size_t) 0);
+  EXPECT_TRUE(over.has_mask);
+}
+
+TEST(LowerMaskLayers, AnImageSetPicksTheCandidateForOneDevicePixelAndSizesItByItsDensity) {
+  // the image is 2 by 1: at its own size it tiles the 40 by 20 area 20 across and 20 down; at 2x it is half the size, 40 across and 40 down
+  const std::vector<std::pair<std::string, size_t>> cases = {
+      {"image-set(url('red-blue-2x1.png') 1x)", 400},
+      {"image-set('red-blue-2x1.png' 2x)", 1600},
+      {"image-set('red-blue-2x1.png' 3x, 'red-blue-2x1.png' 2x)", 1600},  // the least resolution that is at least 1x
+      {"image-set('red-blue-2x1.png' 0.5x, 'red-blue-2x1.png' 2x)", 1600},
+      {"image-set('red-blue-2x1.png' 192dpi)", 1600},
+      {"-webkit-image-set(url('red-blue-2x1.png') 2x)", 1600},
+      {"image(url('red-blue-2x1.png'))", 400},
+  };
+  for (const auto & c : cases) {
+    Masked m;
+    Lower("mask-image: " + c.first, m);
+    ASSERT_TRUE(m.has_mask) << c.first;
+    EXPECT_EQ(Fills(m), c.second) << c.first;
+  }
+  // the image is drawn at the size the density gives it: 2 by 1 pixels at 2x is 1 by 0.5 of the user space
+  Masked once;
+  Lower("mask-image: image-set('red-blue-2x1.png' 2x); mask-repeat: no-repeat", once);
+  ASSERT_TRUE(once.has_mask);
+  const GSHGEOM_Bounds footprint = BoundsOf(FillsOf(once)[0]);
+  EXPECT_NEAR(footprint.max.x - footprint.min.x, 1.0, 1e-9);
+  EXPECT_NEAR(footprint.max.y - footprint.min.y, 0.5, 1e-9);
+  // below 1x only: the greatest
+  Masked low;
+  Lower("mask-image: image-set('red-blue-2x1.png' 0.5x, 'red-blue-2x1.png' 0.25x)", low);
+  ASSERT_TRUE(low.has_mask);
+  EXPECT_EQ(Fills(low), (size_t) 100) << "at 0.5x the image is 4 by 2: 10 across and 10 down";
 }
 
 TEST(LowerMaskLayers, TheOriginAndTheClipAreBoxesOfTheElement) {

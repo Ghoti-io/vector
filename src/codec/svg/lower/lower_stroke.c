@@ -128,6 +128,21 @@ static effect effect_of(const GVEC_Svg_Style_Value * v) {
   return EFFECT_OTHER;
 }
 
+GVEC_Result gvec_lw_stroke_plain(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, double width, const GSHSCENE_Resource ** out) {
+  GSHSCENE_Stroke_Style style;
+  gshscene_stroke_style_init(&style);
+  style.width = width;
+  style.degenerate = GSHSCENE_STROKE_DEGENERATE_DRAW;
+  GSHSCENE_Result g = gshscene_store_intern_stroke_style(ctx->store, &style, out);
+  if (g == GSHSCENE_ERR_OOM) {
+    return GVEC_ERR_OOM;
+  }
+  if (g != GSHSCENE_OK) {
+    return gvec_lw_refuse(ctx, element, GVEC_LOWER_LIMIT, "a stroke width is past the range the waist can carry");
+  }
+  return gvec_lw_hold(ctx, *out);
+}
+
 GVEC_Result gvec_lw_stroke_of(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, gvec_lw_stroke * out) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(inst);
   GVEC_Svg_Style_Value v, w;

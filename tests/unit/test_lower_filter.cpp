@@ -167,8 +167,29 @@ TEST(LowerFilter, ColorMatrixTransferShadowMorphologyAndConvolutionCarryTheirAtt
   EXPECT_EQ(f.primitives[5].y_channel, (uint32_t) GSHSCENE_FILTER_CHANNEL_G);
 }
 
+TEST(LowerFilter, ADisplacementMapScaleIsInTheListsUnitsWhateverScalesTheElement) {
+  Lowered l;
+  LowerSvg(Svg("width=\"40\" height=\"40\" viewBox=\"0 0 20 20\"", "<defs><filter id=\"f\"><feDisplacementMap in2=\"SourceGraphic\" scale=\"5\"/></filter></defs>"
+               "<rect width=\"10\" height=\"10\" filter=\"url(#f)\"/>"),
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(l, &f));
+  EXPECT_NEAR(f.primitives[0].scale, 10.0, 1e-9) << "the viewBox doubles everything: a displacement of 5 user units is 10 of the list's";
+  EXPECT_NEAR(f.primitives[0].scale_y, 10.0, 1e-9);
+  // a map that stretches one axis stretches that axis' displacement
+  Lowered stretched;
+  LowerSvg(Svg("width=\"40\" height=\"40\"", "<defs><filter id=\"f\"><feDisplacementMap in2=\"SourceGraphic\" scale=\"5\"/></filter></defs>"
+               "<rect width=\"10\" height=\"10\" transform=\"scale(3 1)\" filter=\"url(#f)\"/>"),
+      stretched);
+  EXPECT_EQ(stretched.Refusals(), (size_t) 0);
+  ASSERT_TRUE(FilterOf(stretched, &f));
+  EXPECT_NEAR(f.primitives[0].scale, 15.0, 1e-9);
+  EXPECT_NEAR(f.primitives[0].scale_y, 5.0, 1e-9);
+}
+
 TEST(LowerFilter, ADisplacementMapInBoxUnitsScalesByTheBox) {
-  // a scale of 0.5 of a 30 by 30 box is 15 user units
+  // a scale of 0.5 of a 30 by 30 box is 15 user units along each axis
   Lowered square;
   LowerSvg(Svg("width=\"40\" height=\"40\"", "<defs><filter id=\"f\" primitiveUnits=\"objectBoundingBox\"><feDisplacementMap in2=\"SourceGraphic\" scale=\"0.5\"/></filter></defs>"
                "<rect width=\"30\" height=\"30\" filter=\"url(#f)\"/>"),
@@ -178,12 +199,16 @@ TEST(LowerFilter, ADisplacementMapInBoxUnitsScalesByTheBox) {
   ASSERT_TRUE(FilterOf(square, &f));
   ASSERT_EQ(f.primitive_count, 1u);
   EXPECT_NEAR(f.primitives[0].scale, 15.0, 1e-9);
-  // a box that is not square has a scale for each axis, which the waist's displacement lacks: refused by name, not drawn wrong
+  EXPECT_NEAR(f.primitives[0].scale_y, 15.0, 1e-9);
+  // a box that is not square has a scale of its own along each axis: the fraction of its width along x, of its height along y
   Lowered wide;
   LowerSvg(Svg("width=\"40\" height=\"40\"", "<defs><filter id=\"f\" primitiveUnits=\"objectBoundingBox\"><feDisplacementMap in2=\"SourceGraphic\" scale=\"0.5\"/></filter></defs>"
                "<rect width=\"30\" height=\"10\" filter=\"url(#f)\"/>"),
       wide);
-  EXPECT_NE(wide.Refusal(GVEC_LOWER_FILTER), nullptr);
+  EXPECT_EQ(wide.Refusals(), (size_t) 0);
+  ASSERT_TRUE(FilterOf(wide, &f));
+  EXPECT_NEAR(f.primitives[0].scale, 15.0, 1e-9);
+  EXPECT_NEAR(f.primitives[0].scale_y, 5.0, 1e-9);
 }
 
 TEST(LowerFilter, AnInvalidFilterDrawsTheElementAsNothingAndADanglingOneAsItIs) {

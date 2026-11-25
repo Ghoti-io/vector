@@ -1290,6 +1290,7 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     GVEC_Svg_Style_Value v;
     gvec_lw_node * fill_node = NULL;
     gvec_lw_node * stroke_node = NULL;
+    gvec_lw_node * bold_node = NULL;
     if (text.pieces[i].image) {
       /* A glyph of colour pixels is an image fill under the glyph's own map: its paint is its pixels, whatever the span's fill says. */
       gvec_lw_image im;
@@ -1361,6 +1362,18 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       if (r != GVEC_OK) {
         return r;
       }
+      if (text.pieces[i].embolden > 0) {
+        /* Synthetic bold: the outline grown by a stroke in the fill's own paint, drawn with the fill. */
+        const GSHSCENE_Resource * bold_style = NULL;
+        r = gvec_lw_stroke_plain(ctx, e, text.pieces[i].embolden, &bold_style);
+        if (r != GVEC_OK) {
+          return r;
+        }
+        r = shape_node(ctx, e, &piece_map, text.pieces[i].run, &paint, GSHGEOM_FILL_NONZERO, bold_style, &bold_node);
+        if (r != GVEC_OK) {
+          return r;
+        }
+      }
     }
     if (stroke.decision == GVEC_LW_PAINT_DRAW) {
       r = shape_node(ctx, e, &piece_map, text.pieces[i].run, &stroke.paint, GSHGEOM_FILL_NONZERO, stroke.style, &stroke_node);
@@ -1372,7 +1385,7 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     if (!fill_node && !stroke_node) {
       continue;
     }
-    gvec_lw_node * pair[2];
+    gvec_lw_node * pair[3];
     size_t parts = 0;
     gvec_lw_part order[3] = {GVEC_LW_PART_FILL, GVEC_LW_PART_STROKE, GVEC_LW_PART_MARKERS};
     if (fill_node && stroke_node) {
@@ -1389,6 +1402,9 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
       used[order[k]] = true;
       if (order[k] == GVEC_LW_PART_FILL && fill_node) {
         pair[parts++] = fill_node;
+        if (bold_node) {
+          pair[parts++] = bold_node; /* the emboldening goes with the fill, over it */
+        }
       }
       else if (order[k] == GVEC_LW_PART_STROKE && stroke_node) {
         pair[parts++] = stroke_node;
@@ -1397,7 +1413,7 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     /* Each run has its own nodes, told apart by its place among them. */
     uint64_t salt = (uint64_t) (i + 1) * UINT64_C(0x9E3779B97F4A7C15);
     for (size_t k = 0; k < parts; k++) {
-      pair[k]->key = gvec_lw_key(e->key, ctx->chain ^ salt ^ (pair[k] == stroke_node ? UINT64_C(0xA5A5A5A5) : 0), pair[k] == stroke_node ? GVEC_LW_ROLE_STROKE : GVEC_LW_ROLE_SHAPE);
+      pair[k]->key = gvec_lw_key(e->key, ctx->chain ^ salt ^ (pair[k] == stroke_node ? UINT64_C(0xA5A5A5A5) : pair[k] == bold_node ? UINT64_C(0x5A5A5A5A) : 0), pair[k] == stroke_node || pair[k] == bold_node ? GVEC_LW_ROLE_STROKE : GVEC_LW_ROLE_SHAPE);
       pair[k]->site = gvec_lw_new_site(ctx, e, pair[k]->key);
       if (pair[k]->site == GVEC_LW_NO_SITE) {
         return GVEC_ERR_OOM;
