@@ -262,6 +262,10 @@ static GVEC_Result path_from_property(gvec_lw_ctx * ctx, const GVEC_Svg_Element 
   }
   const char * text = v.keyword;
   size_t n = strlen(text);
+  if (n > 6 && memcmp(text, "path(", 5) == 0 && text[n - 1] == ')') {
+    text += 5; /* `path("...")`: the form the browsers take; SVG 2 wrote a bare string */
+    n -= 6;
+  }
   if (n < 2 || (text[0] != '"' && text[0] != '\'') || text[n - 1] != text[0]) {
     return GVEC_OK; /* `none` */
   }

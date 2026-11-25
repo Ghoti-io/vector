@@ -33,7 +33,7 @@ color-rendering	KEYWORD	-		R	yes	auto	auto | optimizeSpeed | optimizeQuality	SVG
 cursor	KEYWORD	-		G				
 cx	LENGTH	W		G				
 cy	LENGTH	H		G				
-d	KEYWORD	-		G				
+d	KEYWORD	-		O	no	none	none | <string> | path(<string>)	The pin takes a bare <string> (SVG 2, 9.3); Chromium, Firefox and Safari take path("...") (CSS Shapes 1) and refuse the bare string, so the value is their union: both are the path data.
 direction	KEYWORD	-		G				
 display	KEYWORD	-		G				
 dominant-baseline	KEYWORD	-		G				

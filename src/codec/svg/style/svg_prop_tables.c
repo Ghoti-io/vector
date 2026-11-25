@@ -42,7 +42,7 @@ const gvec_svg_prop_row gvec_svg_prop_rows[GVEC_SVG_PROP_COUNT] = {
   {"cursor", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "cursor", NULL, NULL, NULL},
   {"cx", GVEC_SVG_PT_LENGTH, GVEC_SVG_BASIS_WIDTH, GVEC_SVG_SOURCE_GENERATED, false, "cx", NULL, NULL, NULL},
   {"cy", GVEC_SVG_PT_LENGTH, GVEC_SVG_BASIS_HEIGHT, GVEC_SVG_SOURCE_GENERATED, false, "cy", NULL, NULL, NULL},
-  {"d", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "d", NULL, NULL, NULL},
+  {"d", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_OVERRIDDEN, false, "d", "none", "none | <string> | path(<string>)", "The pin takes a bare <string> (SVG 2, 9.3); Chromium, Firefox and Safari take path(\"...\") (CSS Shapes 1) and refuse the bare string, so the value is their union: both are the path data."},
   {"direction", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "direction", NULL, NULL, NULL},
   {"display", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "display", NULL, NULL, NULL},
   {"dominant-baseline", GVEC_SVG_PT_KEYWORD, GVEC_SVG_BASIS_NONE, GVEC_SVG_SOURCE_GENERATED, false, "dominant-baseline", NULL, NULL, NULL},

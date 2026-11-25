@@ -146,6 +146,17 @@ int main(int argc, char ** argv) {
   return RUN_ALL_TESTS();
 }
 
+TEST(LowerPath, TheDPropertyTakesPathFunctionTheBrowsersWrite) {
+  Lowered l;
+  LowerSvg(Svg("width=\"100\" height=\"100\"",
+               "<path d=\"M0 0H4V4Z\" style=\"d: path('M0 0H9V9Z')\"/><path style=\"d: path('M1 1H5V5Z')\"/><path d=\"M0 0H4V4Z\" style=\"d: path('M 0 0 H 4 V')\"/>"),
+      l);
+  ASSERT_EQ(l.Items(), (size_t) 3);
+  EXPECT_EQ(Describe(l.Item(0).resource), "M0,0 L9,0 L9,9 Z");
+  EXPECT_EQ(Describe(l.Item(1).resource), "M1,1 L5,1 L5,5 Z");
+  EXPECT_EQ(Describe(l.Item(2).resource), "M0,0 L4,0");
+}
+
 TEST(LowerPath, TheDPropertyIsAStringOfPathDataAndOverridesTheAttribute) {
   Lowered l;
   LowerSvg(Svg("width=\"100\" height=\"100\"",

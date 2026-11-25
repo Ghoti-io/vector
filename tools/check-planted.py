@@ -1030,6 +1030,7 @@ PLANTS += [
     ('SH4', 'src/codec/svg/lower/lower_filter.c', '      q->mode = GSHSCENE_FILTER_COMPOSITE_IN;\n      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;\n      b.inputs[at3][0].kind', '      q->mode = GSHSCENE_FILTER_COMPOSITE_OVER;\n      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;\n      b.inputs[at3][0].kind', 'a text shadow is not cut to the glyphs'),
     ('SH5', 'src/codec/svg/lower/lower_filter.c', '    b.inputs[idx][0].kind = GSHSCENE_FILTER_INPUT_SOURCE_ALPHA;', '    b.inputs[idx][0].kind = GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC;', "a text shadow is of the glyphs' colors, not their alpha"),
     ('SH6', 'src/codec/svg/lower/lower_walk.c', 'if (shadow_value.computed && strcmp(shadow_value.computed, "none") != 0) {', 'if (false && shadow_value.computed && strcmp(shadow_value.computed, "none") != 0) {', 'text-shadow is ignored'),
+    ('PD1', 'src/codec/svg/lower/lower_path.c', '  if (n > 6 && memcmp(text, "path(", 5) == 0 && text[n - 1] == \')\') {', '  if (false && n > 6 && memcmp(text, "path(", 5) == 0 && text[n - 1] == \')\') {', 'the path() form of the d property is not read'),
     ('FD1','src/codec/svg/lower/lower_filter.c','      p->scale_y = along[1];','      p->scale_y = along[0];','the displacement along y is the one along x'),
     ('FD2','src/codec/svg/lower/lower_filter.c','      lengths_to_list(b, along);\n      p->scale_y','      p->scale_y','the displacement scale is not put through the map'),
 ]

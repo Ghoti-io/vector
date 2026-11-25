@@ -21,7 +21,7 @@ Types: **keyword** is the computed value as text; **length** is in user units; a
 | `cursor` | generated | keyword |  |  |
 | `cx` | generated | length | width |  |
 | `cy` | generated | length | height |  |
-| `d` | generated | keyword |  |  |
+| `d` | overridden | keyword |  |  |
 | `direction` | generated | keyword |  |  |
 | `display` | generated | keyword |  |  |
 | `dominant-baseline` | generated | keyword |  |  |
@@ -150,6 +150,13 @@ Types: **keyword** is the computed value as text; **length** is in user units; a
 - initial value: `auto`
 - value: `auto | optimizeSpeed | optimizeQuality`
 - why: SVG 2 CR, Appendix H: `auto | optimizeSpeed | optimizeQuality`, initial `auto`, inherited. The served drafts dropped the property; browsers still accept it, and it never changes the picture.
+
+### `d` (overridden)
+
+- inherited: no
+- initial value: `none`
+- value: `none | <string> | path(<string>)`
+- why: The pin takes a bare <string> (SVG 2, 9.3); Chromium, Firefox and Safari take path("...") (CSS Shapes 1) and refuse the bare string, so the value is their union: both are the path data.
 
 ### `fill` (overridden)
 
