@@ -128,6 +128,26 @@ TEST(LowerTextWrap, TextIndentTakesRoomFromTheFirstLine) {
   EXPECT_EQ(without[2].x, 0.0);
 }
 
+TEST(LowerTextWrap, TheIndentAndTheAlignmentOfARightToLeftLineAreFromItsRightEdge) {
+  Fonts f;
+  auto minimum = [](const std::vector<Glyph> & g) {
+    double m = g[0].x;
+    for (const Glyph & one : g) {
+      m = one.x < m ? one.x : m;
+    }
+    return m;
+  };
+  // the rectangle of a right-to-left text extends to the left of its x (0): the stretch is from -300 to 0 and the line begins at its right edge; AA is 120 wide
+  auto plain = Wrapped(f, "inline-size=\"300\" direction=\"rtl\"", "AA");
+  EXPECT_EQ(minimum(plain), -120.0);
+  auto indented = Wrapped(f, "inline-size=\"300\" direction=\"rtl\" style=\"text-indent: 40px\"", "AA");
+  EXPECT_EQ(minimum(indented), -160.0) << "the indent is at the right, where the line starts: the line ends 40 in from 0";
+  auto left = Wrapped(f, "inline-size=\"300\" direction=\"rtl\" style=\"text-align: left\"", "AA");
+  EXPECT_EQ(minimum(left), -300.0) << "left is physical: the line is at the left of the stretch";
+  auto right = Wrapped(f, "inline-size=\"300\" direction=\"rtl\" style=\"text-align: right\"", "AA");
+  EXPECT_EQ(minimum(right), -120.0);
+}
+
 TEST(LowerTextWrap, TextAlignPutsALineInItsStretch) {
   Fonts f;
   const struct {
@@ -167,6 +187,11 @@ TEST(LowerTextWrap, JustifyFillsEveryLineButTheLast) {
   EXPECT_NEAR(each[1].x, 67.5, 1e-9) << "30 shared among the 4 gaps of AA BB";
   EXPECT_NEAR(each[3].x, 172.5, 1e-9);
   EXPECT_NEAR(each[4].x, 240.0, 1e-9);
+  // the last line is left as it is, whether or not it has room to spare: "CC DD" is 270 of the 300
+  auto four = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify\"", "AA BB CC DD");
+  ASSERT_EQ(four.size(), (size_t) 10);
+  EXPECT_EQ(four[3].x, 180.0) << "the first line is justified";
+  EXPECT_EQ(four[8].x, 150.0) << "DD on the last line follows CC and the space: 120 + 30, not spread over the 300";
   // a forced break ends a paragraph: the line before it is a last line
   auto pre = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify; white-space: pre-line\"", "AA BB\nCC DD");
   EXPECT_EQ(pre[3].x, 150.0) << "AA BB ends at a line feed: not justified";

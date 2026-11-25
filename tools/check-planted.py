@@ -889,7 +889,7 @@ PLANTS = [
     ('ML8', 'src/codec/svg/lower/lower_mask_layers.c', '  if (which == 1 || which == 3) {', '  if (which == 1 && which == 3) {', 'the stroke-box has no stroke'),
     ('ML9', 'src/codec/svg/lower/lower_mask_layers.c', '        out->min.x -= half;', '        out->min.x += half;', 'the stroke-box shrinks'),
     ('ML10', 'src/codec/svg/lower/lower_mask_layers.c', '    out->max.x = vw;', '    out->max.x = vh;', 'the view-box is as wide as it is high'),
-    ('ML11', 'src/codec/svg/lower/lower_mask_layers.c', '(area_size - size) * position->v / 100.0 : position->v;', 'area_size * position->v / 100.0 : position->v;', 'a percentage position is of the area, not the free space'),
+    ('ML11', 'src/codec/svg/lower/lower_mask_layers.c', 'double offset = position->kind == 2 ? (area_size - size) * position->v / 100.0', 'double offset = position->kind == 2 ? area_size * position->v / 100.0', 'a percentage position is of the area, not the free space'),
     ('ML12', 'src/codec/svg/lower/lower_mask_layers.c', '    double n = gmath_floor(area_size / size + 0.5);', '    double n = gmath_floor(area_size / size);', 'round rounds down'),
     ('ML13', 'src/codec/svg/lower/lower_mask_layers.c', '      step = size + (area_size - n * size) / (n - 1);', '      step = size;', 'space does not space'),
     ('ML14', 'src/codec/svg/lower/lower_mask_layers.c', '    const double s = l->size_keyword == 1 ? (sx < sy ? sx : sy) : (sx > sy ? sx : sy);', '    const double s = l->size_keyword == 1 ? (sx > sy ? sx : sy) : (sx < sy ? sx : sy);', 'contain and cover are exchanged'),
@@ -992,6 +992,33 @@ PLANTS += [
 # refuses every document whose root it would refuse), so a plant that removes
 # it alone cannot be caught by any test. It is planted together with the probe
 # defect it guards against, and must then be caught.
+PLANTS += [
+    ('CG1', 'src/codec/svg/lower/lower_mask_layers.c', 'const double a0 = from_degrees - 90.0 + 360.0 * start;', 'const double a0 = from_degrees + 360.0 * start;', 'a conic gradient starts at +x, not at the top'),
+    ('CG2', 'src/codec/svg/lower/lower_mask_layers.c', 'g->a1 = a0 + 360.0 * (end - start);', 'g->a1 = a0 + 360.0;', 'a repeating conic gradient repeats every turn'),
+    ('CG3', 'src/codec/svg/lower/lower_mask_layers.c', 'g->extend = GSHSCENE_EXTEND_REPEAT;\n  }\n  bool expanded;', 'g->extend = GSHSCENE_EXTEND_PAD;\n  }\n  bool expanded;', 'a conic gradient does not wrap'),
+    ('CG4', 'src/codec/svg/lower/lower_mask_layers.c', 'if (stops->position[0] > 0 && stops->count < STOPS_MAX) {', 'if (false && stops->position[0] > 0 && stops->count < STOPS_MAX) {', 'a conic gradient has no stop at the start of the turn'),
+    ('CG5', 'src/codec/svg/lower/lower_mask_layers.c', 'm.exponent = (double) gmath_log(0.5) / (double) gmath_log(hn);', 'm.exponent = (double) gmath_log(hn) / (double) gmath_log(0.5);', 'a hint bends the other way'),
+    ('CG6', 'src/codec/svg/lower/lower_mask_layers.c', 'const GSHSCENE_Gradient_Stop jump = hn <= 0.0 ? stops->stops[i + 1] : stops->stops[i];', 'const GSHSCENE_Gradient_Stop jump = hn <= 0.0 ? stops->stops[i] : stops->stops[i + 1];', 'a hint at the end of its stretch jumps the wrong way'),
+    ('CG7', 'src/codec/svg/lower/lower_mask_layers.c', '#define SAMPLE_TOLERANCE (1.0 / 512.0)', '#define SAMPLE_TOLERANCE (1.0 / 2.0)', 'a sampled gradient is far from its curve'),
+    ('CG8', 'src/codec/svg/lower/lower_mask_layers.c', 'm.method = method ? method : "in srgb";', 'm.method = method ? method : "in oklab";', 'a hint interpolates in oklab'),
+    ('CG9', 'src/codec/svg/lower/lower_mask_layers.c', 'if (i + 3 < *count + 0 && is(tokens[i + 3], "hue")) {', 'if (false) {', 'a hue method is not read'),
+    ('MP1', 'src/codec/svg/lower/lower_mask_layers.c', '*out = (amount) {3, a.v, sign * b.v};', '*out = (amount) {3, a.v, b.v};', 'an offset from the far edge is from the near edge'),
+    ('MP2', 'src/codec/svg/lower/lower_mask_layers.c', 'place[axis] = far ? (amount) {3, 100.0, -off.v} : (amount) {1, off.v, 0};', 'place[axis] = far ? (amount) {3, 100.0, off.v} : (amount) {1, off.v, 0};', 'a far offset of a gradient center goes the wrong way'),
+    ('MN1', 'src/codec/svg/lower/lower_mask.c', '  if (nested_kind == 2) {', '  if (false && nested_kind == 2) {', "the layers of a mask element's own mask are not applied"),
+    ('TX1', 'src/codec/svg/lower/lower_text_wrap.c', 'return (p->indent_hanging ? !first : first) ? p->indent : 0;', 'return first ? p->indent : 0;', 'hanging does not indent the other lines'),
+    ('TX2', 'src/codec/svg/lower/lower_text_wrap.c', 'const bool first = at == 0 || (p->indent_each_line && w->t->chars[at - 1].newline);', 'const bool first = at == 0;', 'each-line does not indent after a forced break'),
+    ('TX3', 'src/codec/svg/lower/lower_text_wrap.c', 'line->left = b->rtl ? sp.from : sp.from + indent;', 'line->left = sp.from + indent;', 'a right-to-left line is indented at its left'),
+    ('TX4', 'src/codec/svg/lower/lower_text_wrap.c', 'anchor = line_rtl ? 1.0 : 0.0;', 'anchor = 0.0;', "left is the line's start in a right-to-left text"),
+    ('TX5', 'src/codec/svg/lower/lower_text_wrap.c', 'align = props.align_last >= 0 ? props.align_last : align == 5 ? 0 : align;', 'align = props.align_last >= 0 ? props.align_last : align;', 'the last line is justified'),
+    ('TX6', 'src/codec/svg/lower/lower_text_wrap.c', 'const double extra = line->width - span_width(w, line->from, line->to, line->next == line->to && line->next < w->n && !t->chars[line->next - 1].newline);', 'const double extra = line->width;', 'a line is justified by its whole width'),
+    ('TX7', 'src/codec/svg/lower/lower_text_wrap.c', 'if (mode == 1 || line->to <= line->from + 1 || !(line->width > 0)) {', 'if (mode == 99 || line->to <= line->from + 1 || !(line->width > 0)) {', 'text-justify: none justifies'),
+    ('TX8', 'src/codec/svg/lower/lower_text_wrap.c', 'first->has_anchor = align != 0;', 'first->has_anchor = false;', 'text-align does not put a line in its stretch'),
+    ('TX9', 'src/codec/svg/lower/lower_text_wrap.c', 'if (len == 7 && memcmp(text + start, "hanging", 7) == 0) {', 'if (len == 7 && memcmp(text + start, "hangina", 7) == 0) {', 'hanging is not read'),
+    ('TX10', 'src/codec/svg/lower/lower_text_wrap.c', '*out = number * size / 100.0;', '*out = number;', 'a percentage indent is in pixels'),
+    ('FD1', 'src/codec/svg/lower/lower_filter.c', 'scale *= (w + h) / 2;', 'scale *= 1;', 'a displacement scale in box units is not of the box'),
+    ('FD2', 'src/codec/svg/lower/lower_filter.c', 'if (!(w > 0) || !(h > 0) || w > h * 1.001 || h > w * 1.001) {', 'if (!(w > 0) || !(h > 0)) {', 'a displacement scale of a box that is not square is one scale'),
+]
+
 PAIRED = [
     ("L8", [("src/codec/svg/svg_load.c", '  if (!root || !gtext_markup_element_is(root, GTEXT_MARKUP_NS_SVG, "svg")) {',
              "  if (!root) {"),
