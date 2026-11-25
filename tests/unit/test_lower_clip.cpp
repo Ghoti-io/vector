@@ -6,6 +6,7 @@
  * push; several shapes are one union push; a `use` child is the shape it names; a clip on one of several shapes is that member's inner clips.
  */
 
+#include <algorithm>
 #include "../lower_helpers.h"
 
 #include <vector>
@@ -322,6 +323,50 @@ TEST(LowerClip, ABasicShapeOnAClipsShapeIsAnInnerClipMeasuredAgainstThatShapesBo
       EXPECT_EQ(m.inner[0].map.t[1], 9.0);
     }
   }
+}
+
+// A clipPath that several shapes of a union are each cut by is worked out once, but only where one answer serves them all: the shapes' own spaces
+// and (for a clip in the units of a box) their own boxes make the answers differ.
+TEST(LowerClip, AClipPathUsedByTwoShapesOfAUnionIsPlacedInEachOnesSpace) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"n\"><rect width=\"4\" height=\"4\"/></clipPath>"
+        "<clipPath id=\"u\"><rect width=\"40\" height=\"30\" transform=\"translate(7 0)\" clip-path=\"url(#n)\"/>"
+        "<rect width=\"40\" height=\"30\" transform=\"translate(30 0)\" clip-path=\"url(#n)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#u)\"/>",
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  ASSERT_GE(l.Items(), (size_t) 1);
+  const auto ms = Members(l);
+  ASSERT_EQ(ms.size(), (size_t) 2);
+  std::vector<double> at;
+  for (const auto & m : ms) {
+    ASSERT_EQ(m.inner_count, (size_t) 1);
+    at.push_back(m.inner[0].map.t[0]);
+  }
+  std::sort(at.begin(), at.end());
+  EXPECT_EQ(at[0], 7.0) << "the first shape's clip is in the first shape's space";
+  EXPECT_EQ(at[1], 30.0) << "and the second's in the second's, not the first's again";
+}
+
+TEST(LowerClip, AClipInTheUnitsOfABoxUsedByTwoShapesOfAUnionIsPlacedOnEachOnesBox) {
+  Lowered l;
+  Lower("<defs><clipPath id=\"b\" clipPathUnits=\"objectBoundingBox\"><rect width=\"0.5\" height=\"1\"/></clipPath>"
+        "<clipPath id=\"u\"><rect width=\"10\" height=\"10\" clip-path=\"url(#b)\"/>"
+        "<rect x=\"50\" y=\"50\" width=\"40\" height=\"40\" clip-path=\"url(#b)\"/></clipPath></defs>"
+        "<rect width=\"100\" height=\"100\" clip-path=\"url(#u)\"/>",
+      l);
+  EXPECT_EQ(l.Refusals(), (size_t) 0);
+  ASSERT_GE(l.Items(), (size_t) 1);
+  const auto ms = Members(l);
+  ASSERT_EQ(ms.size(), (size_t) 2);
+  std::vector<std::pair<double, double>> placed;  // (the box's corner, the box's width)
+  for (const auto & m : ms) {
+    ASSERT_EQ(m.inner_count, (size_t) 1);
+    placed.push_back({m.inner[0].map.t[0], m.inner[0].map.m[0][0]});
+  }
+  std::sort(placed.begin(), placed.end());
+  EXPECT_EQ(placed[0], (std::pair<double, double>(0.0, 10.0))) << "the first shape's box is 10 wide at 0";
+  EXPECT_EQ(placed[1], (std::pair<double, double>(50.0, 40.0))) << "the second's is 40 wide at 50, not the first's box again";
 }
 
 TEST(LowerClip, ABasicShapeOnTheOnlyShapeOfAClipIsAMemberWhoseMapIsTheShapesAndWhosePathIsInTheBox) {

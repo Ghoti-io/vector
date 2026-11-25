@@ -112,6 +112,9 @@ typedef struct chain {
   size_t count;
   const GVEC_Svg_Element * seen[GVEC_LW_CLIP_MAX + 1]; ///< The clipPaths of the chain so far: one that comes again closes a cycle.
   size_t seen_count;
+  struct region_memo * memo; ///< The regions worked out so far (a clipPath of several shapes would otherwise be worked out again for each).
+  size_t memo_count;
+  bool used_subject; ///< Set when a clip in the units of the box read the box of the subject: what was worked out then depends on the subject.
 } chain;
 
 static bool seen_before(const chain * c, const GVEC_Svg_Element * clip_path) {
@@ -585,6 +588,7 @@ static GVEC_Result subject_box(chain * c, const GVEC_Svg_Instance * subject, GSH
   gvec_lw_ctx * ctx = c->ctx;
   const GVEC_Svg_Element * e = c->element;
   const GVEC_Svg_Element * se = gvec_svg_instance_element(subject);
+  c->used_subject = true;
   *all = false;
   *refused = true;
   GVEC_Result r;
@@ -704,6 +708,56 @@ static GVEC_Result basic_terms(chain * c, const GVEC_Svg_Instance * inst, const 
   return dnf_push(c, out, term, refused);
 }
 
+/* A region that was worked out: for a clipPath, in a space, for a subject, at a depth, under the clipPaths that were open (the cycle check and the
+ * depth limit read them), so that a clipPath that several shapes of a union are each cut by is worked out once, not once for each shape (a chain of
+ * unions of six shapes did the work six times at every level before it reached the limit on the terms, which took gigabytes). The terms are read
+ * and never changed, so they are shared. Only a region that was not refused is kept. */
+#define GVEC_LW_MEMO_MAX 32
+typedef struct region_memo {
+  const GVEC_Svg_Element * clip_path;
+  const GVEC_Svg_Instance * subject;
+  size_t depth, seen_count;
+  const GVEC_Svg_Element * seen[GVEC_LW_CLIP_MAX + 1];
+  GSHGEOM_Map space;
+  bool uses_subject; ///< Whether the region depends on the subject (a clip in the units of a box in it): if not, any subject will do.
+  clip_dnf region;
+} region_memo;
+
+static const region_memo * memo_find(const chain * c, const GVEC_Svg_Element * clip_path, const GSHGEOM_Map * space, size_t depth,
+    const GVEC_Svg_Instance * subject) {
+  for (size_t i = 0; i < c->memo_count; i++) {
+    const region_memo * m = &c->memo[i];
+    if (m->clip_path == clip_path && (!m->uses_subject || m->subject == subject) && m->depth == depth && m->seen_count == c->seen_count &&
+        memcmp(m->seen, c->seen, c->seen_count * sizeof m->seen[0]) == 0 && memcmp(&m->space, space, sizeof *space) == 0) {
+      return m;
+    }
+  }
+  return NULL;
+}
+
+static GVEC_Result memo_keep(chain * c, const GVEC_Svg_Element * clip_path, const GSHGEOM_Map * space, size_t depth, const GVEC_Svg_Instance * subject,
+    const clip_dnf * region, bool uses_subject) {
+  if (c->memo_count >= GVEC_LW_MEMO_MAX) {
+    return GVEC_OK; /* full: later regions are worked out each time, as they always were */
+  }
+  if (!c->memo) {
+    c->memo = gvec_arena_alloc(&c->ctx->arena, GVEC_LW_MEMO_MAX * sizeof *c->memo, sizeof(double));
+    if (!c->memo) {
+      return GVEC_ERR_OOM;
+    }
+  }
+  region_memo * m = &c->memo[c->memo_count++];
+  m->clip_path = clip_path;
+  m->subject = subject;
+  m->depth = depth;
+  m->seen_count = c->seen_count;
+  memcpy(m->seen, c->seen, c->seen_count * sizeof m->seen[0]);
+  m->space = *space;
+  m->uses_subject = uses_subject;
+  m->region = *region;
+  return GVEC_OK;
+}
+
 /* The region of the `clip-path` of `inst`, in `space` (the element's, its transform included): a clipPath it names, or a basic shape. *has is
  * false when it has none (a reference to nothing, to what is no clipPath, or one that closes a cycle of clips). `subject` is the element
  * that the clip's units refer to. */
@@ -724,7 +778,23 @@ static GVEC_Result inst_clip_dnf(chain * c, const GVEC_Svg_Instance * inst, cons
   }
   if (kind == 1 && gvec_svg_element_kind(target) == GVEC_SVG_KIND_CLIP_PATH && !seen_before(c, target)) {
     *has = true;
-    return clip_terms(c, target, space, depth + 1, subject, out, refused);
+    const region_memo * known = memo_find(c, target, space, depth + 1, subject);
+    if (known) {
+      *out = known->region;
+      return GVEC_OK;
+    }
+    const size_t open = c->seen_count;
+    GSHGEOM_Map kept_space = *space;
+    const bool outer_used = c->used_subject;
+    c->used_subject = false;
+    r = clip_terms(c, target, space, depth + 1, subject, out, refused);
+    const bool used = c->used_subject;
+    c->used_subject = outer_used || used;
+    if (r != GVEC_OK || *refused) {
+      return r;
+    }
+    /* `seen` is as it was when the region was asked for (clip_terms puts it back) */
+    return c->seen_count == open ? memo_keep(c, target, &kept_space, depth + 1, subject, out, used) : GVEC_OK;
   }
   return GVEC_OK;
 }
