@@ -894,6 +894,9 @@ stretches is not used). The glyph runs carry the location, so one face at two lo
 The faces of a text are put in the order of the `font-family` list, the fonts' own fallback last, which is the order the shaper prefers them in; they used to be in the order the text first
 needed them, so that a text beginning with a character only a later family had took the other characters from that family.
 
+**Text shadow.** `text-shadow` (the computed value: a color and two or three lengths for each of a list of shadows, the spread of CSS Text Decoration 4 ignored as the browsers ignore it) is a filter on each run of the span: the glyphs' alpha blurred
+(a standard deviation of half the blur radius), moved by the offset, colored, merged from the last shadow up to the first, and the text over them. The offsets and the radius go through the element's map, as every filter length does.
+
 **Synthetic slant and bold.** A text asked for in `italic` or `oblique` whose face is upright (no italic or oblique flag in its `OS/2` or `post`, no `slnt` or `ital` axis to move) is leaned about its baseline, by the angle of the oblique (14 degrees for
 `italic` and for an oblique with none, the browsers' 1/4 skew), a run at a time (a run is cut where the baseline changes); a text asked for at a weight of 600 or more whose face is lighter than 600 and has no `wght` axis is emboldened by a stroke in
 the fill's paint of 1/24 of the size at 9 and below to 1/32 at 36 and above, as the browsers do. `font-synthesis-style: none` (and `oblique-only`, for an italic) and `font-synthesis-weight: none` say no. Vertical text is not leaned or emboldened.

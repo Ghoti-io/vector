@@ -49,6 +49,55 @@ bool ReadRun(const Lowered & l, size_t index, GSHSCENE_Glyph_Run & out) {
 
 }  // namespace
 
+TEST(LowerText, ATextShadowIsAFilterThatDrawsTheBlurredOffsetGlyphsUnderTheText) {
+  Fonts f;
+  auto filter_of = [](const Lowered & l, GSHSCENE_Filter * out) {
+    for (size_t i = 0; i < l.Items(); i++) {
+      if (l.Item(i).kind == GSHSCENE_ITEM_GROUP_PUSH && l.Item(i).group.filter) {
+        return gshscene_resource_filter(l.Item(i).group.filter, out) == GSHSCENE_OK;
+      }
+    }
+    return false;
+  };
+  Lowered one;
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"50\" style=\"text-shadow: 3px 4px 2px red\"", "AB", one) || one.Items() >= 1);
+  GSHSCENE_Filter filter;
+  ASSERT_TRUE(filter_of(one, &filter));
+  ASSERT_EQ(filter.primitive_count, (size_t) 5) << "blur, offset, flood, composite, merge";
+  EXPECT_EQ(filter.primitives[0].kind, (uint32_t) GSHSCENE_FILTER_GAUSSIAN_BLUR);
+  EXPECT_EQ(filter.primitives[0].inputs[0].kind, (uint32_t) GSHSCENE_FILTER_INPUT_SOURCE_ALPHA) << "the shadow is of the glyphs' alpha";
+  EXPECT_NEAR(filter.primitives[0].sx, 1.0, 1e-9) << "the deviation is half the blur radius";
+  EXPECT_EQ(filter.primitives[1].kind, (uint32_t) GSHSCENE_FILTER_OFFSET);
+  EXPECT_NEAR(filter.primitives[1].dx, 3.0, 1e-9);
+  EXPECT_NEAR(filter.primitives[1].dy, 4.0, 1e-9);
+  EXPECT_EQ(filter.primitives[2].kind, (uint32_t) GSHSCENE_FILTER_FLOOD);
+  EXPECT_NEAR(filter.primitives[2].color.rgba[0], 1.0, 1e-6);
+  EXPECT_NEAR(filter.primitives[2].color.rgba[1], 0.0, 1e-6);
+  EXPECT_EQ(filter.primitives[3].kind, (uint32_t) GSHSCENE_FILTER_COMPOSITE);
+  EXPECT_EQ(filter.primitives[3].mode, (uint32_t) GSHSCENE_FILTER_COMPOSITE_IN);
+  EXPECT_EQ(filter.primitives[4].kind, (uint32_t) GSHSCENE_FILTER_MERGE);
+  ASSERT_EQ(filter.primitives[4].input_count, (size_t) 2);
+  EXPECT_EQ(filter.primitives[4].inputs[0].kind, (uint32_t) GSHSCENE_FILTER_INPUT_RESULT);
+  EXPECT_EQ(filter.primitives[4].inputs[1].kind, (uint32_t) GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC) << "the text is over its shadow";
+  // several shadows: the first is the top one, so it is merged last, over the others; the offsets are in the list's units (a viewBox that doubles them)
+  Lowered two;
+  LowerText(f, "x=\"10\" y=\"50\" style=\"text-shadow: 1px 1px red, 2px 2px 0 blue\"", "AB", two, "viewBox=\"0 0 200 100\"");
+  ASSERT_TRUE(filter_of(two, &filter));
+  ASSERT_EQ(filter.primitive_count, (size_t) 9);
+  EXPECT_NEAR(filter.primitives[1].dx, 2.0, 1e-9) << "1px under a viewBox of half the size";
+  EXPECT_NEAR(filter.primitives[5].dx, 4.0, 1e-9);
+  ASSERT_EQ(filter.primitives[8].input_count, (size_t) 3);
+  EXPECT_EQ(filter.primitives[8].inputs[0].index, 7u) << "the last shadow (blue) first, at the bottom";
+  EXPECT_EQ(filter.primitives[8].inputs[1].index, 3u);
+  // none, and a span of its own
+  Lowered none;
+  ASSERT_TRUE(LowerText(f, "x=\"10\" y=\"50\" style=\"text-shadow: none\"", "AB", none));
+  EXPECT_FALSE(filter_of(none, &filter));
+  Lowered span;
+  LowerText(f, "x=\"10\" y=\"50\"", "A<tspan style=\"text-shadow: 2px 2px green\">B</tspan>", span);
+  EXPECT_TRUE(filter_of(span, &filter)) << "a span's own shadow";
+}
+
 TEST(LowerText, AnUprightFaceAskedForInItalicOrObliqueIsLeanedAboutItsBaseline) {
   Fonts f;
   const double tan14 = std::tan(14.0 * M_PI / 180.0), tan20 = std::tan(20.0 * M_PI / 180.0);

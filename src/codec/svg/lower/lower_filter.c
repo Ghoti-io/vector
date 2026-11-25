@@ -29,6 +29,7 @@
  * the filter of a rotated or skewed element needs canonical space, which no sink draws yet).
  */
 
+#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/math/basic.h>
@@ -2111,6 +2112,217 @@ static GVEC_Result make_function_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Instan
   }
   gvec_free(ctx->allocator, b.prims);
   gvec_free(ctx->allocator, b.inputs);
+  gvec_free(ctx->allocator, b.values);
+  return r;
+}
+
+/*
+ * `text-shadow` (CSS Text Decoration 3, 4.2) as a filter of the text it shadows: for each shadow, in the order the list says them from the top, the glyphs' alpha blurred (the
+ * standard deviation is half the blur radius), moved by the offset and made the shadow's color, merged from the last shadow up to the first, and the text over them all. The
+ * value is the computed one: comma-separated shadows, each a color and two or three lengths in either order. *ok is false (and nothing is refused) for a value this does not read.
+ */
+GVEC_Result gvec_lw_text_shadow_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHGEOM_Map * local, const char * value, bool * ok, const GSHSCENE_Resource ** out) {
+  *ok = false;
+  *out = NULL;
+  fbuild b;
+  memset(&b, 0, sizeof b);
+  b.ctx = ctx;
+  b.target = e;
+  b.prev = -1;
+  if (!fmap_make(local, &b.map)) {
+    return GVEC_ERR_INTERNAL;
+  }
+  b.prims = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.prims);
+  b.inputs = gvec_realloc(ctx->allocator, NULL, GSHSCENE_FILTER_MAX_PRIMITIVES * sizeof *b.inputs);
+  b.merge_inputs = gvec_realloc(ctx->allocator, NULL, MERGE_POOL * sizeof *b.merge_inputs);
+  b.values = gvec_realloc(ctx->allocator, NULL, VALUE_POOL * sizeof *b.values);
+  GVEC_Result r = GVEC_OK;
+  if (!b.prims || !b.inputs || !b.merge_inputs || !b.values) {
+    r = GVEC_ERR_OOM;
+  }
+  size_t shadow_results[16];
+  size_t shadows = 0;
+  const size_t n = strlen(value);
+  size_t at_char = 0;
+  bool good = r == GVEC_OK;
+  while (good && at_char < n && shadows < 16) {
+    /* one shadow: up to the next comma outside parentheses */
+    size_t end = at_char;
+    int depth = 0;
+    while (end < n && !(value[end] == ',' && depth == 0)) {
+      depth += value[end] == '(';
+      depth -= value[end] == ')';
+      end++;
+    }
+    char color[160], function[320];
+    size_t color_n = 0;
+    double lengths[4] = {0, 0, 0, 0}; /* x, y, blur radius, and the spread that CSS Text Decoration 4 adds and the browsers ignore */
+    size_t got = 0;
+    size_t i = at_char;
+    while (good && i < end) {
+      while (i < end && value[i] == ' ') {
+        i++;
+      }
+      size_t start = i;
+      depth = 0;
+      while (i < end && (value[i] != ' ' || depth > 0)) {
+        depth += value[i] == '(';
+        depth -= value[i] == ')';
+        i++;
+      }
+      if (i == start) {
+        continue;
+      }
+      size_t scanned = 0;
+      double number;
+      const bool is_length = gvec_svg_scan_number(value + start, i - start, &scanned, &number, NULL) &&
+          (scanned == i - start ? number == 0 : (scanned + 2 == i - start && value[start + scanned] == 'p' && value[start + scanned + 1] == 'x'));
+      if (is_length) {
+        if (got >= 4) {
+          good = false;
+        }
+        else {
+          lengths[got++] = number;
+        }
+      }
+      else if (color_n + (i - start) + 2 < sizeof color) {
+        if (color_n) {
+          color[color_n++] = ' ';
+        }
+        memcpy(color + color_n, value + start, i - start);
+        color_n += i - start;
+      }
+      else {
+        good = false;
+      }
+    }
+    if (!good || got < 2 || lengths[2] < 0) {
+      good = false;
+      break;
+    }
+    color[color_n] = 0;
+    if (color_n == 0) {
+      memcpy(color, "currentcolor", 13);
+    }
+    snprintf(function, sizeof function, "drop-shadow(%s %.9gpx %.9gpx %.9gpx)", color, lengths[0], lengths[1], lengths[2] / 2.0);
+    bool parsed;
+    r = css_function(&b, function, &parsed);
+    if (r != GVEC_OK || b.refused || !parsed) {
+      good = false;
+      break;
+    }
+    /* the drop shadow that was made becomes the shadow alone: blur the alpha, move it, color it */
+    const size_t idx = b.count - 1;
+    const GSHSCENE_Filter_Primitive d = b.prims[idx];
+    GSHSCENE_Filter_Primitive * p = &b.prims[idx];
+    memset(p, 0, sizeof *p);
+    p->kind = GSHSCENE_FILTER_GAUSSIAN_BLUR;
+    p->color_space = GSHSCENE_FILTER_SPACE_SRGB;
+    b.inputs[idx][0].kind = GSHSCENE_FILTER_INPUT_SOURCE_ALPHA;
+    b.inputs[idx][0].index = 0;
+    p->input_count = 1;
+    p->inputs = b.inputs[idx];
+    p->sx = d.sx;
+    p->sy = d.sy;
+    GSHSCENE_Filter_Primitive * q;
+    long at = add_prim(&b, &q);
+    long at2 = -1, at3 = -1;
+    if (at >= 0) {
+      q->kind = GSHSCENE_FILTER_OFFSET;
+      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;
+      b.inputs[at][0].kind = GSHSCENE_FILTER_INPUT_RESULT;
+      b.inputs[at][0].index = (uint32_t) idx;
+      q->input_count = 1;
+      q->inputs = b.inputs[at];
+      q->dx = d.dx;
+      q->dy = d.dy;
+      b.names[b.count] = NULL;
+      b.name_len[b.count] = 0;
+      b.count++;
+      at2 = add_prim(&b, &q);
+    }
+    if (at2 >= 0) {
+      q->kind = GSHSCENE_FILTER_FLOOD;
+      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;
+      q->input_count = 0;
+      q->color = d.color;
+      q->opacity = 1;
+      b.names[b.count] = NULL;
+      b.name_len[b.count] = 0;
+      b.count++;
+      at3 = add_prim(&b, &q);
+    }
+    if (at3 >= 0) {
+      q->kind = GSHSCENE_FILTER_COMPOSITE;
+      q->mode = GSHSCENE_FILTER_COMPOSITE_IN;
+      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;
+      b.inputs[at3][0].kind = GSHSCENE_FILTER_INPUT_RESULT;
+      b.inputs[at3][0].index = (uint32_t) at2;
+      b.inputs[at3][1].kind = GSHSCENE_FILTER_INPUT_RESULT;
+      b.inputs[at3][1].index = (uint32_t) at;
+      q->input_count = 2;
+      q->inputs = b.inputs[at3];
+      b.names[b.count] = NULL;
+      b.name_len[b.count] = 0;
+      b.prev = (long) b.count;
+      shadow_results[shadows++] = b.count;
+      b.count++;
+    }
+    else {
+      good = false;
+      break;
+    }
+    at_char = end + 1;
+  }
+  GSHSCENE_Filter_Primitive * m = NULL;
+  if (good && shadows > 0 && add_prim(&b, &m) >= 0 && b.merge_used + shadows + 1 <= MERGE_POOL) {
+    /* the last shadow is the lowest: merged first, the text last */
+    for (size_t k = 0; k < shadows; k++) {
+      GSHSCENE_Filter_Input * in = &b.merge_inputs[b.merge_used + k];
+      in->kind = GSHSCENE_FILTER_INPUT_RESULT;
+      in->index = (uint32_t) shadow_results[shadows - 1 - k];
+    }
+    GSHSCENE_Filter_Input * text = &b.merge_inputs[b.merge_used + shadows];
+    text->kind = GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC;
+    text->index = 0;
+    m->kind = GSHSCENE_FILTER_MERGE;
+    m->color_space = GSHSCENE_FILTER_SPACE_SRGB;
+    m->input_count = shadows + 1;
+    m->inputs = &b.merge_inputs[b.merge_used];
+    b.merge_used += shadows + 1;
+    b.names[b.count] = NULL;
+    b.name_len[b.count] = 0;
+    b.count++;
+  }
+  else {
+    good = false;
+  }
+  if (r == GVEC_OK && good && !b.refused) {
+    GSHSCENE_Filter f;
+    memset(&f, 0, sizeof f);
+    f.region_mode = GSHSCENE_FILTER_REGION_AUTO;
+    f.color_space = GSHSCENE_FILTER_SPACE_SRGB;
+    f.primitive_count = b.count;
+    f.primitives = b.prims;
+    const GSHSCENE_Resource * resource = NULL;
+    GSHSCENE_Result sr = gshscene_store_intern_filter(ctx->store, &f, &resource);
+    if (sr == GSHSCENE_ERR_OOM) {
+      r = GVEC_ERR_OOM;
+    }
+    else if (sr != GSHSCENE_OK) {
+      r = gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the text shadow is past what the waist can carry");
+    }
+    else {
+      r = gvec_lw_hold(ctx, resource);
+      if (r == GVEC_OK) {
+        *out = resource;
+        *ok = true;
+      }
+    }
+  }
+  gvec_free(ctx->allocator, b.prims);
+  gvec_free(ctx->allocator, b.inputs);
+  gvec_free(ctx->allocator, b.merge_inputs);
   gvec_free(ctx->allocator, b.values);
   return r;
 }

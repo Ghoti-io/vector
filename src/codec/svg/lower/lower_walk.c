@@ -1419,6 +1419,43 @@ static GVEC_Result text_pieces(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
         return GVEC_ERR_OOM;
       }
     }
+    /* `text-shadow` of the span: a filter of the run, which draws the shadows under it. */
+    if (!text.pieces[i].image && parts > 0 && !text.pieces[i].decoration) {
+      GVEC_Svg_Style_Specified shadow_value;
+      r = gvec_svg_get_specified(ctx->style, span, GVEC_SVG_PROP_TEXT_SHADOW, &shadow_value);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      if (shadow_value.computed && strcmp(shadow_value.computed, "none") != 0) {
+        bool shadow_ok;
+        const GSHSCENE_Resource * shadow_filter = NULL;
+        r = gvec_lw_text_shadow_filter(ctx, e, local, shadow_value.computed, &shadow_ok, &shadow_filter);
+        if (r != GVEC_OK) {
+          return r;
+        }
+        if (shadow_ok) {
+          gvec_lw_node * shadow_group = gvec_lw_new_node(ctx, GVEC_LW_GROUP);
+          if (!shadow_group) {
+            return GVEC_ERR_OOM;
+          }
+          shadow_group->opacity = 1;
+          shadow_group->filter = shadow_filter;
+          shadow_group->key = gvec_lw_key(e->key, ctx->chain ^ salt ^ UINT64_C(0xF11F11F1), GVEC_LW_ROLE_FILTER);
+          shadow_group->site = gvec_lw_new_site(ctx, e, shadow_group->key);
+          if (shadow_group->site == GVEC_LW_NO_SITE) {
+            return GVEC_ERR_OOM;
+          }
+          for (size_t k = 0; k < parts; k++) {
+            r = gvec_lw_attach(ctx, shadow_group, pair[k]);
+            if (r != GVEC_OK) {
+              return r;
+            }
+          }
+          pair[0] = shadow_group;
+          parts = 1;
+        }
+      }
+    }
     /* The opacity of a span other than the text itself is a group of its own around what the span paints. */
     double span_opacity = 1;
     if (se != e && se != filtered_span && !text.pieces[i].decoration) {

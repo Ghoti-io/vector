@@ -201,6 +201,7 @@
 #define gvec_lw_text_area_extent GHOTIIO_VECTOR(gvec_lw_text_area_extent)
 #define gvec_lw_text_area_make GHOTIIO_VECTOR(gvec_lw_text_area_make)
 #define gvec_lw_text_layout GHOTIIO_VECTOR(gvec_lw_text_layout)
+#define gvec_lw_text_shadow_filter GHOTIIO_VECTOR(gvec_lw_text_shadow_filter)
 #define gvec_lw_text_shape_run GHOTIIO_VECTOR(gvec_lw_text_shape_run)
 #define gvec_lw_text_spacing_of GHOTIIO_VECTOR(gvec_lw_text_spacing_of)
 #define gvec_lw_text_span_box GHOTIIO_VECTOR(gvec_lw_text_span_box)

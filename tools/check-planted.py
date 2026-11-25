@@ -1024,6 +1024,12 @@ PLANTS += [
     ('SY5', 'src/codec/svg/lower/lower_text.c', 'os2->weight_class >= 600) {\n    return 0;\n  }\n  const double fraction', 'os2->weight_class >= 6000) {\n    return 0;\n  }\n  const double fraction', 'a bold face is emboldened again'),
     ('SY6', 'src/codec/svg/lower/lower_text.c', 'if (!face || !st->synthesis_weight || !(st->weight >= 600)) {', 'if (!face || !st->synthesis_weight || !(st->weight >= 100)) {', 'a regular weight is emboldened'),
     ('SY7', 'src/codec/svg/lower/lower_walk.c', '        if (bold_node) {\n          pair[parts++] = bold_node;', '        if (false && bold_node) {\n          pair[parts++] = bold_node;', 'synthetic bold is not drawn'),
+    ('SH1', 'src/codec/svg/lower/lower_filter.c', 'lengths[0], lengths[1], lengths[2] / 2.0);', 'lengths[0], lengths[1], lengths[2]);', 'a text shadow blurs by its whole radius'),
+    ('SH2', 'src/codec/svg/lower/lower_filter.c', 'in->index = (uint32_t) shadow_results[shadows - 1 - k];', 'in->index = (uint32_t) shadow_results[k];', 'the first shadow is under the others'),
+    ('SH3', 'src/codec/svg/lower/lower_filter.c', '    text->kind = GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC;\n    text->index = 0;', '    text->kind = GSHSCENE_FILTER_INPUT_SOURCE_ALPHA;\n    text->index = 0;', 'the text is not drawn over its shadow'),
+    ('SH4', 'src/codec/svg/lower/lower_filter.c', '      q->mode = GSHSCENE_FILTER_COMPOSITE_IN;\n      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;\n      b.inputs[at3][0].kind', '      q->mode = GSHSCENE_FILTER_COMPOSITE_OVER;\n      q->color_space = GSHSCENE_FILTER_SPACE_SRGB;\n      b.inputs[at3][0].kind', 'a text shadow is not cut to the glyphs'),
+    ('SH5', 'src/codec/svg/lower/lower_filter.c', '    b.inputs[idx][0].kind = GSHSCENE_FILTER_INPUT_SOURCE_ALPHA;', '    b.inputs[idx][0].kind = GSHSCENE_FILTER_INPUT_SOURCE_GRAPHIC;', "a text shadow is of the glyphs' colors, not their alpha"),
+    ('SH6', 'src/codec/svg/lower/lower_walk.c', 'if (shadow_value.computed && strcmp(shadow_value.computed, "none") != 0) {', 'if (false && shadow_value.computed && strcmp(shadow_value.computed, "none") != 0) {', 'text-shadow is ignored'),
     ('FD1','src/codec/svg/lower/lower_filter.c','      p->scale_y = along[1];','      p->scale_y = along[0];','the displacement along y is the one along x'),
     ('FD2','src/codec/svg/lower/lower_filter.c','      lengths_to_list(b, along);\n      p->scale_y','      p->scale_y','the displacement scale is not put through the map'),
 ]

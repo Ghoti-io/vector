@@ -132,6 +132,7 @@ text-justify	KEYWORD	-		G
 text-orientation	KEYWORD	-		G				
 text-overflow	KEYWORD	-		G				
 text-rendering	KEYWORD	-		G				
+text-shadow	KEYWORD	-		G				
 text-transform	KEYWORD	-		G				
 text-underline-offset	KEYWORD	-		G				
 text-wrap-mode	KEYWORD	-		G				
