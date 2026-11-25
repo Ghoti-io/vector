@@ -275,10 +275,19 @@ GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
   if (r != GVEC_OK) {
     return r;
   }
-  if (nested_kind == -1 || nested_kind == 2) {
-    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask element that has a list of masks, an image or a gradient for a mask of its own, or names an element the resolver does not supply, is not lowered");
+  if (nested_kind == -1) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_MASK, "a mask element that names an element the resolver does not supply for a mask of its own is not lowered");
   }
   const GSHSCENE_Resource * nested = NULL;
+  if (nested_kind == 2) {
+    /* A list of masks, an image or a gradient for the mask of the mask: the layers of the mask element's own `mask`, placed in the mask element's box. */
+    gvec_lw_mask_state inner;
+    r = gvec_lw_mask_layers(ctx, mask_inst, local, &inner, &nested);
+    if (r != GVEC_OK || inner != GVEC_LW_MASK_NODE) {
+      *state = inner;
+      return r;
+    }
+  }
   bool loops = false;
   if (nested_kind == 1) {
     r = on_loop(ctx, mask, &loops);

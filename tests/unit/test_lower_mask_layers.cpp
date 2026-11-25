@@ -8,6 +8,8 @@
 #include <ghoti.io/shape-scene/paint.h>
 #include <ghoti.io/shape-scene/resource.h>
 
+#include <algorithm>
+#include <cmath>
 #include "../lower_helpers.h"
 
 using namespace gvec_test;
@@ -195,6 +197,162 @@ TEST(LowerMaskLayers, ARadialGradientHasItsShapeSizeAndCenter) {
   EXPECT_NEAR(g.map.t[1], 20.0, 1e-9);
 }
 
+namespace {
+
+/** sRGB to oklab, and back: an independent reading of CSS Color 4, 9, to check the samples of a gradient that interpolates in oklab. */
+double Linear(double c) { return c <= 0.04045 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4); }
+double Gamma(double c) { return c <= 0.0031308 ? c * 12.92 : 1.055 * std::pow(c, 1 / 2.4) - 0.055; }
+void ToOklab(const double rgb[3], double lab[3]) {
+  const double r = Linear(rgb[0]), g = Linear(rgb[1]), b = Linear(rgb[2]);
+  const double l = std::cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const double m = std::cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const double s = std::cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  lab[0] = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s;
+  lab[1] = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+  lab[2] = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+}
+void FromOklab(const double lab[3], double rgb[3]) {
+  const double l = std::pow(lab[0] + 0.3963377774 * lab[1] + 0.2158037573 * lab[2], 3);
+  const double m = std::pow(lab[0] - 0.1055613458 * lab[1] - 0.0638541728 * lab[2], 3);
+  const double s = std::pow(lab[0] - 0.0894841775 * lab[1] - 1.2914855480 * lab[2], 3);
+  rgb[0] = Gamma(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s);
+  rgb[1] = Gamma(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s);
+  rgb[2] = Gamma(-0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
+}
+
+/** The stops of a gradient fill as sRGB (the colors of the stops differ in the space they were written in; the waist resolves them to one). */
+std::vector<GSHSCENE_Resolved_Stop> Resolved(const GSHSCENE_Item & item) {
+  GSHSCENE_Gradient g;
+  EXPECT_TRUE(GradientOf(item, g));
+  GSHSCENE_Color_Space srgb;
+  srgb.primaries = GCOL_PRIMARIES_SRGB;
+  srgb.transfer = GCOL_TRANSFER_SRGB;
+  srgb.gamma = 0;
+  GSHSCENE_Color foreground;
+  gshscene_color_init(&foreground);
+  std::vector<GSHSCENE_Resolved_Stop> out(g.stop_count);
+  EXPECT_EQ(gshscene_gradient_resolve(item.paint.resource, &foreground, nullptr, &srgb, nullptr, out.data(), out.size()), GSHSCENE_OK);
+  return out;
+}
+
+/** The resolved stop at `offset`, or nullptr. */
+const GSHSCENE_Resolved_Stop * StopAt(const std::vector<GSHSCENE_Resolved_Stop> & stops, double offset) {
+  for (const auto & s : stops) {
+    if (std::fabs(s.offset - offset) < 1e-9) {
+      return &s;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+TEST(LowerMaskLayers, AConicGradientIsTheWaistsSweepFromTheTopClockwise) {
+  Masked m;
+  Lower("mask: conic-gradient(from 90deg at 25% 50%, black, white)", m);
+  ASSERT_TRUE(m.has_mask);
+  GSHSCENE_Gradient g;
+  ASSERT_TRUE(GradientOf(FillsOf(m)[0], g));
+  EXPECT_EQ(g.kind, (uint32_t) GSHSCENE_GRADIENT_SWEEP);
+  EXPECT_EQ(g.angle_unit, (uint32_t) GSHGEOM_ANGLE_DEGREES);
+  EXPECT_NEAR(g.a0, 0.0, 1e-9) << "CSS starts at the top; the sweep at +x: from 90deg is the sweep's 0";
+  EXPECT_NEAR(g.a1, 360.0, 1e-9);
+  EXPECT_EQ(g.extend, (uint32_t) GSHSCENE_EXTEND_REPEAT) << "the turn wraps";
+  EXPECT_NEAR(g.center[0], 10.0, 1e-9) << "25% of a 40 wide tile";
+  EXPECT_NEAR(g.center[1], 10.0, 1e-9);
+  Masked top;
+  Lower("mask: conic-gradient(black, white)", top);
+  ASSERT_TRUE(top.has_mask && GradientOf(FillsOf(top)[0], g));
+  EXPECT_NEAR(g.a0, -90.0, 1e-9) << "from the top (-y)";
+  EXPECT_NEAR(g.center[0], 20.0, 1e-9);
+  // a stop at an angle: before the first and after the last the end colors, as stops at the ends of the turn
+  Masked angled;
+  Lower("mask: conic-gradient(black 90deg, white 180deg)", angled);
+  ASSERT_TRUE(angled.has_mask && GradientOf(FillsOf(angled)[0], g));
+  ASSERT_EQ(g.stop_count, (size_t) 4);
+  EXPECT_NEAR(g.stops[0].offset, 0.0, 1e-9);
+  EXPECT_NEAR(g.stops[1].offset, 0.25, 1e-9);
+  EXPECT_NEAR(g.stops[2].offset, 0.5, 1e-9);
+  EXPECT_NEAR(g.stops[3].offset, 1.0, 1e-9);
+  EXPECT_NEAR(g.stops[0].color.rgba[0], 0.0, 1e-9) << "black before the first stop";
+  EXPECT_NEAR(g.stops[3].color.rgba[0], 1.0, 1e-9) << "white after the last";
+  // repeating: the period is the stops' span
+  Masked repeating;
+  Lower("mask: repeating-conic-gradient(black 0 10%, white 10% 20%)", repeating);
+  ASSERT_TRUE(repeating.has_mask && GradientOf(FillsOf(repeating)[0], g));
+  EXPECT_NEAR(g.a0, -90.0, 1e-9);
+  EXPECT_NEAR(g.a1, -90.0 + 72.0, 1e-9) << "20% of a turn";
+}
+
+TEST(LowerMaskLayers, AnInterpolationHintBendsTheStretchItLiesIn) {
+  Masked m;
+  Lower("mask: linear-gradient(black, 25%, white)", m);
+  ASSERT_TRUE(m.has_mask);
+  GSHSCENE_Gradient g;
+  ASSERT_TRUE(GradientOf(FillsOf(m)[0], g));
+  EXPECT_GT(g.stop_count, (size_t) 2) << "the curve is given as stops";
+  const auto stops = Resolved(FillsOf(m)[0]);
+  const GSHSCENE_Resolved_Stop * at_hint = StopAt(stops, 0.25);
+  ASSERT_NE(at_hint, nullptr);
+  EXPECT_NEAR(at_hint->rgba[0], 0.5, 1.0 / 256.0) << "the color halfway between the two is at the hint";
+  for (size_t i = 1; i < stops.size(); i++) {
+    EXPECT_GE(stops[i].rgba[0], stops[i - 1].rgba[0]) << "the curve rises";
+  }
+  // between two samples the waist draws a line: it is within 1/256 of the curve at the middle of every stretch
+  for (size_t i = 1; i < stops.size(); i++) {
+    const double o = (stops[i].offset + stops[i - 1].offset) / 2;
+    const double w = std::pow(o, std::log(0.5) / std::log(0.25));
+    const double line = (stops[i].rgba[0] + stops[i - 1].rgba[0]) / 2;
+    EXPECT_NEAR(line, w, 1.0 / 256.0) << "at " << o;
+  }
+  // a hint at an end of its stretch is a jump
+  Masked jump;
+  Lower("mask: linear-gradient(black, 0%, white)", jump);
+  ASSERT_TRUE(jump.has_mask && GradientOf(FillsOf(jump)[0], g));
+  ASSERT_EQ(g.stop_count, (size_t) 3);
+  EXPECT_NEAR(g.stops[0].color.rgba[0], 0.0, 1e-9);
+  EXPECT_NEAR(g.stops[1].color.rgba[0], 1.0, 1e-9) << "white from the start of the stretch";
+  EXPECT_NEAR(g.stops[1].offset, 0.0, 1e-9);
+}
+
+TEST(LowerMaskLayers, AColorInterpolationMethodIsSampledInThatSpace) {
+  Masked m;
+  Lower("mask: linear-gradient(in oklab, red, blue)", m);
+  ASSERT_TRUE(m.has_mask);
+  GSHSCENE_Gradient g;
+  ASSERT_TRUE(GradientOf(FillsOf(m)[0], g));
+  EXPECT_GT(g.stop_count, (size_t) 2);
+  const auto stops = Resolved(FillsOf(m)[0]);
+  const GSHSCENE_Resolved_Stop * mid = StopAt(stops, 0.5);
+  ASSERT_NE(mid, nullptr);
+  const double red[3] = {1, 0, 0}, blue[3] = {0, 0, 1};
+  double a[3], b[3], c[3], expected[3];
+  ToOklab(red, a);
+  ToOklab(blue, b);
+  for (int k = 0; k < 3; k++) {
+    c[k] = (a[k] + b[k]) / 2;
+  }
+  FromOklab(c, expected);
+  for (int k = 0; k < 3; k++) {
+    EXPECT_NEAR(mid->rgba[k], std::min(1.0, std::max(0.0, expected[k])), 1.0 / 128.0) << "channel " << k << ": the middle in oklab is not the middle in sRGB";
+  }
+  // a polar space with a hue method
+  Masked hue;
+  Lower("mask: linear-gradient(in hsl longer hue, red, blue)", hue);
+  ASSERT_TRUE(hue.has_mask && GradientOf(FillsOf(hue)[0], g));
+  EXPECT_GT(g.stop_count, (size_t) 2);
+  // the method may come after the direction, and for a conic and a radial gradient
+  Masked after;
+  Lower("mask: linear-gradient(to right in oklab, red, blue)", after);
+  EXPECT_TRUE(after.has_mask);
+  Masked conic;
+  Lower("mask: conic-gradient(from 10deg in oklab, red, blue)", conic);
+  EXPECT_TRUE(conic.has_mask);
+  Masked radial;
+  Lower("mask: radial-gradient(circle in oklab, red, blue)", radial);
+  EXPECT_TRUE(radial.has_mask);
+}
+
 TEST(LowerMaskLayers, TheSizeThePositionAndTheRepeatPlaceTheTiles) {
   Masked one;
   Lower("mask: linear-gradient(black, white) center / 50% auto no-repeat", one);
@@ -236,6 +394,53 @@ TEST(LowerMaskLayers, TheSizeThePositionAndTheRepeatPlaceTheTiles) {
   Lower("mask: linear-gradient(black, white) 0 0 / cover no-repeat", cover);
   ASSERT_TRUE(contain.has_mask && cover.has_mask);
   EXPECT_EQ(BoundsOf(FillsOf(contain)[0]).max.x - BoundsOf(FillsOf(contain)[0]).min.x, 40.0) << "no ratio: the area";
+}
+
+TEST(LowerMaskLayers, AMaskPositionIsAnyCssPositionWithOffsetsFromItsEdges) {
+  // a 10 by 10 tile once, in the 40 by 20 area at (20, 20): where its corner is for each form of position
+  struct Case {
+    const char * position;
+    double x, y;
+  };
+  const Case cases[] = {
+      {"left 5px top 3px", 25, 23},
+      {"right 5px bottom 3px", 45, 27},   // 20 + (40 - 10) - 5, 20 + (20 - 10) - 3
+      {"right 10% bottom 20%", 47, 28},   // 90% and 80% of the free space
+      {"top 3px left 5px", 25, 23},        // the keywords in the other order
+      {"right bottom", 50, 30},
+      {"center", 35, 25},
+      {"bottom", 35, 30},
+      {"right", 50, 25},
+      {"30% 70%", 29, 27},
+      {"4px", 24, 25},
+      {"left 25%", 20, 22.5},             // a keyword and a percentage: x at the left, y at 25%
+  };
+  for (const Case & c : cases) {
+    Masked m;
+    Lower(std::string("mask-image: linear-gradient(black, white); mask-repeat: no-repeat; mask-size: 10px 10px; mask-position: ") + c.position, m);
+    ASSERT_TRUE(m.has_mask) << c.position;
+    ASSERT_EQ(Fills(m), (size_t) 1) << c.position;
+    const GSHGEOM_Bounds box = BoundsOf(FillsOf(m)[0]);
+    EXPECT_NEAR(box.min.x, c.x, 1e-9) << c.position;
+    EXPECT_NEAR(box.min.y, c.y, 1e-9) << c.position;
+  }
+  // not a position (browsers refuse the three-value forms too): the declaration is not valid, so there is the initial one (0% 0%)
+  for (const char * bad : {"top 25%", "left right", "10px 5px 3px", "left 10px top", "center top 2px", "right 10px bottom 5px left"}) {
+    Masked m;
+    Lower(std::string("mask-image: linear-gradient(black, white); mask-repeat: no-repeat; mask-size: 10px 10px; mask-position: ") + bad, m);
+    ASSERT_TRUE(m.has_mask) << bad;
+    const GSHGEOM_Bounds box = BoundsOf(FillsOf(m)[0]);
+    EXPECT_NEAR(box.min.x, 20, 1e-9) << bad;
+    EXPECT_NEAR(box.min.y, 20, 1e-9) << bad;
+  }
+  // a gradient's center takes the same positions
+  Masked radial;
+  Lower("mask: radial-gradient(circle 5px at right 10px bottom 5px, black, white)", radial);
+  ASSERT_TRUE(radial.has_mask);
+  GSHSCENE_Gradient g;
+  ASSERT_TRUE(GradientOf(FillsOf(radial)[0], g));
+  EXPECT_NEAR(g.map.t[0], 20.0 + 40.0 - 10.0, 1e-9);
+  EXPECT_NEAR(g.map.t[1], 20.0 + 20.0 - 5.0, 1e-9);
 }
 
 TEST(LowerMaskLayers, TheOriginAndTheClipAreBoxesOfTheElement) {
@@ -399,8 +604,7 @@ TEST(LowerMaskLayers, AnImageIsTiledAtItsSizeOrTheOneGiven) {
 }
 
 TEST(LowerMaskLayers, WhatThisDoesNotReadIsRefusedNotHalfDrawn) {
-  for (const char * css : {"mask: conic-gradient(black, white)", "mask: linear-gradient(black, 40%, white)", "mask: linear-gradient(in oklab, black, white)",
-                           "mask-border-source: url(a.png)"}) {
+  for (const char * css : {"mask-border-source: url(a.png)"}) {
     Masked m;
     Lower(css, m);
     EXPECT_NE(m.l.Refusal(GVEC_LOWER_MASK), nullptr) << css;
@@ -427,11 +631,33 @@ TEST(LowerMaskLayers, WhatThisDoesNotReadIsRefusedNotHalfDrawn) {
   EXPECT_EQ(kept.l.Refusal(GVEC_LOWER_LIMIT), nullptr);
   Lower("mask-image: " + seventeen, over);
   EXPECT_NE(over.l.Refusal(GVEC_LOWER_LIMIT), nullptr) << "more layers than the lowering keeps are refused, not dropped";
-  // a mask element whose own mask is a layered one
-  Masked nested;
+  // a mask element that names an element nothing supplies for a mask of its own is refused
+  Masked unresolved;
+  LowerSvg(Svg("width=\"100\" height=\"100\"", "<mask id=\"m\" style=\"mask: url(elsewhere.svg#x)\"><rect width=\"9\" height=\"9\" fill=\"white\"/></mask><rect width=\"9\" height=\"9\" mask=\"url(#m)\"/>"),
+      unresolved.l);
+  EXPECT_NE(unresolved.l.Refusal(GVEC_LOWER_MASK), nullptr);
+}
+
+TEST(LowerMaskLayers, AMaskElementCanBeMaskedByLayersOfItsOwn) {
+  Masked m;
   LowerSvg(Svg("width=\"100\" height=\"100\"", "<mask id=\"m\" style=\"mask: linear-gradient(black, white)\"><rect width=\"9\" height=\"9\" fill=\"white\"/></mask><rect width=\"9\" height=\"9\" mask=\"url(#m)\"/>"),
-      nested.l);
-  EXPECT_NE(nested.l.Refusal(GVEC_LOWER_MASK), nullptr);
+      m.l);
+  EXPECT_EQ(m.l.Refusals(), (size_t) 0);
+  ASSERT_GE(m.l.Items(), (size_t) 1);
+  ASSERT_EQ(m.l.Item(0).kind, GSHSCENE_ITEM_GROUP_PUSH);
+  ASSERT_NE(m.l.Item(0).group.soft_mask, nullptr);
+  GSHSCENE_Mask outer;
+  ASSERT_EQ(gshscene_resource_mask(m.l.Item(0).group.soft_mask, &outer), GSHSCENE_OK);
+  // the picture of the outer mask holds the content (the rect) under a group that the mask element's own mask masks
+  const GSHSCENE_List * list = gshscene_resource_picture(outer.picture);
+  ASSERT_NE(list, nullptr);
+  size_t masked_groups = 0;
+  for (size_t i = 0; i < gshscene_list_count(list); i++) {
+    const GSHSCENE_Item * item = nullptr;
+    ASSERT_EQ(gshscene_list_item(list, i, &item), GSHSCENE_OK);
+    masked_groups += item->kind == GSHSCENE_ITEM_GROUP_PUSH && item->group.soft_mask != nullptr;
+  }
+  EXPECT_EQ(masked_groups, (size_t) 1) << "the mask element's content is masked by its own gradient";
 }
 
 TEST(LowerMaskLayers, AnSvgDocumentIsAMaskImageToo) {

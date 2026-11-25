@@ -31,6 +31,8 @@
 
 #include "../../../../include/ghoti.io/vector/macros.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <ghoti.io/math/basic.h>
@@ -172,8 +174,9 @@ static bool angle_of(span s, double * degrees) {
 typedef enum layer_kind { LAYER_NONE = 0, LAYER_ELEMENT, LAYER_IMAGE, LAYER_GRADIENT } layer_kind;
 
 typedef struct amount {
-  int kind; ///< 0 auto, 1 length, 2 percent
+  int kind; ///< 0 auto, 1 length, 2 percent, 3 a percentage and a length (`right 10px` is 100% less 10px)
   double v;
+  double len; ///< Kind 3: the length.
 } amount;
 
 typedef struct layer {
@@ -303,14 +306,22 @@ typedef struct gradient_stops {
   GSHSCENE_Gradient_Stop stops[STOPS_MAX];
   double position[STOPS_MAX]; ///< As written: a fraction of the gradient line, or NAN when it is not given.
   bool given[STOPS_MAX];
+  span color[STOPS_MAX];      ///< The text of each stop's color, to mix between two of them.
+  double hint[STOPS_MAX];     ///< The position of an interpolation hint before the stop (a fraction as `position`), or NAN.
   size_t count;
+  GSHSCENE_Gradient_Stop * expanded; ///< The stops as the waist is given them: more than `count` where a hint or a color space needed some between.
+  size_t expanded_count;
 } gradient_stops;
+
+/** The most stops a gradient is given once its hints and its color space have added the ones between. */
+#define EXPANDED_STOPS_MAX 2048
 
 /* The color stops of a gradient's arguments `args[from..count)`, positions as fractions of `length` (for a length) and fixed up (CSS Images 3, 3.4.3). */
 static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Element * e, const span * args, size_t from, size_t count,
     double length, bool angular, gradient_stops * out, bool * ok) {
   *ok = false;
   out->count = 0;
+  double pending_hint = NAN;
   for (size_t i = from; i < count; i++) {
     span tokens[TOKENS_MAX];
     size_t n = split(args[i], true, tokens, TOKENS_MAX);
@@ -325,7 +336,33 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
       return r;
     }
     if (!valid) {
-      return GVEC_OK; /* An interpolation hint (no color) or a color this does not read. */
+      /* An interpolation hint (a position and no color), between two stops; or a color this does not read. */
+      double hv;
+      bool hp;
+      double hint_fraction;
+      if (n != 1 || out->count == 0 || i + 1 >= count || !isnan(pending_hint)) {
+        return GVEC_OK;
+      }
+      if (angular) {
+        double degrees;
+        if (angle_of(tokens[0], &degrees)) {
+          hint_fraction = degrees / 360.0;
+        }
+        else if (length_or_percent(tokens[0], &hv, &hp) && hp) {
+          hint_fraction = hv / 100.0;
+        }
+        else {
+          return GVEC_OK;
+        }
+      }
+      else {
+        if (!length_or_percent(tokens[0], &hv, &hp) || (!hp && !(length > 0))) {
+          return GVEC_OK;
+        }
+        hint_fraction = hp ? hv / 100.0 : hv / length;
+      }
+      pending_hint = hint_fraction;
+      continue;
     }
     GVEC_Svg_Paint given;
     memset(&given, 0, sizeof given);
@@ -377,9 +414,12 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     out->stops[out->count].color = paint;
     out->position[out->count] = positions ? fraction_given : 0;
     out->given[out->count] = positions != 0;
+    out->color[out->count] = tokens[0];
+    out->hint[out->count] = pending_hint;
+    pending_hint = NAN;
     out->count++;
   }
-  if (out->count < 2) {
+  if (out->count < 2 || !isnan(pending_hint)) {
     return GVEC_OK;
   }
   /* The positions: the first is 0 and the last 1 when not given, none is before an earlier one, and the ones not given are spread evenly between those that are. */
@@ -416,61 +456,401 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   }
   for (size_t i = 0; i < out->count; i++) {
     out->stops[i].offset = out->position[i];
+    /* A hint is between the two stops it lies between: past either, it is at that one. */
+    if (i > 0 && !isnan(out->hint[i])) {
+      const double lo = out->position[i - 1], hi = out->position[i];
+      out->hint[i] = out->hint[i] < lo ? lo : out->hint[i] > hi ? hi : out->hint[i];
+    }
   }
   *ok = true;
   return GVEC_OK;
 }
 
-/* A position of a gradient's center or an image's place: one or two of `left`, `center`, `right`, `top`, `bottom`, a length and a percentage. */
-static bool position_of(const span * t, size_t n, double w, double h, double * x, double * y) {
-  *x = w / 2;
-  *y = h / 2;
-  if (n == 0 || n > 2) {
+/* A `<length-percentage>`: a length, a percentage, or `calc()` of a percentage and a length (what the cascade writes for an offset from a far edge). */
+static bool amount_of(span t, amount * out) {
+  double v;
+  bool percent;
+  if (length_or_percent(t, &v, &percent)) {
+    *out = (amount) {percent ? 2 : 1, v, 0};
+    return true;
+  }
+  if (!starts(t, "calc(") || t.n < 7 || t.p[t.n - 1] != ')') {
     return false;
   }
-  double v[2];
-  bool set[2] = {false, false};
+  span inner = trim((span) {t.p + 5, t.n - 6});
+  span parts[4];
+  size_t n = split(inner, true, parts, 4);
+  if (n == 1) {
+    return amount_of(parts[0], out);
+  }
+  if (n != 3 || (!is(parts[1], "+") && !is(parts[1], "-"))) {
+    return false;
+  }
+  amount a, b;
+  if (!amount_of(parts[0], &a) || !amount_of(parts[2], &b) || a.kind == 3 || b.kind == 3) {
+    return false;
+  }
+  const double sign = is(parts[1], "-") ? -1.0 : 1.0;
+  if (a.kind == b.kind) {
+    *out = (amount) {a.kind, a.v + sign * b.v, 0};
+  }
+  else if (a.kind == 2) {
+    *out = (amount) {3, a.v, sign * b.v};
+  }
+  else {
+    *out = (amount) {3, sign * b.v, a.v};
+  }
+  return true;
+}
+
+/* The place of a `<position>` along each axis (CSS Values 4, 9.3): one to four values, the keywords `left`, `right`, `top`, `bottom` and `center`, and lengths and
+ * percentages, with the offset of a keyword from its edge (`right 10px bottom 5px`, which is 100% less 10px and 100% less 5px). */
+static bool position_value(const span * t, size_t n, amount out[2]) {
+  if (n == 0 || n > 4) {
+    return false;
+  }
+  enum { LEFT, RIGHT, TOP, BOTTOM, CENTER, VALUE, NONE };
+  int kind[4];
+  amount value[4];
   for (size_t i = 0; i < n; i++) {
-    int axis = -1;
-    double value = 0;
-    bool percent;
-    if (is(t[i], "left")) {
-      axis = 0, value = 0;
-    }
-    else if (is(t[i], "right")) {
-      axis = 0, value = w;
-    }
-    else if (is(t[i], "top")) {
-      axis = 1, value = 0;
-    }
-    else if (is(t[i], "bottom")) {
-      axis = 1, value = h;
-    }
-    else if (is(t[i], "center")) {
-      axis = -2;
-    }
-    else if (length_or_percent(t[i], &value, &percent)) {
-      axis = (n == 2 && i == 1) ? 1 : (set[0] ? 1 : 0);
-      value = percent ? value / 100.0 * (axis == 0 ? w : h) : value;
-    }
-    else {
+    value[i] = (amount) {0, 0, 0};
+    kind[i] = is(t[i], "left") ? LEFT : is(t[i], "right") ? RIGHT : is(t[i], "top") ? TOP : is(t[i], "bottom") ? BOTTOM : is(t[i], "center") ? CENTER : VALUE;
+    if (kind[i] == VALUE && !amount_of(t[i], &value[i])) {
       return false;
     }
-    if (axis == -2) {
-      axis = set[0] && !set[1] ? 1 : 0;
-      value = (axis == 0 ? w : h) / 2;
+  }
+  amount place[2] = {{2, 50, 0}, {2, 50, 0}};
+  bool set[2] = {false, false};
+  /* a keyword, with its offset when one follows it: the axis it names and where along it */
+  size_t i = 0;
+  if (n <= 2) {
+    /* [x] [y], or [keyword] [keyword] in either order */
+    if (n == 1) {
+      const int k = kind[0];
+      const bool vertical = k == TOP || k == BOTTOM;
+      const int axis = vertical ? 1 : 0;
+      if (k == VALUE) {
+        place[0] = value[0];
+      }
+      else if (k != CENTER) {
+        place[axis] = (amount) {2, (k == RIGHT || k == BOTTOM) ? 100.0 : 0.0, 0};
+      }
+      out[0] = place[0];
+      out[1] = place[1];
+      return true;
+    }
+    const bool first_vertical = kind[0] == TOP || kind[0] == BOTTOM, second_horizontal = kind[1] == LEFT || kind[1] == RIGHT;
+    const bool second_vertical = kind[1] == TOP || kind[1] == BOTTOM, first_horizontal = kind[0] == LEFT || kind[0] == RIGHT;
+    int xi = 0, yi = 1;
+    if (first_vertical || second_horizontal) {
+      if ((first_vertical && (kind[1] == VALUE || second_vertical)) || (second_horizontal && kind[0] == VALUE) || (first_horizontal && second_horizontal) ||
+          (first_vertical && second_vertical)) {
+        return false; /* a value after a vertical keyword, or before a horizontal one, is not a position */
+      }
+      xi = 1;
+      yi = 0;
+    }
+    else if (second_vertical || first_horizontal) {
+      xi = 0;
+      yi = 1;
+    }
+    else if (kind[0] == VALUE && kind[1] == CENTER) {
+      xi = 0;
+      yi = 1;
+    }
+    for (int a = 0; a < 2; a++) {
+      const int idx = a == 0 ? xi : yi;
+      const int k = kind[idx];
+      if ((a == 0 && (k == TOP || k == BOTTOM)) || (a == 1 && (k == LEFT || k == RIGHT))) {
+        return false;
+      }
+      place[a] = k == VALUE ? value[idx] : (amount) {2, k == CENTER ? 50.0 : (k == RIGHT || k == BOTTOM) ? 100.0 : 0.0, 0};
+    }
+    out[0] = place[0];
+    out[1] = place[1];
+    return true;
+  }
+  /* three or four values: keyword, [offset], keyword, [offset] */
+  while (i < n) {
+    const int k = kind[i];
+    if (k == VALUE) {
+      return false;
+    }
+    int axis = (k == LEFT || k == RIGHT) ? 0 : (k == TOP || k == BOTTOM) ? 1 : -1;
+    i++;
+    bool has_offset = i < n && kind[i] == VALUE;
+    const amount off = has_offset ? value[i] : (amount) {0, 0, 0};
+    if (has_offset) {
+      if (k == CENTER || off.kind == 3) {
+        return false;
+      }
+      i++;
+    }
+    if (axis < 0) {
+      axis = set[0] ? 1 : 0; /* `center` is the axis that the other keyword leaves */
     }
     if (set[axis]) {
       return false;
     }
     set[axis] = true;
-    v[axis] = value;
+    const bool far = k == RIGHT || k == BOTTOM;
+    if (k == CENTER) {
+      place[axis] = (amount) {2, 50.0, 0};
+    }
+    else if (!has_offset) {
+      place[axis] = (amount) {2, far ? 100.0 : 0.0, 0};
+    }
+    else if (off.kind == 2) {
+      place[axis] = (amount) {2, far ? 100.0 - off.v : off.v, 0};
+    }
+    else {
+      place[axis] = far ? (amount) {3, 100.0, -off.v} : (amount) {1, off.v, 0};
+    }
   }
-  if (set[0]) {
-    *x = v[0];
+  if (!set[0] && !set[1]) {
+    return false;
   }
-  if (set[1]) {
-    *y = v[1];
+  out[0] = place[0];
+  out[1] = place[1];
+  return true;
+}
+
+/* A position of a gradient's center, in a box of `w` by `h` (a percentage is of the box). */
+static bool position_of(const span * t, size_t n, double w, double h, double * x, double * y) {
+  amount a[2];
+  if (!position_value(t, n, a)) {
+    return false;
+  }
+  *x = a[0].kind == 2 ? w * a[0].v / 100.0 : a[0].kind == 3 ? w * a[0].v / 100.0 + a[0].len : a[0].v;
+  *y = a[1].kind == 2 ? h * a[1].v / 100.0 : a[1].kind == 3 ? h * a[1].v / 100.0 + a[1].len : a[1].v;
+  return true;
+}
+
+//-----------------------------------------------------------------------------
+// Interpolation hints and color interpolation methods
+//-----------------------------------------------------------------------------
+
+/*
+ * The waist interpolates a gradient in one RGB gamut (its `space`), straight or premultiplied, along straight lines between stops. A CSS gradient
+ * can interpolate in other spaces (`in oklab`, `in hsl longer hue`) and can bend the interpolation between two stops with a hint. Neither is
+ * a line in an RGB space, so each is given to the waist as stops that sample it: between two stops the colors are made by `color-mix()` (CSS
+ * Color 5: the same space, hue method and premultiplication the gradient names, by the engine that already computes a mix), and a stop is
+ * added wherever the straight line between two samples is further from the true color than a 512th of a channel at the middle of the stretch.
+ */
+
+typedef struct sampler {
+  gvec_lw_ctx * ctx;
+  const GVEC_Svg_Instance * inst;
+  const GVEC_Svg_Element * e;
+  span from, to;      ///< The text of the two colors.
+  const char * method; ///< `in oklab`, `in hsl longer hue`: what follows the comma of `color-mix(`.
+  double exponent;    ///< The weight is `t` to this power (1: no hint).
+  GSHSCENE_Gradient_Stop * out;
+  size_t count;
+  double offset0, offset1; ///< Where the stretch begins and ends.
+  bool failed;
+} sampler;
+
+#define SAMPLE_DEPTH 12
+#define SAMPLE_TOLERANCE (1.0 / 512.0)
+
+/* The color at weight `w` of the second (0 and 1 are the stops themselves). */
+static GVEC_Result sample_color(sampler * m, double w, GSHSCENE_Paint * paint, bool * ok) {
+  char text[640];
+  *ok = false;
+  if (m->from.n > 200 || m->to.n > 200) {
+    return GVEC_OK;
+  }
+  int n = snprintf(text, sizeof text, "color-mix(%s, %.*s %.10g%%, %.*s %.10g%%)", m->method, (int) m->from.n, m->from.p, (1.0 - w) * 100.0, (int) m->to.n, m->to.p, w * 100.0);
+  if (n <= 0 || (size_t) n >= sizeof text) {
+    return GVEC_OK;
+  }
+  GVEC_Svg_Color c;
+  bool valid;
+  GVEC_Result r = gvec_svg_style_color_of_text(m->ctx->style, m->inst, m->e, text, (size_t) n, &c, &valid);
+  if (r != GVEC_OK || !valid) {
+    return r;
+  }
+  GVEC_Svg_Paint given;
+  memset(&given, 0, sizeof given);
+  given.kind = GVEC_SVG_PAINT_COLOR;
+  given.color = c;
+  gvec_lw_paint_decision decision;
+  r = gvec_lw_paint_of(m->ctx, m->inst, &given, 1.0, paint, &decision);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (decision == GVEC_LW_PAINT_NONE) {
+    memset(paint, 0, sizeof *paint);
+    paint->kind = GSHSCENE_PAINT_SOLID;
+  }
+  else if (decision != GVEC_LW_PAINT_DRAW) {
+    return GVEC_OK;
+  }
+  *ok = paint->kind == GSHSCENE_PAINT_SOLID;
+  return GVEC_OK;
+}
+
+static double weight_at(const sampler * m, double t) {
+  return m->exponent == 1.0 ? t : (double) gmath_pow(t, m->exponent);
+}
+
+static GVEC_Result sample_between(sampler * m, double t0, const GSHSCENE_Paint * c0, double t1, const GSHSCENE_Paint * c1, int depth) {
+  if (depth >= SAMPLE_DEPTH || m->count + 2 >= EXPANDED_STOPS_MAX) {
+    return GVEC_OK;
+  }
+  const double tm = (t0 + t1) / 2;
+  GSHSCENE_Paint mid;
+  bool ok;
+  GVEC_Result r = sample_color(m, weight_at(m, tm), &mid, &ok);
+  if (r != GVEC_OK || !ok) {
+    m->failed = m->failed || (r == GVEC_OK && !ok);
+    return r;
+  }
+  /* The straight line between the ends, premultiplied (what the waist draws between two samples), against the true color at the middle. */
+  double worst = 0;
+  const double a0 = c0->rgba[3], a1 = c1->rgba[3], am = mid.rgba[3];
+  const double line[4] = {(c0->rgba[0] * a0 + c1->rgba[0] * a1) / 2, (c0->rgba[1] * a0 + c1->rgba[1] * a1) / 2, (c0->rgba[2] * a0 + c1->rgba[2] * a1) / 2, (a0 + a1) / 2};
+  const double true_color[4] = {mid.rgba[0] * am, mid.rgba[1] * am, mid.rgba[2] * am, am};
+  for (int k = 0; k < 4; k++) {
+    const double d = line[k] > true_color[k] ? line[k] - true_color[k] : true_color[k] - line[k];
+    worst = d > worst ? d : worst;
+  }
+  if (worst <= SAMPLE_TOLERANCE && depth >= 2) {
+    return GVEC_OK;
+  }
+  r = sample_between(m, t0, c0, tm, &mid, depth + 1);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  m->out[m->count].offset = m->offset0 + (m->offset1 - m->offset0) * tm;
+  m->out[m->count].color = mid;
+  m->count++;
+  return sample_between(m, tm, &mid, t1, c1, depth + 1);
+}
+
+/*
+ * `stops` as the waist is given them: each stop, and between two the samples that a hint or a color interpolation method needs. `offset_start` and
+ * `offset_end` map the fractions of the line to the waist's offsets (a repeating gradient's first and last stop are 0 and 1). With no hint and no
+ * method the stops are given as they are. *ok is false when a color could not be mixed.
+ */
+static GVEC_Result expand_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GVEC_Svg_Element * e, gradient_stops * stops, const char * method,
+    double offset_start, double offset_end, bool * ok) {
+  *ok = true;
+  stops->expanded = stops->stops;
+  stops->expanded_count = stops->count;
+  bool any_hint = false;
+  for (size_t i = 0; i < stops->count; i++) {
+    any_hint = any_hint || !isnan(stops->hint[i]);
+  }
+  if (!any_hint && !method) {
+    return GVEC_OK;
+  }
+  GSHSCENE_Gradient_Stop * out = gvec_arena_alloc(&ctx->arena, EXPANDED_STOPS_MAX * sizeof *out, sizeof(double));
+  if (!out) {
+    return GVEC_ERR_OOM;
+  }
+  sampler m;
+  memset(&m, 0, sizeof m);
+  m.ctx = ctx;
+  m.inst = inst;
+  m.e = e;
+  m.out = out;
+  m.method = method ? method : "in srgb";
+  const double span_offset = offset_end - offset_start;
+  for (size_t i = 0; i < stops->count; i++) {
+    if (m.count + 1 >= EXPANDED_STOPS_MAX) {
+      *ok = false;
+      return GVEC_OK;
+    }
+    out[m.count++] = stops->stops[i];
+    if (i + 1 == stops->count) {
+      break;
+    }
+    const double o0 = stops->stops[i].offset, o1 = stops->stops[i + 1].offset;
+    const double hint = stops->hint[i + 1];
+    if ((isnan(hint) && !method) || !(o1 > o0)) {
+      continue;
+    }
+    m.from = stops->color[i];
+    m.to = stops->color[i + 1];
+    m.offset0 = o0;
+    m.offset1 = o1;
+    m.exponent = 1.0;
+    if (!isnan(hint)) {
+      const double h = span_offset != 0 ? (hint - offset_start) / span_offset : 0;
+      const double hn = (h - o0) / (o1 - o0); /* where the hint is, as a fraction of the stretch: the middle color is there */
+      if (hn <= 0.0 || hn >= 1.0) {
+        /* A hint at an end: the whole stretch is the color of the other end, with a jump at the end it is on. */
+        if (m.count + 2 >= EXPANDED_STOPS_MAX) {
+          *ok = false;
+          return GVEC_OK;
+        }
+        const GSHSCENE_Gradient_Stop jump = hn <= 0.0 ? stops->stops[i + 1] : stops->stops[i];
+        out[m.count] = jump;
+        out[m.count++].offset = hn <= 0.0 ? o0 : o1;
+        continue;
+      }
+      m.exponent = (double) gmath_log(0.5) / (double) gmath_log(hn);
+    }
+    /* the samples inside the stretch, in order. The error is measured against the ends as the mix gives them (in the mix's own space, which the
+     * ends' own colors, given in the space they were written in, are not): the ends are still given to the waist as they were. */
+    GSHSCENE_Paint first, last;
+    bool ok_first, ok_last;
+    GVEC_Result r = sample_color(&m, 0.0, &first, &ok_first);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    r = sample_color(&m, 1.0, &last, &ok_last);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (!ok_first || !ok_last) {
+      *ok = false;
+      return GVEC_OK;
+    }
+    r = sample_between(&m, 0.0, &first, 1.0, &last, 0);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (m.failed) {
+      *ok = false;
+      return GVEC_OK;
+    }
+  }
+  stops->expanded = out;
+  stops->expanded_count = m.count;
+  return GVEC_OK;
+}
+
+/* The color interpolation method in the head of a gradient (`in <space> [<hue method> hue]`, in any place among the other words of the head): it is
+ * taken out of `tokens`, and written to `method` as `color-mix()` takes it. A method that is not one is left, and the head is not read. */
+static bool take_method(span * tokens, size_t * count, char * method, size_t capacity) {
+  method[0] = '\0';
+  for (size_t i = 0; i < *count; i++) {
+    if (!is(tokens[i], "in")) {
+      continue;
+    }
+    size_t used = 2;
+    if (i + 1 >= *count) {
+      return false;
+    }
+    if (i + 3 < *count + 0 && is(tokens[i + 3], "hue")) {
+      used = 4;
+    }
+    if (i + used > *count) {
+      return false;
+    }
+    int n = used == 4 ? snprintf(method, capacity, "in %.*s %.*s hue", (int) tokens[i + 1].n, tokens[i + 1].p, (int) tokens[i + 2].n, tokens[i + 2].p)
+                      : snprintf(method, capacity, "in %.*s", (int) tokens[i + 1].n, tokens[i + 1].p);
+    if (n <= 0 || (size_t) n >= capacity) {
+      return false;
+    }
+    for (size_t j = i; j + used < *count; j++) {
+      tokens[j] = tokens[j + used];
+    }
+    *count -= used;
+    return true;
   }
   return true;
 }
@@ -490,10 +870,11 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   }
   const bool linear = starts(body, "linear-gradient(");
   const bool radial = starts(body, "radial-gradient(");
-  if ((!linear && !radial) || body.n < 2 || body.p[body.n - 1] != ')') {
+  const bool conic = starts(body, "conic-gradient(");
+  if ((!linear && !radial && !conic) || body.n < 2 || body.p[body.n - 1] != ')') {
     return GVEC_OK;
   }
-  const size_t open = linear ? 16 : 16;
+  const size_t open = conic ? 15 : 16;
   span inner = trim((span) {body.p + open, body.n - open - 1});
   span args[STOPS_MAX + 2];
   size_t count = split(inner, false, args, STOPS_MAX + 2);
@@ -509,12 +890,21 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   g->premultiplied = 1;
   g->extend = repeating ? GSHSCENE_EXTEND_REPEAT : GSHSCENE_EXTEND_PAD;
   GVEC_Result r;
+  char method[96];
+  method[0] = '\0';
+  double offset_start = 0, offset_end = 1;
   if (linear) {
     size_t first_stop = 0;
     double degrees = 180; /* to bottom */
     span tokens[TOKENS_MAX];
     size_t nt = split(args[0], true, tokens, TOKENS_MAX);
-    if (nt && nt <= TOKENS_MAX && (starts(tokens[0], "to") && tokens[0].n == 2)) {
+    if (nt > TOKENS_MAX || !take_method(tokens, &nt, method, sizeof method)) {
+      return GVEC_OK;
+    }
+    if (nt == 0 && method[0]) {
+      first_stop = 1; /* a head that is only the method */
+    }
+    else if (nt && nt <= TOKENS_MAX && (starts(tokens[0], "to") && tokens[0].n == 2)) {
       double sx = 0, sy = 0; /* the direction toward the named sides: x positive to the right, y positive up */
       for (size_t i = 1; i < nt; i++) {
         if (is(tokens[i], "left")) {
@@ -571,6 +961,8 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
         stops->stops[i].offset = (stops->position[i] - start) / (end - start);
       }
     }
+    offset_start = start;
+    offset_end = end;
     const double cx = w / 2, cy = h / 2;
     g->kind = GSHSCENE_GRADIENT_LINEAR;
     g->p0[0] = cx + dx * length * (start - 0.5);
@@ -578,7 +970,7 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     g->p1[0] = cx + dx * length * (end - 0.5);
     g->p1[1] = cy + dy * length * (end - 0.5);
   }
-  else {
+  else if (radial) {
     /* [circle | ellipse] [<size>] [at <position>], then the stops. */
     size_t first_stop = 0;
     bool circle = false, has_size_keyword = false;
@@ -587,7 +979,10 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     bool explicit_size = false;
     span tokens[TOKENS_MAX];
     size_t nt = split(args[0], true, tokens, TOKENS_MAX);
-    bool is_head = false;
+    if (nt > TOKENS_MAX || !take_method(tokens, &nt, method, sizeof method)) {
+      return GVEC_OK;
+    }
+    bool is_head = method[0] != '\0';
     for (size_t i = 0; i < nt && i < TOKENS_MAX; i++) {
       is_head = is_head || is(tokens[i], "circle") || is(tokens[i], "ellipse") || is(tokens[i], "at") || starts(tokens[i], "closest-") || starts(tokens[i], "farthest-");
     }
@@ -693,6 +1088,8 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
         stops->stops[i].offset = (stops->position[i] - start) / (end - start);
       }
     }
+    offset_start = start;
+    offset_end = end;
     GSHGEOM_Map shift, scale;
     if (gshgeom_map_translate(2, cx, cy, 0, &shift) != GSHGEOM_OK || gshgeom_map_scale(2, rx, ry, 1, &scale) != GSHGEOM_OK || !gvec_lw_compose(&shift, &scale, &g->map)) {
       return GVEC_OK;
@@ -701,8 +1098,91 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
     g->r0 = start;
     g->r1 = end;
   }
-  g->stop_count = stops->count;
-  g->stops = stops->stops;
+  else {
+    /* [from <angle>] [at <position>], then the stops, at angles or percentages of a turn: the waist's sweep, from `+x` toward `+y`, where CSS starts
+     * at the top and runs clockwise, so that CSS's angle is the sweep's plus 90 degrees. */
+    size_t first_stop = 0;
+    double from_degrees = 0, cx = w / 2, cy = h / 2;
+    span tokens[TOKENS_MAX];
+    size_t nt = split(args[0], true, tokens, TOKENS_MAX);
+    if (nt > TOKENS_MAX || !take_method(tokens, &nt, method, sizeof method)) {
+      return GVEC_OK;
+    }
+    if (method[0] || (nt && (is(tokens[0], "from") || is(tokens[0], "at")))) {
+      size_t at = 0;
+      if (at < nt && is(tokens[at], "from")) {
+        if (at + 1 >= nt || !angle_of(tokens[at + 1], &from_degrees)) {
+          return GVEC_OK;
+        }
+        at += 2;
+      }
+      if (at < nt) {
+        if (!is(tokens[at], "at") || !position_of(tokens + at + 1, nt - at - 1, w, h, &cx, &cy)) {
+          return GVEC_OK;
+        }
+      }
+      first_stop = 1;
+    }
+    bool read;
+    r = read_stops(ctx, inst, e, args, first_stop, count, 360.0, true, stops, &read);
+    if (r != GVEC_OK || !read) {
+      return r;
+    }
+    double start = 0, end = 1;
+    if (repeating) {
+      start = stops->position[0];
+      end = stops->position[stops->count - 1];
+      if (!(end > start)) {
+        return GVEC_OK;
+      }
+      for (size_t i = 0; i < stops->count; i++) {
+        stops->stops[i].offset = (stops->position[i] - start) / (end - start);
+      }
+    }
+    else {
+      /* The turn is covered from 0 to 1: before the first stop the first color, after the last the last. The sweep repeats, so the ends are stops. */
+      if (stops->position[0] > 0 && stops->count < STOPS_MAX) {
+        for (size_t i = stops->count; i > 0; i--) {
+          stops->stops[i] = stops->stops[i - 1];
+          stops->position[i] = stops->position[i - 1];
+          stops->given[i] = stops->given[i - 1];
+          stops->color[i] = stops->color[i - 1];
+          stops->hint[i] = stops->hint[i - 1];
+        }
+        stops->hint[1] = NAN;
+        stops->position[0] = 0;
+        stops->stops[0].offset = 0;
+        stops->count++;
+      }
+      if (stops->position[stops->count - 1] < 1 && stops->count < STOPS_MAX) {
+        const size_t last = stops->count;
+        stops->stops[last] = stops->stops[last - 1];
+        stops->position[last] = 1;
+        stops->stops[last].offset = 1;
+        stops->given[last] = true;
+        stops->color[last] = stops->color[last - 1];
+        stops->hint[last] = NAN;
+        stops->count++;
+      }
+    }
+    offset_start = start;
+    offset_end = end;
+    const double a0 = from_degrees - 90.0 + 360.0 * start;
+    g->kind = GSHSCENE_GRADIENT_SWEEP;
+    g->center[0] = cx;
+    g->center[1] = cy;
+    g->angle_unit = GSHGEOM_ANGLE_DEGREES;
+    g->a0 = a0;
+    g->a1 = a0 + 360.0 * (end - start);
+    g->extend = GSHSCENE_EXTEND_REPEAT;
+  }
+  bool expanded;
+  r = expand_stops(ctx, inst, e, stops, method[0] ? method : NULL, offset_start, offset_end, &expanded);
+  if (r != GVEC_OK || !expanded) {
+    return r;
+  }
+  g->stop_count = stops->expanded_count;
+  g->stops = stops->expanded;
   *ok = true;
   return GVEC_OK;
 }
@@ -799,7 +1279,8 @@ static bool axis_tiles_of(int repeat, double area_lo, double area_size, double s
     n = n < 1 ? 1 : n;
     size = area_size / n;
   }
-  double offset = position->kind == 2 ? (area_size - size) * position->v / 100.0 : position->v;
+  double offset = position->kind == 2 ? (area_size - size) * position->v / 100.0
+                  : position->kind == 3 ? (area_size - size) * position->v / 100.0 + position->len : position->v;
   double step = size;
   if (repeat == 2) {
     const double n = gmath_floor(area_size / size);
@@ -929,7 +1410,7 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
       return r;
     }
     if (!read) {
-      return refuse_layer(ctx, e, "a gradient of a mask that this does not read (a conic gradient, an interpolation hint or a color space, a color it does not know) is not lowered");
+      return refuse_layer(ctx, e, "a gradient of a mask that this does not read (a color it does not know, or a gradient this grammar does not say) is not lowered");
     }
   }
   uint32_t magnify = 0, minify = 0;
@@ -952,8 +1433,8 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
         if (gshgeom_map_translate(2, x, y, 0, &shift) != GSHGEOM_OK || !gvec_lw_compose(&shift, &gradient.map, &at.map)) {
           return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a gradient of a mask is past the range the waist can carry");
         }
-        if (gradient.kind == GSHSCENE_GRADIENT_LINEAR) {
-          at.map = shift; /* the line is in the tile's own coordinates */
+        if (gradient.kind == GSHSCENE_GRADIENT_LINEAR || gradient.kind == GSHSCENE_GRADIENT_SWEEP) {
+          at.map = shift; /* the line, or the center, is in the tile's own coordinates */
         }
         const GSHSCENE_Resource * resource = NULL;
         GSHSCENE_Result sr = gshscene_store_intern_gradient(ctx->store, &at, &resource);
@@ -1147,18 +1628,10 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
         return refuse_layer(ctx, e, "a mask-repeat that this does not read is not lowered");
       }
     }
-    span pos[4];
-    size_t pn = split(trim(entry(position_list, np, i)), true, pos, 4);
-    if (pn != 2) {
-      return refuse_layer(ctx, e, "a mask-position of other than two values is not lowered");
-    }
-    for (size_t a = 0; a < 2; a++) {
-      double v;
-      bool percent;
-      if (!length_or_percent(pos[a], &v, &percent)) {
-        return refuse_layer(ctx, e, "a mask-position that is not a length or a percentage is not lowered");
-      }
-      l->position[a] = (amount) {percent ? 2 : 1, v};
+    span pos[5];
+    size_t pn = split(trim(entry(position_list, np, i)), true, pos, 5);
+    if (pn == 0 || pn > 4 || !position_value(pos, pn, l->position)) {
+      return refuse_layer(ctx, e, "a mask-position that is not a CSS position is not lowered");
     }
     span size = trim(entry(size_list, ns, i));
     if (is(size, "contain")) {
@@ -1176,7 +1649,7 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
       for (size_t a = 0; a < 2; a++) {
         span part = a < sn ? parts[a] : (span) {"auto", 4};
         if (is(part, "auto")) {
-          l->size[a] = (amount) {0, 0};
+          l->size[a] = (amount) {0, 0, 0};
         }
         else {
           double v;
@@ -1184,7 +1657,7 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
           if (!length_or_percent(part, &v, &percent) || v < 0) {
             return refuse_layer(ctx, e, "a mask-size that is not a length, a percentage or auto is not lowered");
           }
-          l->size[a] = (amount) {percent ? 2 : 1, v};
+          l->size[a] = (amount) {percent ? 2 : 1, v, 0};
         }
       }
     }
