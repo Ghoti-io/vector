@@ -918,9 +918,20 @@ read, a shorter list being used again from its first value. The boxes of an SVG 
 its painting area: at most 4096 tiles, and more are refused (GVEC_LOWER_LIMIT). The layers are put in one picture, the last first, each over what is under it in a group with its
 composite: `add` is source-over, `subtract` source-out, `intersect` source-in and `exclude` xor. The mask is the picture's alpha; the mode of a layer (`match-source` is luminance for a
 `mask` element and alpha for an image or a gradient) matters when there are several, where a luminance layer is first made into the alpha its luminance is, by a mask of its own; one layer
-passes its mode on to the mask. A layer of `none` is not there, and a list of nothing is no mask. A conic gradient, an interpolation hint or a color space in a gradient, a `mask-border`, a
-position of three or four values, a mask element of another document in a list and more than 16 layers are refused (GVEC_LOWER_MASK), not half drawn. Where a repeated image's tiles meet,
-the edge of one tile does not blend into the next, as it does in Chromium; the size of a `round` tile is not snapped to a whole pixel, as it is there.
+passes its mode on to the mask. A layer of `none` is not there, and a list of nothing is no mask. A mask element of another document in a list and more than 16 layers are refused
+(GVEC_LOWER_MASK), not half drawn. Where a repeated image's tiles meet, the edge of one tile does not blend into the next, as it does in Chromium; the size of a `round` tile is not snapped
+to a whole pixel, as it is there.
+
+The gradients of a layer are `linear-gradient`, `radial-gradient`, `conic-gradient` and the repeating forms. A conic gradient is the waist's sweep (CSS starts at the top and runs clockwise, the
+sweep at +x toward +y, so the sweep's angle is CSS's less 90 degrees), repeating by the turn, with a stop at each end of the turn so that the colors before the first stop and after the last are
+the end colors. A hint between two stops (CSS Images 3, 3.4.3) and a color interpolation method (`in oklab`, `in hsl longer hue`: any space and hue method `color-mix()` takes) are not lines
+in an RGB space, which is all the waist interpolates, so they are given to it as stops that sample the curve: the colors between two stops are made by `color-mix()` in that space and a stop is added wherever the
+straight line between two samples is further than a 512th of a channel (premultiplied) from the true color at the middle of the stretch, at most 2048 stops. A `<position>` is read with
+its offsets from the far edges (the cascade writes `right 10px` as `calc(100% - 10px)`, and browsers refuse the three-value forms), in `mask-position` and in the `at` of a gradient. A `mask-border` (CSS Masking 1,
+6.2) is the top layer, added to the others: the image (a gradient has the size of the border image area, as an image with no size of its own does) is cut into nine by `mask-border-slice` (pixels of the image, or percentages),
+each piece is shown in the border `mask-border-width` gives (an `auto` width is the slice, where the image has a size; a number is of the width of a border, which an SVG element does not have, and so none), stretched, repeated (centered, the ends cut off),
+rounded or spaced along its edge as `mask-border-repeat` says, around the stroke box pushed out by `mask-border-outset`; the middle is drawn only with `fill`, and sides that together are wider than the area are shrunk to fit.
+No browser draws a mask border. A `mask` element's own `mask` (a list, an image or a gradient) masks its content, in the mask element's own box.
 
 **S17 Wrapped text.** A `text` with an `inline-size` (SVG 2, 11.4.1) is laid out in a rectangle that wide (that tall, in vertical text) and as tall as it needs. `inline-size` is a
 property, set by a `style` or a sheet: it has no presentation attribute, and a number with no unit is not a length in CSS, so `inline-size: 300` is not read. A percentage is of the
@@ -945,14 +956,19 @@ is put where it lies inside the shape at every height of the box: the first at t
 the distance (as a disc moved along the box: the rounding is sampled, and what is left out of a stretch is never added to it). Where a band has several stretches the text fills them in
 turn from the left (from the right in a right-to-left text), a line feed ending the line box; a piece that does not fit one stretch is put in another or lower. A shape wins over the
 `inline-size`. What does not fit the shape is not drawn, as `flowRoot` of SVG 1.2 did. A reference to nothing, or to what is not a shape, is as if the property were not given; more than one shape in a
-`shape-inside` (the text would flow from one into the next), `outside-shape`, an image and `display` are refused (GVEC_LOWER_TEXT). A line that ends at a soft hyphen shows a hyphen (U+2010 when the face has it, else U+002D) and counts its width; one that does not hides it. Not done: `text-indent`, `tab-size`, `text-align: justify` and hyphenation by dictionary (`hyphens: auto` is `manual`).
+`shape-inside` (the grammar takes one; a list is not a value), `outside-shape` (it names the `shape-outside` of a float, which a `text` element is not), an image and `display` are refused (GVEC_LOWER_TEXT). A line that ends at a soft hyphen shows a hyphen (U+2010 when the face has it, else U+002D) and counts its width; one that does not hides it.
+
+`text-indent` (a length, a percentage of the `inline-size`, or `calc()` of them; `hanging` indents every line but the first, `each-line` the lines after a forced break too; a negative one pulls the first line out) takes room from the edge the direction
+starts at. `text-align` puts each line in its stretch (`start` is the initial value, which `text-anchor` overrides; `end`, `center`, `left` and `right` are physical where they say so), and the last line of a paragraph (the text's end, or a forced break) is aligned by
+`text-align-last` (`auto` is `start` when the text is justified). `justify` shares what a line has left over among the word separators (U+0020 and U+00A0; `text-justify: auto`), and between two characters of a script written without spaces (Han, kana, Hangul, the fullwidth forms), or among
+every character (`inter-character`), or not at all (`none`); a line with no such place is left as it is, and so is one that overflows. Not done: `hyphens: auto` (it needs a dictionary of hyphenation patterns for each language, and the suite has none: a
+decision about data, so it is `manual` until then). `tab-size` has no effect, as in Chromium, where a tab in SVG text is one space whatever the property says (probed).
 
 **Not done, and why.** `foreignObject` needs an HTML layout engine the suite does not have yet, so it stays refused (and so does the box of anything that holds one) until one exists. `audio`, `video`, `canvas` and `iframe` as SVG-namespace elements are not drawn by browsers either: in Chromium each is an unknown `SVGElement` with a 0 by 0 box that paints nothing, whatever its `x`, `y`, `width`, `height` or `poster`; the lowering matches that (it draws nothing and reports the element as embedded content that is not rendered). The HTML elements of those names inside a `foreignObject` wait for the same engine.
 `text-overflow` has no effect on SVG text.
 
-**S10 What is not done.** An `@import` with a condition, a `use` whose paint is a server, and a `use` of a whole document (no id) are refused or draw nothing, for the reasons above. The
-`tref`, `feImage` of an element of another file, `mask`, `clip-path`, `filter`, `marker`, `pattern` and gradient `href` that name another file are not resolved: only an `image`, an
-`feImage` of an image, a `style` and a `use` are.
+**S10 What is not done.** An `@import` with a `scope` condition is refused (the others are applied when they hold). The `tref` of SVG 1.1 (removed in SVG 2, and by the browsers) and the `feImage` of an
+element of another file (browsers take an image there, not an element) are not resolved; a `mask`, `clip-path`, `filter`, `marker`, `pattern`, gradient `href`, `image`, `style` and `use` that name another file are.
 
 ## A filter on an element that paints nothing (X1 to X6)
 

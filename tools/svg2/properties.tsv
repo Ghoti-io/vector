@@ -77,7 +77,12 @@ marker-end	REFS	-		G
 marker-mid	REFS	-		G				
 marker-start	REFS	-		G				
 mask	REFS	-	mask-image	G				
+mask-border-mode	KEYWORD	-		G				
+mask-border-outset	KEYWORD	-		G				
+mask-border-repeat	KEYWORD	-		G				
+mask-border-slice	KEYWORD	-		G				
 mask-border-source	KEYWORD	-		G				
+mask-border-width	KEYWORD	-		G				
 mask-clip	KEYWORD	-		G				
 mask-composite	KEYWORD	-		G				
 mask-mode	KEYWORD	-		G				

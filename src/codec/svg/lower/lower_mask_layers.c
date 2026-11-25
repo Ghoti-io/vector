@@ -171,7 +171,7 @@ static bool angle_of(span s, double * degrees) {
 // The layers
 //-----------------------------------------------------------------------------
 
-typedef enum layer_kind { LAYER_NONE = 0, LAYER_ELEMENT, LAYER_IMAGE, LAYER_GRADIENT } layer_kind;
+typedef enum layer_kind { LAYER_NONE = 0, LAYER_ELEMENT, LAYER_IMAGE, LAYER_GRADIENT, LAYER_BORDER } layer_kind;
 
 typedef struct amount {
   int kind; ///< 0 auto, 1 length, 2 percent, 3 a percentage and a length (`right 10px` is 100% less 10px)
@@ -190,6 +190,13 @@ typedef struct layer {
   int origin, clip;     ///< 0 fill-box, 1 stroke-box, 2 view-box, 3 no-clip.
   int composite;        ///< 0 add, 1 subtract, 2 intersect, 3 exclude.
   int named_mode;       ///< The `mask-mode` the layer names: 0 match-source, 1 alpha, 2 luminance.
+  /* LAYER_BORDER: the mask border (CSS Masking 1, 6.2), `image` being its source. */
+  double slice[4];      ///< `mask-border-slice`, top right bottom left: a number of pixels of the image, or a percentage of it (`slice_percent`).
+  bool slice_percent[4];
+  bool slice_fill;
+  amount width[4];      ///< `mask-border-width`: kind 0 auto, 1 length, 2 percentage of the area, 4 number (of the border width, which an SVG element does not have).
+  double outset[4];     ///< `mask-border-outset`, in pixels (a number is of the border width, which is none).
+  int border_repeat[2]; ///< `mask-border-repeat`: 0 stretch, 1 repeat, 2 round, 3 space, for the horizontal and the vertical edges.
 } layer;
 
 static int box_keyword(span s) {
@@ -1308,6 +1315,43 @@ static bool axis_tiles_of(int repeat, double area_lo, double area_size, double s
   return true;
 }
 
+/* The image a `url()` of a mask names, loaded: `*state` is 0 for ready (its size in `*iw` and `*ih`), 1 when it was refused (reported), 2 when it cannot be used (it covers nothing). */
+static GVEC_Result load_source(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, span source, gvec_lw_image * image, double * iw, double * ih, int * state) {
+  span url = trim(source);
+  *state = 1;
+  /* url("...") with the quotes the engine's serialisation gives it */
+  if (!starts(url, "url(") || url.n < 7 || url.p[url.n - 1] != ')') {
+    return refuse_layer(ctx, e, "a mask image that is not a url, a gradient or none is not lowered");
+  }
+  span inner = trim((span) {url.p + 4, url.n - 5});
+  if (inner.n >= 2 && (inner.p[0] == '"' || inner.p[0] == '\'') && inner.p[inner.n - 1] == inner.p[0]) {
+    inner.p++;
+    inner.n -= 2;
+  }
+  char * text = gvec_arena_alloc(&ctx->arena, inner.n + 1, 1);
+  if (!text) {
+    return GVEC_ERR_OOM;
+  }
+  memcpy(text, inner.p, inner.n);
+  text[inner.n] = 0;
+  gvec_lw_image_state loaded;
+  GVEC_Result r = gvec_lw_image_load_url(ctx, e, text, &loaded, image);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (loaded == GVEC_LW_IMAGE_REFUSED) {
+    return GVEC_OK; /* reported: the element is refused */
+  }
+  if (loaded != GVEC_LW_IMAGE_READY) {
+    *state = 2;
+    return GVEC_OK;
+  }
+  *iw = image->width;
+  *ih = image->height;
+  *state = 0;
+  return GVEC_OK;
+}
+
 /*
  * The picture of a layer's art: a clip to its painting area around the tiles of its image. `*top` is NULL when the layer covers nothing. `*ok` is false
  * when the layer is not lowered (reported).
@@ -1326,36 +1370,15 @@ static GVEC_Result layer_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked
   memset(&image, 0, sizeof image);
   double iw = 0, ih = 0;
   if (l->kind == LAYER_IMAGE) {
-    span url = trim(l->image);
-    /* url("...") with the quotes the engine's serialisation gives it */
-    if (!starts(url, "url(") || url.n < 7 || url.p[url.n - 1] != ')') {
-      return refuse_layer(ctx, e, "a mask image that is not a url, a gradient or none is not lowered");
-    }
-    span inner = trim((span) {url.p + 4, url.n - 5});
-    if (inner.n >= 2 && (inner.p[0] == '"' || inner.p[0] == '\'') && inner.p[inner.n - 1] == inner.p[0]) {
-      inner.p++;
-      inner.n -= 2;
-    }
-    char * text = gvec_arena_alloc(&ctx->arena, inner.n + 1, 1);
-    if (!text) {
-      return GVEC_ERR_OOM;
-    }
-    memcpy(text, inner.p, inner.n);
-    text[inner.n] = 0;
-    gvec_lw_image_state state;
-    GVEC_Result r = gvec_lw_image_load_url(ctx, e, text, &state, &image);
-    if (r != GVEC_OK) {
+    int state;
+    GVEC_Result r = load_source(ctx, e, l->image, &image, &iw, &ih, &state);
+    if (r != GVEC_OK || state == 1) {
       return r;
     }
-    if (state == GVEC_LW_IMAGE_REFUSED) {
-      return GVEC_OK; /* reported: the element is refused */
-    }
-    if (state != GVEC_LW_IMAGE_READY) {
+    if (state == 2) {
       *ok = true; /* an image that cannot be used covers nothing */
       return GVEC_OK;
     }
-    iw = image.width;
-    ih = image.height;
   }
   double tw, th;
   tile_size(l, aw, ah, iw, ih, &tw, &th);
@@ -1545,6 +1568,474 @@ static GVEC_Result mask_of_art(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, gv
   return GVEC_OK;
 }
 
+//-----------------------------------------------------------------------------
+// The mask border (CSS Masking 1, 6.2; CSS Backgrounds 3, 6.2 for what a border image is)
+//-----------------------------------------------------------------------------
+
+/* One to four values, as the four sides: top right bottom left (the missing ones are those the one before says, as for `margin`). */
+static void four_sides(size_t n, size_t index[4]) {
+  index[0] = 0;
+  index[1] = n > 1 ? 1 : 0;
+  index[2] = n > 2 ? 2 : 0;
+  index[3] = n > 3 ? 3 : n > 1 ? 1 : 0;
+}
+
+/* `mask-border-source`, `-slice`, `-width`, `-outset`, `-repeat` and `-mode` of the element, as a layer of kind LAYER_BORDER. *ok is false when something is not read. */
+static GVEC_Result parse_border(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, span source, layer * l, bool * ok) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(masked);
+  *ok = false;
+  memset(l, 0, sizeof *l);
+  l->kind = LAYER_BORDER;
+  l->image = source;
+  l->origin = l->clip = 1; /* the border image area is of the stroke box, the box an SVG element has in place of a border box */
+  l->composite = 0;
+  span slice, width, outset, repeat, mode;
+  GVEC_Result r = text_of(ctx, masked, GVEC_SVG_PROP_MASK_BORDER_SLICE, &slice);
+  if (r == GVEC_OK) {
+    r = text_of(ctx, masked, GVEC_SVG_PROP_MASK_BORDER_WIDTH, &width);
+  }
+  if (r == GVEC_OK) {
+    r = text_of(ctx, masked, GVEC_SVG_PROP_MASK_BORDER_OUTSET, &outset);
+  }
+  if (r == GVEC_OK) {
+    r = text_of(ctx, masked, GVEC_SVG_PROP_MASK_BORDER_REPEAT, &repeat);
+  }
+  if (r == GVEC_OK) {
+    r = text_of(ctx, masked, GVEC_SVG_PROP_MASK_BORDER_MODE, &mode);
+  }
+  if (r != GVEC_OK) {
+    return r;
+  }
+  if (!(starts(source, "url(") || starts(source, "linear-gradient(") || starts(source, "radial-gradient(") || starts(source, "conic-gradient(") ||
+        starts(source, "repeating-linear-gradient(") || starts(source, "repeating-radial-gradient(") || starts(source, "repeating-conic-gradient("))) {
+    return refuse_layer(ctx, e, "a mask-border-source that is not a url or a gradient is not lowered");
+  }
+  l->mode = is(trim(mode), "luminance") ? 0 : 1;
+  /* the slice: one to four numbers or percentages, and `fill` */
+  span t[6];
+  size_t n = split(trim(slice), true, t, 6);
+  size_t values = 0;
+  double sv[4] = {0, 0, 0, 0};
+  bool sp[4] = {false, false, false, false};
+  for (size_t i = 0; i < n; i++) {
+    if (is(t[i], "fill")) {
+      l->slice_fill = true;
+      continue;
+    }
+    double v;
+    span unit;
+    if (values >= 4 || !number_unit(t[i], &v, &unit) || !(unit.n == 0 || is(unit, "%")) || v < 0) {
+      return refuse_layer(ctx, e, "a mask-border-slice that this does not read is not lowered");
+    }
+    sv[values] = v;
+    sp[values] = unit.n != 0;
+    values++;
+  }
+  if (values == 0) {
+    values = 1; /* the initial value, 0 */
+  }
+  size_t side[4];
+  four_sides(values, side);
+  for (size_t k = 0; k < 4; k++) {
+    l->slice[k] = sv[side[k]];
+    l->slice_percent[k] = sp[side[k]];
+  }
+  /* the width: a length, a percentage, a number or `auto`, one to four */
+  n = split(trim(width), true, t, 6);
+  amount wv[4] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+  values = 0;
+  for (size_t i = 0; i < n; i++) {
+    double v;
+    bool percent;
+    span unit;
+    if (values >= 4) {
+      return refuse_layer(ctx, e, "a mask-border-width that this does not read is not lowered");
+    }
+    if (is(t[i], "auto")) {
+      wv[values] = (amount) {0, 0, 0};
+    }
+    else if (length_or_percent(t[i], &v, &percent) && v >= 0) {
+      wv[values] = (amount) {percent ? 2 : 1, v, 0};
+    }
+    else if (number_unit(t[i], &v, &unit) && unit.n == 0 && v >= 0) {
+      wv[values] = (amount) {4, v, 0};
+    }
+    else {
+      return refuse_layer(ctx, e, "a mask-border-width that this does not read is not lowered");
+    }
+    values++;
+  }
+  if (values == 0) {
+    values = 1;
+  }
+  four_sides(values, side);
+  for (size_t k = 0; k < 4; k++) {
+    l->width[k] = wv[side[k]];
+  }
+  /* the outset: a length or a number, one to four; a number is of the border width, and an SVG element has none */
+  n = split(trim(outset), true, t, 6);
+  double ov[4] = {0, 0, 0, 0};
+  values = 0;
+  for (size_t i = 0; i < n; i++) {
+    double v;
+    bool percent;
+    span unit;
+    if (values >= 4) {
+      return refuse_layer(ctx, e, "a mask-border-outset that this does not read is not lowered");
+    }
+    if (length_or_percent(t[i], &v, &percent) && !percent && v >= 0) {
+      ov[values] = v;
+    }
+    else if (number_unit(t[i], &v, &unit) && unit.n == 0 && v >= 0) {
+      ov[values] = 0;
+    }
+    else {
+      return refuse_layer(ctx, e, "a mask-border-outset that this does not read is not lowered");
+    }
+    values++;
+  }
+  if (values == 0) {
+    values = 1;
+  }
+  four_sides(values, side);
+  for (size_t k = 0; k < 4; k++) {
+    l->outset[k] = ov[side[k]];
+  }
+  /* the repeat: one or two of stretch, repeat, round and space */
+  n = split(trim(repeat), true, t, 3);
+  if (n == 0 || n > 2) {
+    return refuse_layer(ctx, e, "a mask-border-repeat that this does not read is not lowered");
+  }
+  for (size_t a = 0; a < 2; a++) {
+    const span w = a < n ? t[a] : t[0];
+    l->border_repeat[a] = is(w, "stretch") ? 0 : is(w, "repeat") ? 1 : is(w, "round") ? 2 : is(w, "space") ? 3 : -1;
+    if (l->border_repeat[a] < 0) {
+      return refuse_layer(ctx, e, "a mask-border-repeat that this does not read is not lowered");
+    }
+  }
+  *ok = true;
+  return GVEC_OK;
+}
+
+/* One cell of a border: the region of the source image `from` (x, y, w, h) shown in `to`, drawn within `to_clip`. */
+typedef struct border_cell {
+  double sx, sy, sw, sh; ///< The slice of the image (pixels of the image).
+  double dx, dy, dw, dh; ///< Where the whole slice goes: it is scaled to this.
+  double cx0, cy0, cx1, cy1; ///< What of it is drawn (a repeated cell is cut off at the ends of its region).
+} border_cell;
+
+typedef struct border_paint {
+  gvec_lw_ctx * ctx;
+  const GVEC_Svg_Instance * masked;
+  const GVEC_Svg_Element * e;
+  const GSHGEOM_Map * local;
+  size_t index;
+  gvec_lw_node * holder;
+  uint64_t cells;
+  bool gradient;
+  GSHSCENE_Gradient base;
+  gradient_stops stops;
+  gvec_lw_image image;
+  uint32_t magnify, minify;
+} border_paint;
+
+static GVEC_Result border_cell_node(border_paint * b, const border_cell * c) {
+  gvec_lw_ctx * ctx = b->ctx;
+  if (!(c->cx1 > c->cx0) || !(c->cy1 > c->cy0) || !(c->sw > 0) || !(c->sh > 0)) {
+    return GVEC_OK;
+  }
+  if (++b->cells > TILES_MAX) {
+    return gvec_lw_refuse(ctx, b->e, GVEC_LOWER_LIMIT, "a mask border is drawn in more pieces than the lowering draws");
+  }
+  /* image space to the element's: the slice's corner goes to the cell's, scaled by what the slice is stretched by */
+  const double fx = c->dw / c->sw, fy = c->dh / c->sh;
+  GSHGEOM_Map shift, scale, map;
+  if (gshgeom_map_translate(2, c->dx - c->sx * fx, c->dy - c->sy * fy, 0, &shift) != GSHGEOM_OK || gshgeom_map_scale(2, fx, fy, 1, &scale) != GSHGEOM_OK ||
+      !gvec_lw_compose(&shift, &scale, &map)) {
+    return gvec_lw_refuse(ctx, b->e, GVEC_LOWER_LIMIT, "a mask border is past the range the waist can carry");
+  }
+  const uint64_t salt = (uint64_t) b->index * 100003 + 77 + b->cells * 2;
+  gvec_lw_node * node = NULL;
+  GVEC_Result r;
+  if (b->gradient) {
+    GSHSCENE_Gradient at = b->base;
+    if (!gvec_lw_compose(&map, &b->base.map, &at.map)) {
+      return gvec_lw_refuse(ctx, b->e, GVEC_LOWER_LIMIT, "a gradient of a mask border is past the range the waist can carry");
+    }
+    const GSHSCENE_Resource * resource = NULL;
+    GSHSCENE_Result sr = gshscene_store_intern_gradient(ctx->store, &at, &resource);
+    if (sr == GSHSCENE_ERR_OOM) {
+      return GVEC_ERR_OOM;
+    }
+    if (sr != GSHSCENE_OK) {
+      return gvec_lw_refuse(ctx, b->e, GVEC_LOWER_LIMIT, "a gradient of a mask border is past what the waist can carry");
+    }
+    r = gvec_lw_hold(ctx, resource);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    GSHSCENE_Paint paint;
+    memset(&paint, 0, sizeof paint);
+    paint.kind = GSHSCENE_PAINT_GRADIENT;
+    paint.resource = resource;
+    paint.rgba[3] = 1.0;
+    bool made;
+    r = rect_node(ctx, b->e, b->local, c->cx0, c->cy0, c->cx1 - c->cx0, c->cy1 - c->cy0, &paint, salt, &node, &made);
+    if (r != GVEC_OK || !made) {
+      return r;
+    }
+  }
+  else {
+    /* an image shows whole where it is drawn: it is cut to what is drawn by a clip */
+    gvec_lw_geometry geometry;
+    const GSHSCENE_Resource * clip_path = NULL;
+    r = gvec_lw_rect_path(ctx, c->cx0, c->cy0, c->cx1 - c->cx0, c->cy1 - c->cy0, &geometry, &clip_path);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (geometry != GVEC_LW_GEOMETRY_PATH) {
+      return gvec_lw_refuse(ctx, b->e, GVEC_LOWER_LIMIT, "the box of a mask border is past the range the waist can carry");
+    }
+    gvec_lw_node * clip;
+    r = new_node(ctx, b->e, GVEC_LW_CLIP, GVEC_LW_ROLE_MASK_LAYER, salt + 1, &clip);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    clip->map = *b->local;
+    clip->resource = clip_path;
+    clip->rule = GSHGEOM_FILL_NONZERO;
+    gvec_lw_node * art = NULL;
+    if (b->image.resource) {
+      GSHSCENE_Paint paint;
+      const GSHSCENE_Resource * path = NULL;
+      bool image_ok;
+      r = gvec_lw_image_paint(ctx, b->e, &b->image, &map, b->magnify, b->minify, &paint, &path, &image_ok);
+      if (r != GVEC_OK || !image_ok) {
+        return r;
+      }
+      r = new_node(ctx, b->e, GVEC_LW_FILL, GVEC_LW_ROLE_MASK_TILE, salt, &art);
+      if (r != GVEC_OK) {
+        return r;
+      }
+      art->map = *b->local;
+      art->resource = path;
+      art->rule = GSHGEOM_FILL_NONZERO;
+      art->paint = paint;
+      art->content = true;
+    }
+    else if (b->image.svg) {
+      r = gvec_lw_svg_image_node(ctx, b->e, b->local, &b->image, &map, &art);
+      if (r != GVEC_OK) {
+        return r;
+      }
+    }
+    if (!art) {
+      return GVEC_OK;
+    }
+    r = gvec_lw_attach(ctx, clip, art);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    node = clip;
+  }
+  return gvec_lw_attach(ctx, b->holder, node);
+}
+
+/* The cells along one axis of a region `length` long, for a slice of `slice` pixels shown `scale` times as long: `[from, to)` (the whole cell, which a
+ * repeated one is cut off from) in region coordinates. Returns how many. */
+static size_t border_axis(int mode, double slice, double length, double scale, double * from, double * to, size_t capacity) {
+  const double tile = slice * scale;
+  size_t n = 0;
+  if (!(length > 0) || !(slice > 0)) {
+    return 0;
+  }
+  if (mode == 0 || !(tile > 0)) {
+    from[0] = 0;
+    to[0] = length;
+    return 1;
+  }
+  if (mode == 2) {
+    double count = gmath_floor(length / tile + 0.5);
+    count = count < 1 ? 1 : count;
+    const double each = length / count;
+    for (size_t k = 0; k < (size_t) count && n < capacity; k++, n++) {
+      from[n] = (double) k * each;
+      to[n] = (double) (k + 1) * each;
+    }
+    return n;
+  }
+  if (mode == 3) {
+    const double count = gmath_floor(length / tile);
+    if (!(count >= 1)) {
+      return 0;
+    }
+    const double gap = (length - count * tile) / (count + 1);
+    for (size_t k = 0; k < (size_t) count && n < capacity; k++, n++) {
+      from[n] = gap + (double) k * (tile + gap);
+      to[n] = from[n] + tile;
+    }
+    return n;
+  }
+  /* repeat: the tiles are centered, and the ones at the ends are cut off */
+  const double count = gmath_ceil(length / tile);
+  const double start = (length - count * tile) / 2;
+  for (size_t k = 0; k < (size_t) count && n < capacity; k++, n++) {
+    from[n] = start + (double) k * tile;
+    to[n] = from[n] + tile;
+  }
+  return n;
+}
+
+/*
+ * The art of a mask border: the image (a gradient is as large as the border image area, which is what an image with no size of its own is) cut into nine slices,
+ * each shown in its place around the box, as CSS Backgrounds 3 (6.2) says a border image is. The widths of the borders are `mask-border-width`, whose `auto` is the
+ * size of the slice (an image that has one) and whose numbers are of the width of a border, which an SVG element does not have.
+ */
+static GVEC_Result border_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, const GSHGEOM_Map * local, const layer * l, size_t index, const GSHGEOM_Bounds * box,
+    gvec_lw_node ** top, bool * ok) {
+  const GVEC_Svg_Element * e = gvec_svg_instance_element(masked);
+  *top = NULL;
+  *ok = false;
+  /* the border image area: the box, pushed out by the outset */
+  const double x0 = box->min.x - l->outset[3], y0 = box->min.y - l->outset[0], x1 = box->max.x + l->outset[1], y1 = box->max.y + l->outset[2];
+  const double area_w = x1 - x0, area_h = y1 - y0;
+  if (!(area_w > 0) || !(area_h > 0)) {
+    *ok = true;
+    return GVEC_OK;
+  }
+  border_paint b;
+  memset(&b, 0, sizeof b);
+  b.ctx = ctx;
+  b.masked = masked;
+  b.e = e;
+  b.local = local;
+  b.index = index;
+  b.gradient = !starts(trim(l->image), "url(");
+  double iw = area_w, ih = area_h; /* no size of its own: the area's */
+  bool intrinsic = false;
+  GVEC_Result r;
+  if (!b.gradient) {
+    int state;
+    r = load_source(ctx, e, l->image, &b.image, &iw, &ih, &state);
+    if (r != GVEC_OK || state == 1) {
+      return r;
+    }
+    if (state == 2) {
+      *ok = true; /* an image that cannot be used covers nothing */
+      return GVEC_OK;
+    }
+    intrinsic = iw > 0 && ih > 0;
+    if (!intrinsic) {
+      iw = area_w;
+      ih = area_h;
+    }
+    bool usable;
+    if (b.image.resource) {
+      r = gvec_lw_image_filters(ctx, masked, &b.magnify, &b.minify, &usable);
+      if (r != GVEC_OK || !usable) {
+        return r;
+      }
+    }
+  }
+  else {
+    bool read;
+    r = make_gradient(ctx, masked, e, l->image, iw, ih, &b.base, &b.stops, &read);
+    if (r != GVEC_OK) {
+      return r;
+    }
+    if (!read) {
+      return refuse_layer(ctx, e, "a gradient of a mask border that this does not read (a color it does not know, or a gradient this grammar does not say) is not lowered");
+    }
+  }
+  /* the slices, in pixels of the image */
+  double slice[4];
+  for (int k = 0; k < 4; k++) {
+    const double basis = (k == 0 || k == 2) ? ih : iw;
+    double v = l->slice_percent[k] ? l->slice[k] * basis / 100.0 : l->slice[k];
+    slice[k] = v > basis ? basis : v;
+  }
+  /* the widths of the borders, in the element's pixels: auto is the slice (when the image has a size), a length is itself, a percentage is of the area */
+  double wide[4];
+  for (int k = 0; k < 4; k++) {
+    const amount a = l->width[k];
+    const double basis = (k == 0 || k == 2) ? area_h : area_w;
+    wide[k] = a.kind == 0 ? (intrinsic ? slice[k] : 0) : a.kind == 1 ? a.v : a.kind == 2 ? a.v * basis / 100.0 : 0;
+  }
+  /* sides that together are more than the area are shrunk, together, to fit it */
+  double shrink = 1;
+  if (wide[1] + wide[3] > area_w && wide[1] + wide[3] > 0) {
+    shrink = area_w / (wide[1] + wide[3]);
+  }
+  if (wide[0] + wide[2] > area_h && wide[0] + wide[2] > 0 && area_h / (wide[0] + wide[2]) < shrink) {
+    shrink = area_h / (wide[0] + wide[2]);
+  }
+  for (int k = 0; k < 4; k++) {
+    wide[k] *= shrink;
+  }
+  /* the grid: image columns (left slice, middle, right slice) and rows, and where each goes */
+  const double src_x[4] = {0, slice[3], iw - slice[1], iw}, src_y[4] = {0, slice[0], ih - slice[2], ih};
+  const double dst_x[4] = {x0, x0 + wide[3], x1 - wide[1], x1}, dst_y[4] = {y0, y0 + wide[0], y1 - wide[2], y1};
+  gvec_lw_node * holder;
+  r = new_node(ctx, e, GVEC_LW_GROUP, GVEC_LW_ROLE_MASK_LAYER, (uint64_t) index * 2 + 5000, &holder);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  holder->opacity = 1;
+  holder->isolate = true;
+  b.holder = holder;
+  for (int row = 0; row < 3; row++) {
+    for (int col = 0; col < 3; col++) {
+      if (row == 1 && col == 1 && !l->slice_fill) {
+        continue;
+      }
+      const double sw = src_x[col + 1] - src_x[col], sh = src_y[row + 1] - src_y[row];
+      const double dw = dst_x[col + 1] - dst_x[col], dh = dst_y[row + 1] - dst_y[row];
+      if (!(sw > 0) || !(sh > 0) || !(dw > 0) || !(dh > 0)) {
+        continue;
+      }
+      /* the corners are stretched; an edge repeats along its own side, and is scaled across it to the border; the middle is scaled by both */
+      const bool along_x = col == 1, along_y = row == 1;
+      const int mode_x = along_x ? l->border_repeat[0] : 0, mode_y = along_y ? l->border_repeat[1] : 0;
+      double scale_x = dw / sw, scale_y = dh / sh;
+      if (along_x && mode_x != 0 && !(along_y && mode_y != 0)) {
+        scale_x = scale_y; /* repeated along x at the scale across it */
+      }
+      else if (along_y && mode_y != 0 && !(along_x && mode_x != 0)) {
+        scale_y = scale_x;
+      }
+      else if (along_x && mode_x != 0 && along_y && mode_y != 0) {
+        scale_x = scale_y = (scale_x < scale_y ? scale_x : scale_y);
+      }
+      double fx[256], tx[256], fy[256], ty[256];
+      const size_t nx = border_axis(mode_x, sw, dw, scale_x, fx, tx, 256), ny = border_axis(mode_y, sh, dh, scale_y, fy, ty, 256);
+      for (size_t j = 0; j < ny; j++) {
+        for (size_t i = 0; i < nx; i++) {
+          border_cell cell;
+          cell.sx = src_x[col];
+          cell.sy = src_y[row];
+          cell.sw = sw;
+          cell.sh = sh;
+          cell.dx = dst_x[col] + fx[i];
+          cell.dy = dst_y[row] + fy[j];
+          cell.dw = tx[i] - fx[i];
+          cell.dh = ty[j] - fy[j];
+          cell.cx0 = dst_x[col] + (fx[i] > 0 ? fx[i] : 0);
+          cell.cy0 = dst_y[row] + (fy[j] > 0 ? fy[j] : 0);
+          cell.cx1 = dst_x[col] + (tx[i] < dw ? tx[i] : dw);
+          cell.cy1 = dst_y[row] + (ty[j] < dh ? ty[j] : dh);
+          r = border_cell_node(&b, &cell);
+          if (r != GVEC_OK) {
+            return r;
+          }
+        }
+      }
+    }
+  }
+  *top = holder->content ? holder : NULL;
+  *ok = true;
+  return GVEC_OK;
+}
+
 static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * masked, layer * layers, size_t * count, bool * ok) {
   const GVEC_Svg_Element * e = gvec_svg_instance_element(masked);
   *ok = false;
@@ -1577,8 +2068,15 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
   if (r != GVEC_OK) {
     return r;
   }
+  layer border_layer;
+  bool has_border = false;
   if (border.n && !is(trim(border), "none")) {
-    return refuse_layer(ctx, e, "a mask-border is not lowered");
+    r = parse_border(ctx, masked, trim(border), &border_layer, ok);
+    if (r != GVEC_OK || !*ok) {
+      return r;
+    }
+    *ok = false;
+    has_border = true;
   }
   span image_list[LAYERS_MAX + 1], mode_list[LAYERS_MAX + 1], repeat_list[LAYERS_MAX + 1], position_list[LAYERS_MAX + 1], size_list[LAYERS_MAX + 1],
       composite_list[LAYERS_MAX + 1], origin_list[LAYERS_MAX + 1], clip_list[LAYERS_MAX + 1];
@@ -1670,6 +2168,17 @@ static GVEC_Result parse_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
     l->composite = is(comp, "subtract") ? 1 : is(comp, "intersect") ? 2 : is(comp, "exclude") ? 3 : 0;
   }
   *count = n;
+  if (has_border) {
+    /* The mask border is the top layer, over the others (it is composited with them by `add`). */
+    if (n >= LAYERS_MAX) {
+      return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "the mask has more layers than the lowering keeps");
+    }
+    for (size_t i = n; i > 0; i--) {
+      layers[i] = layers[i - 1];
+    }
+    layers[0] = border_layer;
+    *count = n + 1;
+  }
   *ok = true;
   return GVEC_OK;
 }
@@ -1732,7 +2241,25 @@ GVEC_Result gvec_lw_mask_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
       continue;
     }
     gvec_lw_node * art = NULL;
-    if (l->kind == LAYER_ELEMENT) {
+    if (l->kind == LAYER_BORDER) {
+      bool border_ok;
+      r = border_art(ctx, masked, local, l, i, origin_box, &art, &border_ok);
+      if (r != GVEC_OK || !border_ok) {
+        return r;
+      }
+      if (!art) {
+        continue;
+      }
+      if (single) {
+        final_mode = l->mode == 0 ? GSHSCENE_MASK_LUMINANCE : GSHSCENE_MASK_ALPHA;
+        accumulated = art;
+        break;
+      }
+      if (!l->mode) {
+        return refuse_layer(ctx, e, "a luminance mask border over other mask layers is not lowered");
+      }
+    }
+    else if (l->kind == LAYER_ELEMENT) {
       /* A `mask` element names a mask of its own: white where that mask lets through, under the layer's clip. */
       span text = trim(l->image);
       span inner = trim((span) {text.p + 4, text.n - 5});

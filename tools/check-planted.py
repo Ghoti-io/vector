@@ -1016,6 +1016,14 @@ PLANTS += [
     ('TX9', 'src/codec/svg/lower/lower_text_wrap.c', 'if (len == 7 && memcmp(text + start, "hanging", 7) == 0) {', 'if (len == 7 && memcmp(text + start, "hangina", 7) == 0) {', 'hanging is not read'),
     ('TX10', 'src/codec/svg/lower/lower_text_wrap.c', '*out = number * size / 100.0;', '*out = number;', 'a percentage indent is in pixels'),
     ('FD1', 'src/codec/svg/lower/lower_filter.c', 'scale *= (w + h) / 2;', 'scale *= 1;', 'a displacement scale in box units is not of the box'),
+    ('BD1', 'src/codec/svg/lower/lower_mask_layers.c', 'final_mode = l->mode == 0 ? GSHSCENE_MASK_LUMINANCE : GSHSCENE_MASK_ALPHA;', 'final_mode = GSHSCENE_MASK_ALPHA;', 'the mode of a mask border is not its own'),
+    ('BD2', 'src/codec/svg/lower/lower_mask_layers.c', 'shrink = area_w / (wide[1] + wide[3]);', 'shrink = 1;', 'borders wider than the area are not shrunk'),
+    ('BD3', 'src/codec/svg/lower/lower_mask_layers.c', 'wide[k] = a.kind == 0 ? (intrinsic ? slice[k] : 0) :', 'wide[k] = a.kind == 0 ? slice[k] :', 'an auto width of a gradient is its slice'),
+    ('BD4', 'src/codec/svg/lower/lower_mask_layers.c', 'const double x0 = box->min.x - l->outset[3], y0 = box->min.y - l->outset[0],', 'const double x0 = box->min.x + l->outset[3], y0 = box->min.y - l->outset[0],', 'the outset pulls the area in'),
+    ('BD5', 'src/codec/svg/lower/lower_mask_layers.c', 'const double gap = (length - count * tile) / (count + 1);', 'const double gap = (length - count * tile) / count;', 'spaced tiles are not spaced evenly'),
+    ('BD6', 'src/codec/svg/lower/lower_mask_layers.c', 'const double start = (length - count * tile) / 2;', 'const double start = 0;', 'repeated tiles are not centered'),
+    ('BD7', 'src/codec/svg/lower/lower_mask_layers.c', 'if (row == 1 && col == 1 && !l->slice_fill) {', 'if (false) {', 'the middle of a border is drawn without fill'),
+    ('BD8', 'src/codec/svg/lower/lower_mask_layers.c', 'double v = l->slice_percent[k] ? l->slice[k] * basis / 100.0 : l->slice[k];', 'double v = l->slice[k];', 'a percentage slice is pixels'),
     ('FD2', 'src/codec/svg/lower/lower_filter.c', 'if (!(w > 0) || !(h > 0) || w > h * 1.001 || h > w * 1.001) {', 'if (!(w > 0) || !(h > 0)) {', 'a displacement scale of a box that is not square is one scale'),
 ]
 

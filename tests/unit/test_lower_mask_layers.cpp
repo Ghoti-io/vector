@@ -9,6 +9,7 @@
 #include <ghoti.io/shape-scene/resource.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include "../lower_helpers.h"
 
@@ -443,6 +444,104 @@ TEST(LowerMaskLayers, AMaskPositionIsAnyCssPositionWithOffsetsFromItsEdges) {
   EXPECT_NEAR(g.map.t[1], 20.0 + 20.0 - 5.0, 1e-9);
 }
 
+namespace {
+
+/** The rectangles of every fill of the mask, as (x0, y0, x1, y1), sorted. */
+std::vector<std::array<double, 4>> Cells(const Masked & m) {
+  std::vector<std::array<double, 4>> out;
+  for (const GSHSCENE_Item & fill : FillsOf(m)) {
+    const GSHGEOM_Bounds box = BoundsOf(fill);
+    out.push_back({box.min.x, box.min.y, box.max.x, box.max.y});
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
+
+}  // namespace
+
+TEST(LowerMaskLayers, AMaskBorderIsTheSourceCutIntoNineAndShownAroundTheBox) {
+  // the box is 40 by 20 at (20, 20); a gradient has the size of the border image area, and the slices are 5 pixels, shown in borders of 5
+  Masked m;
+  Lower("mask-border-source: linear-gradient(black, white); mask-border-slice: 5; mask-border-width: 5px", m);
+  ASSERT_TRUE(m.has_mask);
+  auto cells = Cells(m);
+  ASSERT_EQ(cells.size(), (size_t) 8) << "the middle is not drawn without `fill`";
+  const std::vector<std::array<double, 4>> expected = {{20, 20, 25, 25}, {20, 25, 25, 35}, {20, 35, 25, 40}, {25, 20, 55, 25},
+                                                       {25, 35, 55, 40}, {55, 20, 60, 25}, {55, 25, 60, 35}, {55, 35, 60, 40}};
+  EXPECT_EQ(cells, expected);
+  GSHSCENE_Gradient g;
+  for (const GSHSCENE_Item & fill : FillsOf(m)) {
+    ASSERT_TRUE(GradientOf(fill, g));
+    EXPECT_NEAR(g.map.t[0] + g.p0[0] * 0, 20.0, 1e-9) << "slices of the gradient are where the gradient is: the area is at (20, 20)";
+    EXPECT_NEAR(g.map.t[1], 20.0, 1e-9);
+  }
+  Masked filled;
+  Lower("mask-border-source: linear-gradient(black, white); mask-border-slice: 5 fill; mask-border-width: 5px", filled);
+  ASSERT_TRUE(filled.has_mask);
+  EXPECT_EQ(Fills(filled), (size_t) 9) << "`fill` keeps the middle";
+  // an auto width of a gradient is nothing (it has no size of its own, and an SVG element no border): there is no border to draw
+  Masked automatic;
+  Lower("mask-border-source: linear-gradient(black, white); mask-border-slice: 5", automatic);
+  EXPECT_FALSE(automatic.has_mask && Fills(automatic) > 0);
+  // borders that are together wider than the area are shrunk, together, to fit it: 30 and 30 across 40, and down 20, is a third of each (10)
+  Masked shrunk;
+  Lower("mask-border-source: linear-gradient(black, white); mask-border-slice: 5; mask-border-width: 30px", shrunk);
+  ASSERT_TRUE(shrunk.has_mask);
+  auto sc = Cells(shrunk);
+  ASSERT_EQ(sc.size(), (size_t) 6) << "the corners and the top and the bottom: the sides are of no height";
+  EXPECT_EQ(sc.front(), (std::array<double, 4>{20, 20, 30, 30}));
+  // percentages: a width of 25% is of the area (10 of 40 across, 5 of 20 down); a slice of 25% is of the image
+  Masked percent;
+  Lower("mask-border-source: linear-gradient(black, white); mask-border-slice: 25%; mask-border-width: 25%", percent);
+  ASSERT_TRUE(percent.has_mask);
+  auto pc = Cells(percent);
+  ASSERT_EQ(pc.size(), (size_t) 8);
+  EXPECT_EQ(pc.front(), (std::array<double, 4>{20, 20, 30, 25}));
+  // the outset pushes the area out
+  Masked outset;
+  Lower("mask-border-source: linear-gradient(black, white); mask-border-slice: 5; mask-border-width: 5px; mask-border-outset: 10px", outset);
+  ASSERT_TRUE(outset.has_mask);
+  EXPECT_EQ(Cells(outset).front(), (std::array<double, 4>{10, 10, 15, 15}));
+  // it is over the layers of `mask`, added to them
+  Masked layered;
+  Lower("mask-image: linear-gradient(black, white); mask-border-source: linear-gradient(black, white); mask-border-slice: 5; mask-border-width: 5px", layered);
+  ASSERT_TRUE(layered.has_mask);
+  EXPECT_GE(Fills(layered), (size_t) 9) << "the layer and the eight pieces of the border";
+}
+
+TEST(LowerMaskLayers, AMaskBorderRepeatsStretchesRoundsOrSpacesItsEdges) {
+  // slices of 5 down and 10 across, in borders of 5: the top edge is the 20 wide middle of the image at 1:1 (it is 5 high in both), in 30 of room
+  const char * base = "mask-border-source: linear-gradient(black, white); mask-border-slice: 5 10; mask-border-width: 5px; mask-border-repeat: ";
+  auto top_edge = [&](const char * repeat) {
+    Masked m;
+    Lower(std::string(base) + repeat, m);
+    EXPECT_TRUE(m.has_mask) << repeat;
+    std::vector<std::array<double, 4>> out;
+    for (const auto & c : Cells(m)) {
+      if (c[1] == 20 && c[3] == 25 && c[0] >= 25 && c[2] <= 55) {
+        out.push_back(c);
+      }
+    }
+    return out;
+  };
+  using Cell = std::array<double, 4>;
+  EXPECT_EQ(top_edge("stretch"), (std::vector<Cell>{{25, 20, 55, 25}}));
+  EXPECT_EQ(top_edge("repeat"), (std::vector<Cell>{{25, 20, 40, 25}, {40, 20, 55, 25}})) << "20 wide tiles centered in 30: cut off 5 at each end";
+  EXPECT_EQ(top_edge("round"), (std::vector<Cell>{{25, 20, 40, 25}, {40, 20, 55, 25}})) << "two tiles of 15";
+  EXPECT_EQ(top_edge("space"), (std::vector<Cell>{{30, 20, 50, 25}})) << "one tile of 20 with 5 of room each side";
+}
+
+TEST(LowerMaskLayers, AMaskBorderOfAnImageTakesAutoWidthsFromItsSlices) {
+  Masked m;
+  Lower("mask-border-source: url(red-blue-2x1.png); mask-border-slice: 0 1", m);
+  ASSERT_TRUE(m.has_mask);
+  EXPECT_EQ(Fills(m), (size_t) 2) << "the left and the right edge, each as wide as its pixel, as tall as the box";
+  Masked mode;
+  Lower("mask-border-source: url(red-blue-2x1.png); mask-border-slice: 0 1; mask-border-mode: luminance", mode);
+  ASSERT_TRUE(mode.has_mask);
+  EXPECT_EQ(mode.mask.mode, (uint32_t) GSHSCENE_MASK_LUMINANCE);
+}
+
 TEST(LowerMaskLayers, TheOriginAndTheClipAreBoxesOfTheElement) {
   Masked fill, stroke, view;
   Lower("mask: linear-gradient(black, white) border-box", fill, "stroke=\"black\" stroke-width=\"10\"");
@@ -604,12 +703,6 @@ TEST(LowerMaskLayers, AnImageIsTiledAtItsSizeOrTheOneGiven) {
 }
 
 TEST(LowerMaskLayers, WhatThisDoesNotReadIsRefusedNotHalfDrawn) {
-  for (const char * css : {"mask-border-source: url(a.png)"}) {
-    Masked m;
-    Lower(css, m);
-    EXPECT_NE(m.l.Refusal(GVEC_LOWER_MASK), nullptr) << css;
-    EXPECT_EQ(m.l.Items(), (size_t) 0) << css;
-  }
   // more tiles than the lowering draws
   Masked many;
   Lower("mask: linear-gradient(black, white) 0 0 / 1px 1px repeat", many, "", "");
