@@ -1085,6 +1085,8 @@ static void add_characters_as_written(tctx * t, const char * text, size_t n, int
     t->chars[t->count].style = style;
     t->chars[t->count].has_x = t->chars[t->count].has_y = t->chars[t->count].has_dy = t->chars[t->count].has_rotate = false;
     t->chars[t->count].x = t->chars[t->count].y = t->chars[t->count].dx = t->chars[t->count].dy = t->chars[t->count].rotate = 0;
+    t->chars[t->count].has_anchor = false;
+    t->chars[t->count].anchor = 0;
     t->chars[t->count].chunk_start = t->pending_break;
     t->chars[t->count].tpath = t->current_tpath;
     t->pending_break = false;
@@ -2803,6 +2805,9 @@ static GVEC_Result text_layout(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst
     double anchor = t.styles[t.chars[i].style].anchor;
     if (t.styles[t.chars[i].style].rtl && anchor != 0.5) {
       anchor = 1.0 - anchor;
+    }
+    if (t.chars[i].has_anchor) {
+      anchor = t.chars[i].anchor; /* a wrapped line is aligned by `text-align`, in physical terms already */
     }
     double shift = -anchor * (pen_x - start_x);
     const double pen_x_end = pen_x + shift;

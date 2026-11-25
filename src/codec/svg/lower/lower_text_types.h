@@ -124,6 +124,8 @@ typedef struct tchar {
   uint32_t tpath;     ///< One more than the textPath the character is in, or 0.
   double x, y, dx, dy;
   double rotate; ///< Degrees, about the glyph's origin.
+  bool has_anchor;    ///< The chunk this character begins is aligned by `anchor` (a wrapped line's `text-align`), not by the `text-anchor` of its style.
+  double anchor;      ///< 0 the chunk starts at its place, 1 it ends there, as `text-anchor`: the physical edge.
 } tchar;
 
 /** A list of a span, applied to the characters of its content once the content is known (the tree's order, outer first, so that an inner list wins). */

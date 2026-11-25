@@ -167,6 +167,25 @@ TEST(LowerFilter, ColorMatrixTransferShadowMorphologyAndConvolutionCarryTheirAtt
   EXPECT_EQ(f.primitives[5].y_channel, (uint32_t) GSHSCENE_FILTER_CHANNEL_G);
 }
 
+TEST(LowerFilter, ADisplacementMapInBoxUnitsScalesByTheBox) {
+  // a scale of 0.5 of a 30 by 30 box is 15 user units
+  Lowered square;
+  LowerSvg(Svg("width=\"40\" height=\"40\"", "<defs><filter id=\"f\" primitiveUnits=\"objectBoundingBox\"><feDisplacementMap in2=\"SourceGraphic\" scale=\"0.5\"/></filter></defs>"
+               "<rect width=\"30\" height=\"30\" filter=\"url(#f)\"/>"),
+      square);
+  EXPECT_EQ(square.Refusals(), (size_t) 0);
+  GSHSCENE_Filter f;
+  ASSERT_TRUE(FilterOf(square, &f));
+  ASSERT_EQ(f.primitive_count, 1u);
+  EXPECT_NEAR(f.primitives[0].scale, 15.0, 1e-9);
+  // a box that is not square has a scale for each axis, which the waist's displacement lacks: refused by name, not drawn wrong
+  Lowered wide;
+  LowerSvg(Svg("width=\"40\" height=\"40\"", "<defs><filter id=\"f\" primitiveUnits=\"objectBoundingBox\"><feDisplacementMap in2=\"SourceGraphic\" scale=\"0.5\"/></filter></defs>"
+               "<rect width=\"30\" height=\"10\" filter=\"url(#f)\"/>"),
+      wide);
+  EXPECT_NE(wide.Refusal(GVEC_LOWER_FILTER), nullptr);
+}
+
 TEST(LowerFilter, AnInvalidFilterDrawsTheElementAsNothingAndADanglingOneAsItIs) {
   const char * bad[] = {
       "<filter id=\"f\"/>",                                                          // no primitives

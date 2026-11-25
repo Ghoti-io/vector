@@ -54,6 +54,12 @@ typedef struct wrap_props {
   bool emergency;          ///< `overflow-wrap: break-word` or `anywhere` (or `word-break: break-word`): a word too long for a line is broken.
   int word_break;          ///< 0 normal, 1 `break-all`, 2 `keep-all`.
   bool hyphens_none;       ///< `hyphens: none`: a soft hyphen is no break.
+  double indent;           ///< `text-indent`: how far the first line (or the lines it names) begins from the edge its direction starts at; negative pulls it out.
+  bool indent_hanging;     ///< `hanging`: every line but the first (and the ones `each-line` names) is indented instead.
+  bool indent_each_line;   ///< `each-line`: a line that follows a forced break counts as a first line.
+  int align;               ///< `text-align`: 0 `start` (the `text-anchor` says), 1 `end`, 2 `center`, 3 `left`, 4 `right`, 5 `justify`.
+  int align_last;          ///< `text-align-last`: the same, and -1 for `auto` (the last line is as `text-align` says, `justify` being `start`).
+  int justify;             ///< `text-justify`: 0 `auto`, 1 `none`, 2 `inter-word`, 3 `inter-character`.
   GUNI_LineBreakTailoring tailoring;
 } wrap_props;
 
@@ -77,6 +83,7 @@ typedef struct wrap_line {
   size_t from, to, next;
   double left, width; ///< The stretch of the line it is in.
   double baseline;
+  bool last;          ///< The last line of a paragraph: the text ends here, or a forced break does.
 } wrap_line;
 
 
@@ -135,6 +142,101 @@ static GVEC_Result read_size(tctx * t, const GVEC_Svg_Instance * inst, wrap_prop
   return GVEC_OK;
 }
 
+/* `text-align` and `text-align-last` as codes (see wrap_props); `justify-all` is `justify`, `match-parent` is `start`. */
+static int align_of(const char * text) {
+  if (!text) {
+    return 0;
+  }
+  return strcmp(text, "end") == 0 ? 1 : strcmp(text, "center") == 0 ? 2 : strcmp(text, "left") == 0 ? 3 : strcmp(text, "right") == 0 ? 4
+      : (strcmp(text, "justify") == 0 || strcmp(text, "justify-all") == 0) ? 5 : 0;
+}
+
+/* One term of a `text-indent`: a number of `px` or `%` (of the `inline-size`), or 0. */
+static bool indent_term(const char * s, size_t n, double size, double * out) {
+  size_t at = 0;
+  double number;
+  if (!gvec_svg_scan_number(s, n, &at, &number, NULL)) {
+    return false;
+  }
+  if (at == n) {
+    *out = number; /* a bare 0 */
+    return number == 0;
+  }
+  if (at + 2 == n && s[at] == 'p' && s[at + 1] == 'x') {
+    *out = number;
+    return true;
+  }
+  if (at + 1 == n && s[at] == '%') {
+    *out = number * size / 100.0;
+    return true;
+  }
+  return false;
+}
+
+/* `text-indent`: a length or a percentage (or `calc()` of those), then `hanging` and `each-line` in either order. A percentage is of the `inline-size`, so
+ * that a text with no `inline-size` and a percentage has none to be of: no indent. */
+static void read_indent(const char * text, wrap_props * p) {
+  p->indent = 0;
+  p->indent_hanging = p->indent_each_line = false;
+  if (!text) {
+    return;
+  }
+  const size_t n = strlen(text);
+  size_t i = 0;
+  bool have = false;
+  while (i < n) {
+    while (i < n && text[i] == ' ') {
+      i++;
+    }
+    size_t start = i;
+    int depth = 0;
+    while (i < n && (text[i] != ' ' || depth > 0)) {
+      depth += text[i] == '(';
+      depth -= text[i] == ')';
+      i++;
+    }
+    const size_t len = i - start;
+    if (len == 0) {
+      continue;
+    }
+    if (len == 7 && memcmp(text + start, "hanging", 7) == 0) {
+      p->indent_hanging = true;
+    }
+    else if (len == 9 && memcmp(text + start, "each-line", 9) == 0) {
+      p->indent_each_line = true;
+    }
+    else if (!have) {
+      double value = 0;
+      if (len > 6 && memcmp(text + start, "calc(", 5) == 0 && text[start + len - 1] == ')') {
+        /* calc(<term> + <term>) or calc(<term> - <term>) */
+        const char * inner = text + start + 5;
+        const size_t m = len - 6;
+        size_t plus = 0;
+        char op = 0;
+        for (size_t k = 1; k + 2 < m; k++) {
+          if (inner[k - 1] == ' ' && inner[k + 1] == ' ' && (inner[k] == '+' || inner[k] == '-')) {
+            plus = k;
+            op = inner[k];
+            break;
+          }
+        }
+        double a, b;
+        if (op && indent_term(inner, plus - 1, p->size, &a) && indent_term(inner + plus + 2, m - plus - 2, p->size, &b)) {
+          value = op == '+' ? a + b : a - b;
+          have = true;
+        }
+        else if (!op && indent_term(inner, m, p->size, &value)) {
+          have = true;
+        }
+      }
+      else if (indent_term(text + start, len, p->size, &value)) {
+        have = true;
+      }
+      p->indent = have ? value : 0;
+    }
+  }
+}
+
 /* The other properties of the text element that bear on its lines. */
 static GVEC_Result read_flow(tctx * t, const GVEC_Svg_Instance * inst, wrap_props * p) {
   GVEC_Svg_Style_Value v;
@@ -180,7 +282,34 @@ static GVEC_Result read_flow(tctx * t, const GVEC_Svg_Instance * inst, wrap_prop
     return r;
   }
   p->hyphens_none = gvec_lw_keyword_is(&v, "none");
+  GVEC_Svg_Style_Specified sp;
+  r = gvec_svg_get_specified(t->lw->style, inst, GVEC_SVG_PROP_TEXT_INDENT, &sp);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  read_indent(sp.computed, p);
+  r = gvec_svg_get_specified(t->lw->style, inst, GVEC_SVG_PROP_TEXT_ALIGN, &sp);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  p->align = align_of(sp.computed);
+  r = gvec_svg_get_specified(t->lw->style, inst, GVEC_SVG_PROP_TEXT_ALIGN_LAST, &sp);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  p->align_last = sp.computed && strcmp(sp.computed, "auto") == 0 ? -1 : align_of(sp.computed);
+  r = gvec_svg_get_specified(t->lw->style, inst, GVEC_SVG_PROP_TEXT_JUSTIFY, &sp);
+  if (r != GVEC_OK) {
+    return r;
+  }
+  p->justify = !sp.computed ? 0 : strcmp(sp.computed, "none") == 0 ? 1 : strcmp(sp.computed, "inter-word") == 0 ? 2 : strcmp(sp.computed, "inter-character") == 0 || strcmp(sp.computed, "distribute") == 0 ? 3 : 0;
   return GVEC_OK;
+}
+
+/* A character of a script that is written with no spaces and is justified between its characters: Han, the kana, Hangul and the fullwidth forms. */
+static bool inter_character_script(uint32_t cp) {
+  return (cp >= 0x2E80 && cp <= 0x9FFF) || (cp >= 0xAC00 && cp <= 0xD7AF) || (cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0xFF00 && cp <= 0xFFEF) ||
+      (cp >= 0x20000 && cp <= 0x3FFFF);
 }
 
 static bool is_letter_or_number(uint32_t cp) {
@@ -308,12 +437,23 @@ static bool fill_line(const wrap_text * w, size_t from, double width, bool overf
   return true;
 }
 
+/* How far the line that begins at `at` is indented: the first line, and the lines after a forced break when `each-line` says so; every other line when `hanging`. */
+static double line_indent(const wrap_text * w, size_t at) {
+  const wrap_props * p = w->props;
+  if (p->indent == 0) {
+    return 0;
+  }
+  const bool first = at == 0 || (p->indent_each_line && w->t->chars[at - 1].newline);
+  return (p->indent_hanging ? !first : first) ? p->indent : 0;
+}
+
 /* How many lines the text takes in `width`. */
 static size_t count_lines(const wrap_text * w, double width) {
   size_t lines = 0;
   for (size_t at = 0; at < w->n;) {
     size_t to, next;
-    (void) fill_line(w, at, width, true, &to, &next);
+    const double room = width - line_indent(w, at);
+    (void) fill_line(w, at, room > 0 ? room : 0, true, &to, &next);
     at = next > at ? next : at + 1;
     lines++;
   }
@@ -388,21 +528,60 @@ static GVEC_Result place_band(const wrap_band * b, double top, size_t at, size_t
   for (size_t k = 0; k < span_count && *cursor < b->w->n; k++) {
     const tspan sp = spans[b->rtl ? span_count - 1 - k : k];
     wrap_line * line = &b->lines[first + *placed];
+    /* the indent takes room from the edge the direction starts at */
+    const double indent = line_indent(b->w, *cursor);
+    const double stretch = sp.to - sp.from - indent;
     /* a balanced text is filled to its narrower width, and aligned in the whole of the stretch */
-    if (!fill_line(b->w, *cursor, b->area ? sp.to - sp.from : b->width, b->overflow, &line->to, &line->next)) {
+    const double room = (b->area ? sp.to - sp.from : b->width) - indent;
+    if (!fill_line(b->w, *cursor, room > 0 ? room : 0, b->overflow, &line->to, &line->next)) {
       continue; /* nothing of what is next fits in this stretch */
     }
     line->from = *cursor;
-    line->left = sp.from;
-    line->width = sp.to - sp.from;
+    line->left = b->rtl ? sp.from : sp.from + indent;
+    line->width = stretch > 0 ? stretch : 0;
     (*placed)++;
     const bool forced = b->t->chars[line->next - 1].newline;
+    line->last = forced || line->next >= b->w->n;
     *cursor = line->next > *cursor ? line->next : *cursor + 1;
     if (forced) {
       break; /* a line that ends the line: the stretches after it are left empty */
     }
   }
   return GVEC_OK;
+}
+
+/* Justify a line (CSS Text 3, 7): the room the line has left over is shared out evenly among the places that may take it, each by a `dx` of the character after it
+ * (so that the line ends at the far edge of its stretch). The places are the word separators, between two letters of a script that has no spaces
+ * (`auto`), or every character (`inter-character`); `none` takes none. A line that fills its stretch, or overflows it, is left as it is. */
+static void justify_line(const wrap_text * w, const wrap_line * line, tctx * t, int mode) {
+  if (mode == 1 || line->to <= line->from + 1 || !(line->width > 0)) {
+    return;
+  }
+  const double extra = line->width - span_width(w, line->from, line->to, line->next == line->to && line->next < w->n && !t->chars[line->next - 1].newline);
+  if (!(extra > 1e-9)) {
+    return;
+  }
+  size_t places = 0;
+  for (size_t k = line->from + 1; k < line->to; k++) {
+    const bool separator = w->cps[k - 1] == ' ' || w->cps[k - 1] == 0xA0;
+    const bool between = w->grapheme[k] && w->start[k];
+    const bool wide = between && inter_character_script(w->cps[k - 1]) && inter_character_script(w->cps[k]);
+    const bool take = mode == 3 ? between : mode == 2 ? separator && w->start[k] : (separator && w->start[k]) || wide;
+    places += take;
+  }
+  if (places == 0) {
+    return;
+  }
+  const double gap = extra / (double) places;
+  for (size_t k = line->from + 1; k < line->to; k++) {
+    const bool separator = w->cps[k - 1] == ' ' || w->cps[k - 1] == 0xA0;
+    const bool between = w->grapheme[k] && w->start[k];
+    const bool wide = between && inter_character_script(w->cps[k - 1]) && inter_character_script(w->cps[k]);
+    const bool take = mode == 3 ? between : mode == 2 ? separator && w->start[k] : (separator && w->start[k]) || wide;
+    if (take) {
+      t->chars[k].dx += gap;
+    }
+  }
 }
 
 GVEC_Result gvec_lw_text_wrap(tctx * t, const GVEC_Svg_Instance * inst, tglyph * glyphs, size_t glyph_capacity, bool * wrapped) {
@@ -693,10 +872,35 @@ GVEC_Result gvec_lw_text_wrap(tctx * t, const GVEC_Svg_Instance * inst, tglyph *
     if (line->to > line->from) {
       tchar * first = &t->chars[line->from];
       double anchor = t->styles[first->style].anchor;
-      if (t->styles[first->style].rtl && anchor != 0.5) {
+      const bool line_rtl = t->styles[first->style].rtl;
+      /* `text-align` says where the line is when it says more than `start` (the initial value, which `text-anchor` overrides); the last line of a paragraph is aligned
+       * by `text-align-last`, and by `start` when that is `auto` and the rest is justified. */
+      int align = props.align;
+      if (line->last) {
+        align = props.align_last >= 0 ? props.align_last : align == 5 ? 0 : align;
+      }
+      if (align == 1) {
+        anchor = 1.0;
+      }
+      else if (align == 2) {
+        anchor = 0.5;
+      }
+      else if (align == 3) {
+        anchor = line_rtl ? 1.0 : 0.0;
+      }
+      else if (align == 4) {
+        anchor = line_rtl ? 0.0 : 1.0;
+      }
+      else if (align == 5) {
+        anchor = 0.0;
+        justify_line(&w, line, t, props.justify);
+      }
+      if (line_rtl && anchor != 0.5) {
         anchor = 1.0 - anchor;
       }
       first->has_x = first->has_y = true;
+      first->has_anchor = align != 0; /* `text-align` is the physical anchor, whatever `text-anchor` said */
+      first->anchor = anchor;
       first->x = line->left + anchor * line->width;
       first->y = ysign * line->baseline;
       if (line->next == line->to && line->next < n && !t->chars[line->next - 1].newline && w.cps[line->to - 1] == 0xAD && w.hyphen_cp[line->to - 1]) {

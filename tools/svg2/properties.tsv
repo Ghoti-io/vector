@@ -112,11 +112,16 @@ stroke-linejoin	KEYWORD	-		O	yes	miter	miter | miter-clip | round | bevel | arcs
 stroke-miterlimit	NUMBER	-		G				
 stroke-opacity	NUMBER	-		G				
 stroke-width	LENGTH	D		O	yes	1px	<length-percentage [0,∞]> | <number [0,∞]>	CSS Fill and Stroke 3 makes it a comma separated list, one width for each stroke layer, and adds the <line-width> keywords; SVG 2 section 13.3 and the browsers take one <length-percentage> or <number>, and a list is invalid.
+tab-size	KEYWORD	-		G				
+text-align	KEYWORD	-	text-align-all	G				
+text-align-last	KEYWORD	-		G				
 text-anchor	KEYWORD	-		G				
 text-decoration	KEYWORD	-	text-decoration-line	G				
 text-decoration-color	COLOR	-		G				
 text-decoration-style	KEYWORD	-		G				
 text-decoration-thickness	KEYWORD	-		G				
+text-indent	KEYWORD	-		G				
+text-justify	KEYWORD	-		G				
 text-orientation	KEYWORD	-		G				
 text-overflow	KEYWORD	-		G				
 text-rendering	KEYWORD	-		G				

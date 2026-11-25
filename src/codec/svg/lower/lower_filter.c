@@ -1211,12 +1211,18 @@ static GVEC_Result primitive(fbuild * b, const GVEC_Svg_Element * el, const GVEC
       size_t n;
       double scale;
       p->kind = GSHSCENE_FILTER_DISPLACEMENT_MAP;
-      if (b->prim_box) {
-        return refuse_with(b, "a displacement map in the units of the bounding box is not lowered");
-      }
       if (!number_attr(el, "scale", 0, &scale)) {
         b->invalid = true;
         return GVEC_OK;
+      }
+      if (b->prim_box) {
+        /* The scale is a fraction of the box: of its width along x and of its height along y. The waist's displacement has one scale for both axes, so a box
+         * that is not square (to a thousandth) cannot be carried. */
+        const double w = b->box[2], h = b->box[3];
+        if (!(w > 0) || !(h > 0) || w > h * 1.001 || h > w * 1.001) {
+          return refuse_with(b, "a displacement map in the units of a bounding box that is not square needs a scale for each axis, which the waist's displacement does not have");
+        }
+        scale *= (w + h) / 2;
       }
       p->scale = scale;
       p->x_channel = p->y_channel = GSHSCENE_FILTER_CHANNEL_A;

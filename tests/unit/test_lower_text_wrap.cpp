@@ -96,6 +96,82 @@ TEST(LowerTextWrap, ALineBreaksAtTheSpaceThatLetsTheWordsFitAndTheSpaceAtItsEndI
   EXPECT_EQ(g[6].y, 100.0);
 }
 
+TEST(LowerTextWrap, TextIndentTakesRoomFromTheFirstLine) {
+  Fonts f;
+  // 40 of the 300 are the indent: "AA BB" (270) no longer fits the first line, "AA" does
+  auto g = Wrapped(f, "inline-size=\"300\" style=\"text-indent: 40px\"", "AA BB CC");
+  ASSERT_EQ(g.size(), (size_t) 7);
+  EXPECT_EQ(g[0].x, 40.0);
+  EXPECT_EQ(g[1].x, 100.0);
+  EXPECT_EQ(g[2].x, 0.0) << "the second line is not indented";
+  EXPECT_EQ(g[2].y, 100.0);
+  EXPECT_EQ(g[5].x, 150.0);
+  // a percentage is of the inline-size
+  auto percent = Wrapped(f, "inline-size=\"300\" style=\"text-indent: 10%\"", "AA BB CC");
+  EXPECT_EQ(percent[0].x, 30.0);
+  // hanging: every line but the first
+  auto hanging = Wrapped(f, "inline-size=\"300\" style=\"text-indent: 40px hanging\"", "AA BB CC");
+  ASSERT_EQ(hanging.size(), (size_t) 7);
+  EXPECT_EQ(hanging[0].x, 0.0);
+  EXPECT_EQ(hanging[5].x, 40.0) << "CC on the second line, indented";
+  EXPECT_EQ(hanging[6].x, 100.0);
+  // a negative indent pulls the first line out, and gives it the room
+  auto outdent = Wrapped(f, "inline-size=\"300\" style=\"text-indent: -30px\"", "AA BB CC");
+  EXPECT_EQ(outdent[0].x, -30.0);
+  EXPECT_EQ(Baselines(outdent), (std::vector<double>{0.0, 100.0})) << "AA BB CC is 420 wide, 330 fit the first line: CC goes on";
+  // each-line: a line after a forced break is a first line too
+  auto each = Wrapped(f, "inline-size=\"300\" style=\"text-indent: 40px each-line; white-space: pre-line\"", "AA\nBB");
+  ASSERT_EQ(each.size(), (size_t) 4);
+  EXPECT_EQ(each[0].x, 40.0);
+  EXPECT_EQ(each[2].x, 40.0);
+  auto without = Wrapped(f, "inline-size=\"300\" style=\"text-indent: 40px; white-space: pre-line\"", "AA\nBB");
+  EXPECT_EQ(without[2].x, 0.0);
+}
+
+TEST(LowerTextWrap, TextAlignPutsALineInItsStretch) {
+  Fonts f;
+  const struct {
+    const char * align;
+    double x;
+  } cases[] = {{"center", 90.0}, {"end", 180.0}, {"right", 180.0}, {"left", 0.0}, {"start", 0.0}};
+  for (const auto & c : cases) {
+    auto g = Wrapped(f, std::string("inline-size=\"300\" style=\"text-align: ") + c.align + "\"", "AA");
+    ASSERT_EQ(g.size(), (size_t) 2) << c.align;
+    EXPECT_EQ(g[0].x, c.x) << c.align;
+  }
+  // text-align is stronger than text-anchor only when it says more than start
+  auto anchored = Wrapped(f, "inline-size=\"300\" text-anchor=\"end\"", "AA");
+  EXPECT_EQ(anchored[0].x, 180.0);
+  auto both = Wrapped(f, "inline-size=\"300\" text-anchor=\"end\" style=\"text-align: left\"", "AA");
+  EXPECT_EQ(both[0].x, 0.0);
+}
+
+TEST(LowerTextWrap, JustifyFillsEveryLineButTheLast) {
+  Fonts f;
+  auto g = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify\"", "AA BB CC");
+  ASSERT_EQ(g.size(), (size_t) 7);
+  EXPECT_EQ(g[0].x, 0.0);
+  EXPECT_EQ(g[2].x, 120.0) << "the space begins where AA ends";
+  EXPECT_EQ(g[3].x, 180.0) << "the 30 left over are in the space: BB ends at the end of the 300";
+  EXPECT_EQ(g[4].x, 240.0);
+  EXPECT_EQ(g[5].x, 0.0) << "the last line is not justified";
+  // the last line as well, when text-align-last says so: a line of one word has no place for the room, and is left
+  auto last = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify; text-align-last: justify\"", "AA BB CC");
+  EXPECT_EQ(last[5].x, 0.0);
+  auto centered = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify; text-align-last: center\"", "AA BB CC");
+  EXPECT_EQ(centered[5].x, 90.0);
+  // text-justify: none leaves the line, inter-character shares the room among the characters
+  auto none = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify; text-justify: none\"", "AA BB CC");
+  EXPECT_EQ(none[3].x, 150.0);
+  auto each = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify; text-justify: inter-character\"", "AA BB CC");
+  EXPECT_NEAR(each[1].x, 67.5, 1e-9) << "30 shared among the 4 gaps of AA BB";
+  EXPECT_NEAR(each[3].x, 172.5, 1e-9);
+  EXPECT_NEAR(each[4].x, 240.0, 1e-9);
+  // a forced break ends a paragraph: the line before it is a last line
+  auto pre = Wrapped(f, "inline-size=\"300\" style=\"text-align: justify; white-space: pre-line\"", "AA BB\nCC DD");
+  EXPECT_EQ(pre[3].x, 150.0) << "AA BB ends at a line feed: not justified";
+}
+
 TEST(LowerTextWrap, AWordThatFitsExactlyStaysOnItsLine) {
   Fonts f;
   auto g = Wrapped(f, "inline-size=\"270\"", "AA BB CC");
