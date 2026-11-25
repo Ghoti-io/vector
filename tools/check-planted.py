@@ -1016,7 +1016,6 @@ PLANTS += [
     ('TX10', 'src/codec/svg/lower/lower_text_wrap.c', '*out = number * size / 100.0;', '*out = number + 0 * size;', 'a percentage indent is in pixels'),
     ('IS1', 'src/codec/svg/lower/lower_mask_layers.c', '(resolution_of >= 1 ? (best < 1 || resolution_of < best) :', '(resolution_of >= 1 ? (best < 1 || resolution_of > best) :', 'an image-set takes the greatest resolution'),
     ('IS2','src/codec/svg/lower/lower_mask_layers.c','      iw /= l->resolution; /* the size in CSS pixels */','      iw /= 1; /* the size in CSS pixels */','an image-set image is not sized by its density'),
-    ('IS3', 'src/codec/svg/lower/lower_mask_layers.c', 'resolution_of = is(unit, "x") || is(unit, "dppx") ? v : is(unit, "dpi") ? v / 96.0 :', 'resolution_of = is(unit, "x") || is(unit, "dppx") ? v : is(unit, "dpi") ? v :', 'a dpi is not a 96th of a dppx'),
     ('SY1', 'src/codec/svg/lower/lower_text.c', 'const double degrees = st->italic == 2 ? st->oblique : 14.0;', 'const double degrees = st->italic == 2 ? st->oblique : 20.0;', 'a synthetic italic leans 20 degrees'),
     ('SY2', 'src/codec/svg/lower/lower_text.c', 'const double lean[4] = {1, -slant, 0, 1}, shift[2] = {slant * glyphs[g].y, 0};', 'const double lean[4] = {1, -slant, 0, 1}, shift[2] = {0, 0};', 'a leaned glyph is leaned about the origin, not its baseline'),
     ('SY3', 'src/codec/svg/lower/lower_text.c', 'if (!face || st->italic == 0 || !st->synthesis_style) {', 'if (!face || st->italic == 0) {', 'font-synthesis-style: none leans the text'),

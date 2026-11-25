@@ -100,7 +100,7 @@ TEST(LowerText, ATextShadowIsAFilterThatDrawsTheBlurredOffsetGlyphsUnderTheText)
 
 TEST(LowerText, AnUprightFaceAskedForInItalicOrObliqueIsLeanedAboutItsBaseline) {
   Fonts f;
-  const double tan14 = std::tan(14.0 * M_PI / 180.0), tan20 = std::tan(20.0 * M_PI / 180.0);
+  const double tan14 = std::tan(14.0 * 3.14159265358979323846 / 180.0), tan20 = std::tan(20.0 * 3.14159265358979323846 / 180.0);
   struct Case {
     const char * attributes;
     double lean; ///< x' = x - lean * (y - baseline); 0 for none

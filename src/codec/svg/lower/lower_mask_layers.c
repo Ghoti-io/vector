@@ -48,6 +48,11 @@
 #include "lower_internal.h"
 
 #define LAYERS_MAX 16
+
+// isnan() under MinGW converts a double to float and trips -Wfloat-conversion; a NaN is the one value unequal to itself.
+static inline bool lm_isnan(double x) {
+  return x != x;
+}
 #define TILES_MAX 4096
 #define STOPS_MAX 64
 #define TOKENS_MAX 24
@@ -348,7 +353,7 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
       double hv;
       bool hp;
       double hint_fraction;
-      if (n != 1 || out->count == 0 || i + 1 >= count || !isnan(pending_hint)) {
+      if (n != 1 || out->count == 0 || i + 1 >= count || !lm_isnan(pending_hint)) {
         return GVEC_OK;
       }
       if (angular) {
@@ -427,7 +432,7 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
     pending_hint = NAN;
     out->count++;
   }
-  if (out->count < 2 || !isnan(pending_hint)) {
+  if (out->count < 2 || !lm_isnan(pending_hint)) {
     return GVEC_OK;
   }
   /* The positions: the first is 0 and the last 1 when not given, none is before an earlier one, and the ones not given are spread evenly between those that are. */
@@ -465,7 +470,7 @@ static GVEC_Result read_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst,
   for (size_t i = 0; i < out->count; i++) {
     out->stops[i].offset = out->position[i];
     /* A hint is between the two stops it lies between: past either, it is at that one. */
-    if (i > 0 && !isnan(out->hint[i])) {
+    if (i > 0 && !lm_isnan(out->hint[i])) {
       const double lo = out->position[i - 1], hi = out->position[i];
       out->hint[i] = out->hint[i] < lo ? lo : out->hint[i] > hi ? hi : out->hint[i];
     }
@@ -705,7 +710,7 @@ static GVEC_Result expand_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
   stops->expanded_count = stops->count;
   bool any_hint = false;
   for (size_t i = 0; i < stops->count; i++) {
-    any_hint = any_hint || !isnan(stops->hint[i]);
+    any_hint = any_hint || !lm_isnan(stops->hint[i]);
   }
   if (!any_hint && !method) {
     return GVEC_OK;
@@ -733,7 +738,7 @@ static GVEC_Result expand_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     }
     const double o0 = stops->stops[i].offset, o1 = stops->stops[i + 1].offset;
     const double hint = stops->hint[i + 1];
-    if ((isnan(hint) && !method) || !(o1 > o0)) {
+    if ((lm_isnan(hint) && !method) || !(o1 > o0)) {
       continue;
     }
     m.from = stops->color[i];
@@ -741,7 +746,7 @@ static GVEC_Result expand_stops(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * ins
     m.offset0 = o0;
     m.offset1 = o1;
     m.exponent = 1.0;
-    if (!isnan(hint)) {
+    if (!lm_isnan(hint)) {
       const double h = span_offset != 0 ? (hint - offset_start) / span_offset : 0;
       const double hn = (h - o0) / (o1 - o0); /* where the hint is, as a fraction of the stretch: the middle color is there */
       if (hn <= 0.0 || hn >= 1.0) {
@@ -2063,7 +2068,7 @@ static GVEC_Result image_function(gvec_lw_ctx * ctx, span text, span * out, doub
       if (!set || !number_unit(tokens[k], &v, &unit) || !(v > 0)) {
         return GVEC_OK;
       }
-      resolution_of = is(unit, "x") || is(unit, "dppx") ? v : is(unit, "dpi") ? v / 96.0 : is(unit, "dpcm") ? v * 2.54 / 96.0 : 0;
+      resolution_of = is(unit, "x") || is(unit, "dppx") ? v : 0; // the style engine has written dpi and dpcm as dppx
       if (!(resolution_of > 0)) {
         return GVEC_OK;
       }

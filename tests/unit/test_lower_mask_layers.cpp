@@ -563,6 +563,7 @@ TEST(LowerMaskLayers, AnImageSetPicksTheCandidateForOneDevicePixelAndSizesItByIt
       {"image-set('red-blue-2x1.png' 3x, 'red-blue-2x1.png' 2x)", 1600},  // the least resolution that is at least 1x
       {"image-set('red-blue-2x1.png' 0.5x, 'red-blue-2x1.png' 2x)", 1600},
       {"image-set('red-blue-2x1.png' 192dpi)", 1600},
+      {"image-set('red-blue-2x1.png' 3x, 'red-blue-2x1.png' 192dpi)", 1600},  // 192dpi is 2dppx in the computed value, so it is the lesser
       {"-webkit-image-set(url('red-blue-2x1.png') 2x)", 1600},
       {"image(url('red-blue-2x1.png'))", 400},
   };
