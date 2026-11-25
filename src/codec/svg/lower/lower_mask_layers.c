@@ -528,9 +528,6 @@ static bool position_value(const span * t, size_t n, amount out[2]) {
     }
   }
   amount place[2] = {{2, 50, 0}, {2, 50, 0}};
-  bool set[2] = {false, false};
-  /* a keyword, with its offset when one follows it: the axis it names and where along it */
-  size_t i = 0;
   if (n <= 2) {
     /* [x] [y], or [keyword] [keyword] in either order */
     if (n == 1) {
@@ -578,49 +575,8 @@ static bool position_value(const span * t, size_t n, amount out[2]) {
     out[1] = place[1];
     return true;
   }
-  /* three or four values: keyword, [offset], keyword, [offset] */
-  while (i < n) {
-    const int k = kind[i];
-    if (k == VALUE) {
-      return false;
-    }
-    int axis = (k == LEFT || k == RIGHT) ? 0 : (k == TOP || k == BOTTOM) ? 1 : -1;
-    i++;
-    bool has_offset = i < n && kind[i] == VALUE;
-    const amount off = has_offset ? value[i] : (amount) {0, 0, 0};
-    if (has_offset) {
-      if (k == CENTER || off.kind == 3) {
-        return false;
-      }
-      i++;
-    }
-    if (axis < 0) {
-      axis = set[0] ? 1 : 0; /* `center` is the axis that the other keyword leaves */
-    }
-    if (set[axis]) {
-      return false;
-    }
-    set[axis] = true;
-    const bool far = k == RIGHT || k == BOTTOM;
-    if (k == CENTER) {
-      place[axis] = (amount) {2, 50.0, 0};
-    }
-    else if (!has_offset) {
-      place[axis] = (amount) {2, far ? 100.0 : 0.0, 0};
-    }
-    else if (off.kind == 2) {
-      place[axis] = (amount) {2, far ? 100.0 - off.v : off.v, 0};
-    }
-    else {
-      place[axis] = far ? (amount) {3, 100.0, -off.v} : (amount) {1, off.v, 0};
-    }
-  }
-  if (!set[0] && !set[1]) {
-    return false;
-  }
-  out[0] = place[0];
-  out[1] = place[1];
-  return true;
+  /* three or four values: the cascade writes an offset from a far edge as a `calc()`, so a keyword with an offset does not arrive, and browsers refuse the three-value forms */
+  return false;
 }
 
 /* A position of a gradient's center, in a box of `w` by `h` (a percentage is of the box). */
