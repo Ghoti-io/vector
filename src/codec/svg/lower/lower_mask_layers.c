@@ -842,7 +842,10 @@ static GVEC_Result make_gradient(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * in
   span inner = trim((span) {body.p + open, body.n - open - 1});
   span args[STOPS_MAX + 2];
   size_t count = split(inner, false, args, STOPS_MAX + 2);
-  if (count < 2 || count > STOPS_MAX + 2) {
+  if (count > STOPS_MAX + 1) {
+    return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a gradient of a mask has more stops than the lowering keeps");
+  }
+  if (count < 2) {
     return GVEC_OK;
   }
   memset(g, 0, sizeof *g);
@@ -1833,6 +1836,9 @@ static size_t border_axis(int mode, double slice, double length, double scale, d
   if (mode == 2) {
     double count = gmath_floor(length / tile + 0.5);
     count = count < 1 ? 1 : count;
+    if (count > (double) capacity) {
+      return capacity + 1; /* more cells than the caller keeps: it refuses */
+    }
     const double each = length / count;
     for (size_t k = 0; k < (size_t) count && n < capacity; k++, n++) {
       from[n] = (double) k * each;
@@ -1845,6 +1851,9 @@ static size_t border_axis(int mode, double slice, double length, double scale, d
     if (!(count >= 1)) {
       return 0;
     }
+    if (count > (double) capacity) {
+      return capacity + 1;
+    }
     const double gap = (length - count * tile) / (count + 1);
     for (size_t k = 0; k < (size_t) count && n < capacity; k++, n++) {
       from[n] = gap + (double) k * (tile + gap);
@@ -1854,6 +1863,9 @@ static size_t border_axis(int mode, double slice, double length, double scale, d
   }
   /* repeat: the tiles are centered, and the ones at the ends are cut off */
   const double count = gmath_ceil(length / tile);
+  if (count > (double) capacity) {
+    return capacity + 1;
+  }
   const double start = (length - count * tile) / 2;
   for (size_t k = 0; k < (size_t) count && n < capacity; k++, n++) {
     from[n] = start + (double) k * tile;
@@ -1984,6 +1996,9 @@ static GVEC_Result border_art(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * maske
       }
       double fx[256], tx[256], fy[256], ty[256];
       const size_t nx = border_axis(mode_x, sw, dw, scale_x, fx, tx, 256), ny = border_axis(mode_y, sh, dh, scale_y, fy, ty, 256);
+      if (nx > 256 || ny > 256) {
+        return gvec_lw_refuse(ctx, e, GVEC_LOWER_LIMIT, "a mask border is drawn in more pieces than the lowering draws");
+      }
       for (size_t j = 0; j < ny; j++) {
         for (size_t i = 0; i < nx; i++) {
           border_cell cell;
@@ -2315,8 +2330,8 @@ GVEC_Result gvec_lw_mask_layers(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * mas
       memcpy(id, inner.p + 1, inner.n - 1);
       id[inner.n - 1] = 0;
       const GVEC_Svg_Element * target = gvec_svg_find_by_id(ctx->document, id);
-      if (!target || gvec_svg_element_kind(target) != GVEC_SVG_KIND_MASK) {
-        continue; /* names nothing a mask can be made of: the layer is not there */
+      if (!target || gvec_svg_element_kind(target) != GVEC_SVG_KIND_MASK || gvec_lw_mask_is_open(ctx, target)) {
+        continue; /* names nothing a mask can be made of, or a mask that is being made (a loop): the layer is not there */
       }
       gvec_lw_mask_state inner_state;
       const GSHSCENE_Resource * element_mask = NULL;

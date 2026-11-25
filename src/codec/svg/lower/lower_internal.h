@@ -495,6 +495,9 @@ typedef struct gvec_lw_filter_set {
  * The filter of a `text-shadow` (its computed value: comma-separated shadows, each a color and two or three lengths): each shadow's glyph alpha blurred, offset and colored, merged
  * from the last up to the first, and the text over them (lower_filter.c). *ok is false, and nothing is refused, for a value that is not read.
  */
+/** Whether the picture of this `mask` element is being made (lower_mask.c): a layer that names it is a loop. */
+GVEC_INTERNAL_API bool gvec_lw_mask_is_open(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * mask);
+
 GVEC_INTERNAL_API GVEC_Result gvec_lw_text_shadow_filter(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHGEOM_Map * local, const char * value, bool * ok, const GSHSCENE_Resource ** out);
 
 GVEC_INTERNAL_API GVEC_Result gvec_lw_filter_begin(gvec_lw_ctx * ctx, const GVEC_Svg_Instance * inst, const GSHGEOM_Map * frame,

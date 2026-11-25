@@ -173,6 +173,7 @@
 #define gvec_lw_markers GHOTIIO_VECTOR(gvec_lw_markers)
 #define gvec_lw_mask_begin GHOTIIO_VECTOR(gvec_lw_mask_begin)
 #define gvec_lw_mask_is_element_reference GHOTIIO_VECTOR(gvec_lw_mask_is_element_reference)
+#define gvec_lw_mask_is_open GHOTIIO_VECTOR(gvec_lw_mask_is_open)
 #define gvec_lw_mask_layers GHOTIIO_VECTOR(gvec_lw_mask_layers)
 #define gvec_lw_mask_of_element GHOTIIO_VECTOR(gvec_lw_mask_of_element)
 #define gvec_lw_new_node GHOTIIO_VECTOR(gvec_lw_new_node)

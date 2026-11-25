@@ -154,6 +154,10 @@ static bool in_stack(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * mask) {
   return false;
 }
 
+bool gvec_lw_mask_is_open(const gvec_lw_ctx * ctx, const GVEC_Svg_Element * mask) {
+  return in_stack(ctx, mask);
+}
+
 static GVEC_Result group_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e, const GSHSCENE_Resource * mask, uint64_t salt, gvec_lw_node ** out) {
   gvec_lw_node * g = gvec_lw_new_node(ctx, GVEC_LW_GROUP);
   if (!g) {
@@ -280,9 +284,12 @@ GVEC_Result gvec_lw_mask_of_element(gvec_lw_ctx * ctx, const GVEC_Svg_Instance *
   }
   const GSHSCENE_Resource * nested = NULL;
   if (nested_kind == 2) {
-    /* A list of masks, an image or a gradient for the mask of the mask: the layers of the mask element's own `mask`, placed in the mask element's box. */
+    /* A list of masks, an image or a gradient for the mask of the mask: the layers of the mask element's own `mask`, placed in the mask element's box. The mask is open
+     * while they are made, so that a layer that names it again (or one that names a mask that names it) is a loop and is not there. */
     gvec_lw_mask_state inner;
+    ctx->mask_stack[ctx->mask_depth++] = mask;
     r = gvec_lw_mask_layers(ctx, mask_inst, local, &inner, &nested);
+    ctx->mask_depth--;
     if (r != GVEC_OK || inner != GVEC_LW_MASK_NODE) {
       *state = inner;
       return r;

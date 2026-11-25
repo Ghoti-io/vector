@@ -531,6 +531,14 @@ TEST(LowerMaskLayers, AMaskBorderRepeatsStretchesRoundsOrSpacesItsEdges) {
   EXPECT_EQ(top_edge("space"), (std::vector<Cell>{{30, 20, 50, 25}})) << "one tile of 20 with 5 of room each side";
 }
 
+TEST(LowerMaskLayers, AMaskBorderRepeatedInMoreThanTheLoweringDrawsIsRefused) {
+  Masked m;
+  // the slices at the sides are 49.9% of the image each, so that the middle of an edge is a thousandth of it: it repeats about four hundred times along the 40 of room
+  Lower("mask-border-source: linear-gradient(black, transparent); mask-border-slice: 5 49.9%; mask-border-width: 5px; mask-border-repeat: repeat", m);
+  EXPECT_NE(m.l.Refusal(GVEC_LOWER_LIMIT), nullptr) << "more tiles along an edge than the lowering keeps";
+  EXPECT_EQ(m.l.Items(), (size_t) 0);
+}
+
 TEST(LowerMaskLayers, AMaskBorderOfAnImageTakesAutoWidthsFromItsSlices) {
   Masked m;
   Lower("mask-border-source: url(red-blue-2x1.png); mask-border-slice: 0 1", m);
@@ -765,6 +773,28 @@ TEST(LowerMaskLayers, WhatThisDoesNotReadIsRefusedNotHalfDrawn) {
   LowerSvg(Svg("width=\"100\" height=\"100\"", "<mask id=\"m\" style=\"mask: url(elsewhere.svg#x)\"><rect width=\"9\" height=\"9\" fill=\"white\"/></mask><rect width=\"9\" height=\"9\" mask=\"url(#m)\"/>"),
       unresolved.l);
   EXPECT_NE(unresolved.l.Refusal(GVEC_LOWER_MASK), nullptr);
+}
+
+TEST(LowerMaskLayers, AMaskElementWhoseLayersNameItselfIsALoopAndTheLayerIsNotThere) {
+  // a mask whose own mask names it, and two masks that name each other: each layer that closes the loop is not there; nothing recurses without end
+  Masked self, pair;
+  LowerSvg(Svg("width=\"100\" height=\"100\"", "<mask id=\"m\" style=\"mask: linear-gradient(black, transparent), url(#m)\"><rect width=\"9\" height=\"9\" fill=\"white\"/></mask><rect width=\"9\" height=\"9\" mask=\"url(#m)\"/>"),
+      self.l);
+  EXPECT_EQ(self.l.Refusals(), (size_t) 0);
+  EXPECT_GE(self.l.Items(), (size_t) 1);
+  LowerSvg(Svg("width=\"100\" height=\"100\"", "<mask id=\"a\" style=\"mask: url(#b)\"><rect width=\"9\" height=\"9\" fill=\"white\"/></mask><mask id=\"b\" style=\"mask: linear-gradient(black, transparent), url(#a)\">"
+                                                 "<rect width=\"9\" height=\"9\" fill=\"white\"/></mask><rect width=\"9\" height=\"9\" mask=\"url(#a)\"/>"),
+      pair.l);
+  EXPECT_EQ(pair.l.Refusals(), (size_t) 0);
+  EXPECT_GE(pair.l.Items(), (size_t) 1);
+  // more stops than the lowering keeps is refused by that name, not as a gradient that is not read
+  std::string stops;
+  for (int i = 0; i < 70; i++) {
+    stops += std::string(i ? "," : "") + "rgb(" + std::to_string(i * 3) + " 0 0)";
+  }
+  Masked many;
+  Lower("mask: conic-gradient(" + stops + ")", many);
+  EXPECT_NE(many.l.Refusal(GVEC_LOWER_LIMIT), nullptr);
 }
 
 TEST(LowerMaskLayers, AMaskElementCanBeMaskedByLayersOfItsOwn) {
