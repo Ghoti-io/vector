@@ -34,6 +34,7 @@
 #include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/paint.h>
 
+#include "../animate/anim_internal.h"
 #include "lower_internal.h"
 
 /* A reference chain is followed for this many gradients and no further: a loop repeats elements, so cutting it anywhere uses what
@@ -242,7 +243,7 @@ static gradient_cache * cache_of(gvec_lw_ctx * ctx, const GVEC_Svg_Element * ser
   /* The transform: the one of the first gradient of the chain that gives one, read as the transform of that element. */
   const GVEC_Svg_Element * e = server;
   for (int hops = 0; e && hops < CHAIN_LIMIT && is_gradient(e); hops++, e = gvec_svg_element_href_target_uncut(e)) {
-    if (!gvec_svg_element_find_attribute(e, "gradientTransform")) {
+    if (!gvec_svg_element_find_attribute(e, "gradientTransform") && !gvec_anim_animates(ctx->document, e, "gradientTransform")) {
       continue;
     }
     const GVEC_Svg_Instance * inst;

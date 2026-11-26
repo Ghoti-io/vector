@@ -66,6 +66,9 @@ extern "C" {
 #define GVEC_CEILING_MAX_IMAGE_BYTES ((size_t)1 << 30)
 #define GVEC_CEILING_MAX_IMAGE_PIXELS ((size_t)1 << 28)
 #define GVEC_CEILING_MAX_IMAGE_DECODED_BYTES ((size_t)1 << 31)
+#define GVEC_DEFAULT_MAX_ANIMATION_INTERVALS ((size_t)1000000)
+/* No parser sets it either: a bound on the work of the timing model, far above any document drawn by hand. */
+#define GVEC_CEILING_MAX_ANIMATION_INTERVALS ((size_t)1 << 28)
 
 /**
  * The limits a load uses: each zero field replaced by its default, each field

@@ -24,12 +24,13 @@
  * Load a file and write the style of its elements to standard output: the program the style oracle
  * (tools/doc-oracle/style_oracle.py) reads.
  *
- *     style_dump FILE [WIDTH HEIGHT]
+ *     style_dump FILE [WIDTH HEIGHT] [--time MS]
  *
  * One line for each (element with an id, property): the id, the property, a tag and the value in the tag's form, then the computed
  * value as the engine writes it. The elements are read in the document's own context; the referent of each `use` is read again in the
  * clone context, its elements named `USEID~ID` (and `USEID~INNERUSEID~ID` inside a clone's own uses), the names the oracle's reader of
- * `use` gives the copies it makes.
+ * `use` gives the copies it makes. With `--time`, the document is styled as a lowering at that time styles it (design.md A1 to A12): the
+ * animated document, and the CSS Animations sampled at the time (the animation oracle, tools/doc-oracle/anim_oracle.py, reads that).
  *
  *     k TEXT                 a keyword: the computed value as text
  *     n NUMBER               a number
@@ -48,6 +49,10 @@
 #include <string.h>
 
 #include <ghoti.io/vector/vector.h>
+
+#include "../../src/codec/svg/animate/anim_internal.h"
+#include "../../src/codec/svg/svg_doc.h"
+#include "../../src/codec/svg/style/svg_style.h"
 
 static GVEC_Svg_Style_Context * g_context;
 static const GVEC_Svg_Document * g_document;
@@ -225,8 +230,19 @@ static void walk(const GVEC_Svg_Instance * instance, const char * prefix, unsign
 }
 
 int main(int argc, char ** argv) {
+  double time_ms = -1;
+  for (int i = 1; i + 1 < argc; i++) {
+    if (strcmp(argv[i], "--time") == 0) {
+      time_ms = atof(argv[i + 1]);
+      for (int j = i; j + 2 < argc; j++) {
+        argv[j] = argv[j + 2];
+      }
+      argc -= 2;
+      break;
+    }
+  }
   if (argc < 2) {
-    fprintf(stderr, "usage: style_dump FILE [WIDTH HEIGHT]\n");
+    fprintf(stderr, "usage: style_dump FILE [WIDTH HEIGHT] [--time MS]\n");
     return 2;
   }
   GVEC_Stream * stream = NULL;
@@ -251,13 +267,27 @@ int main(int argc, char ** argv) {
     return 1;
   }
   g_document = gvec_svg_document(doc);
+  GVEC_Svg_Document * animated = NULL;
+  if (time_ms >= 0) {
+    if (gvec_svg_animate(g_document, time_ms, &diagnostics, &animated) != GVEC_OK) {
+      fprintf(stderr, "style_dump: the document could not be animated\n");
+      return 1;
+    }
+    if (animated) {
+      g_document = animated;
+    }
+  }
   if (gvec_svg_style_context_new(g_document, &diagnostics, NULL, &g_context) != GVEC_OK) {
     fprintf(stderr, "style_dump: no context\n");
     return 1;
   }
+  if (time_ms >= 0) {
+    gvec_svg_style_set_time(g_context, time_ms);
+  }
   gvec_svg_style_resolve_references(g_context);
   walk(gvec_svg_instance_root(g_context), "", 0);
   gvec_svg_style_context_free(g_context);
+  gvec_svg_document_free(animated);
   gvec_doc_free(doc);
   gvec_diagnostics_destroy(&diagnostics);
   return 0;

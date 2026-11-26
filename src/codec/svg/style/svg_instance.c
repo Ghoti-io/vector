@@ -351,6 +351,7 @@ GVEC_Result gvec_svg_style_context_new_with_fonts(const GVEC_Svg_Document * docu
   context->viewport_height = document->viewport_height;
   context->color_scheme = document->color_scheme;
   gvec_arena_init(&context->arena, allocator);
+  gvec_arena_init(&context->animation_scratch, allocator);
 
   GVEC_Result r = hooks ? gvec_svg_engine_make_private(allocator, context->viewport_width, context->viewport_height, context->color_scheme,
                               context->limits.max_custom_expansion, hooks, &context->engine)
@@ -392,6 +393,7 @@ void gvec_svg_style_context_free(GVEC_Svg_Style_Context * context) {
       gtext_css_computed_free(context->styles[i]);
     }
   }
+  gvec_svg_style_animation_free(context);
   gtext_css_selector_match_context_free(context->match);
   gtext_css_rule_index_free(context->rules);
   gtext_css_atrule_set_free(context->atrules);
@@ -752,6 +754,7 @@ static GVEC_Result compute_one(GVEC_Svg_Style_Context * context, GVEC_Svg_Instan
     return sheets;
   }
   GTEXT_CSS_Style_Options options = context->style_options;
+  options.animation = gvec_svg_style_animation(context);
   GTEXT_CSS_Computed_Style * style = NULL;
   GTEXT_CSS_Compute_Result result;
   memset(&result, 0, sizeof result);

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <!-- times: 0 500 1500 -->
+  <!-- Where a SMIL value goes in the cascade (design.md A4): above the style attribute, below important declarations and CSS Animations. -->
+  <style>
+    #important { fill: red !important }
+    #undercss { animation: blue 10s }
+    @keyframes blue { from { fill: blue } to { fill: blue } }
+    .green { fill: green }
+  </style>
+  <rect id="overstyle" width="10" height="10" style="fill: red"><set attributeName="fill" to="green"/></rect>
+  <rect id="important" width="10" height="10"><set attributeName="fill" to="green"/></rect>
+  <rect id="undercss" width="10" height="10"><set attributeName="fill" to="green"/></rect>
+  <rect id="xml" width="10" height="10" style="fill: red"><set attributeName="fill" attributeType="XML" to="green"/></rect>
+  <rect id="class" width="10" height="10" class="x"><set attributeName="class" to="green" begin="1s"/></rect>
+  <rect id="blend" width="10" height="10"><set attributeName="mix-blend-mode" to="multiply"/></rect>
+  <defs><rect id="referent" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" fill="freeze"/></rect></defs>
+  <use id="u" href="#referent"/>
+</svg>

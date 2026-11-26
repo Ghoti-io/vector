@@ -1,0 +1,21 @@
+# The differences between this library's computed style at a time and two browsers paused at that time
+# (tools/doc-oracle/anim_oracle.py), each classified, in the format and with the classes of style_divergences.txt.
+#
+# One line each, tab-separated: key, class, why, count.
+#
+#   key     <property>:<the difference with its numbers replaced by #>
+#   count   how many (fixture, time, element, property, browser) tuples have it, over all the fixtures of tests/data/svg-anim
+#
+# The keys that do not involve animation are the static style's own, with the reasons style_divergences.txt gives them; they occur at
+# every time a fixture is read at.
+alignment-baseline:keyword: ours 'baseline' browser 'auto'	reference-old	Chromium returns SVG 1.1's initial value `auto`; the CR's property index and CSS Inline Layout 3 give `baseline`	497
+display:keyword: ours 'none' browser 'inline'	reference-old	Chromium keeps `display` of defs, markers, patterns, gradients and the other never-rendered elements out of its style sheet; the CR's (6.8) sets `display: none !important` and Firefox does the same	8
+fill:paint: ours ('srgb', #, #, #, #) browser ('srgb', #, #, #, #)	unspecified	a channel interpolated to a half (255 times 0.7 is 178.5) is rounded up by this library and Firefox and down by Chromium; CSS Color 4 rounds the serialized channel and does not fix the arithmetic before it	4
+font-family:keyword: ours 'serif' browser '"times new roman"'	unspecified	the initial value of `font-family` depends on the user agent (CSS Fonts 4); this library's is `serif`, Chromium's is its default font	497
+height:length: ours auto browser #px	unspecified	the resolved value of `height` is the used height of the box; this library reads the computed value, `auto`, and resolves a percentage and not `auto`	62
+inline-size:keyword: ours 'auto' browser '#px'	unspecified	the resolved value of `inline-size` is the used width of the box; this library reads the computed value	62
+mask-repeat:keyword: ours 'repeat repeat' browser 'repeat'	unspecified	the browsers write the shortest form of `mask-repeat` (CSS Values 4: `repeat` for `repeat repeat`); this library writes the two keywords	994
+opacity:number: ours # browser #	reference-wrong	Chromium starts the simple duration again at the end of its only repeat when `min` lengthens the active duration (1 s of `dur`, `min` 2 s, read at 1 s); SMIL 3.0 holds the end value there, and Firefox does	1
+transform-origin:keyword: ours '#% #%' browser '#px #px'	unspecified	the resolved value of `transform-origin` is the used pair in px against the box; this library reads the computed percentages	62
+transform:transform: ours [#, #, #, #, #, #] browser [#, #, #, #, #, #]	reference-wrong	Chromium keeps `animateTransform` at the level of the attribute, under a style rule's `transform`; SVG 2 styling 6.6 makes animating a presentation attribute animating the property, and Firefox puts it above	3
+width:length: ours auto browser #px	unspecified	the resolved value of `width` is the used width of the box; this library reads the computed value, `auto`	62

@@ -318,7 +318,8 @@ def write_all(directory, files, check):
 
 def lower_corpus():
     """The lowering fuzzer's seeds: an options byte (the low nibble names the structural limit of the scene to shrink, the high
-    nibble how far), a flags byte (bit 0 a foreground, bits 1 and 2 the viewport), then the document. Every fixture of the
+    nibble how far), a flags byte (bit 0 a foreground, bits 1 and 2 the viewport, bit 3 a lowering at a time, the high nibble that time in
+    quarters of a second), then the document. Every fixture of the
     lowering with no limit shrunk, the structural ones with each limit shrunk, and documents that press on each limit."""
     ns = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
     c = {}
@@ -383,6 +384,30 @@ def lower_corpus():
     c["text-wrap"] = seed('<svg %s width="200" height="100" font-family="sans-serif" font-size="20"><style>text { inline-size: 90px }</style><text y="20" style="white-space: pre-line; overflow-wrap: break-word">AA BB CC\nDD EEEEEEEEEE</text></svg>' % ns)
     c["text-flow"] = seed('<svg %s width="200" height="100" font-family="sans-serif" font-size="12"><defs><circle id="c" cx="50" cy="50" r="45"/><rect id="s" x="40" width="20" height="100"/></defs><text style="shape-inside: url(#c); shape-subtract: url(#s); shape-padding: 3px; shape-margin: 2px">A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</text></svg>' % ns)
     c["text-flow-basic"] = seed('<svg %s width="200" height="100" font-family="sans-serif" font-size="12"><text style="shape-inside: polygon(0 0, 100px 0, 50px 90px); writing-mode: vertical-rl">AAA BBB CCC DDD EEE FFF</text></svg>' % ns)
+    # Animation at a time (design A1 to A12): SMIL timing and values, CSS Animations, motion, the attributes of the document, discard and
+    # values that never resolve, and a ring of short intervals that reaches max_animation_intervals (the fuzzer lowers its 20000).
+    def at(quarters):
+        return 8 | (quarters << 4)
+    c["anim-smil"] = seed('<svg %s width="64" height="64"><rect width="10" height="10" fill="red"><set attributeName="fill" to="green" begin="0.2s"/>'
+                          '<animate attributeName="x" values="0;10;20" keyTimes="0;0.3;1" calcMode="spline" keySplines="0 0 1 1;0.5 0 0.5 1" dur="2s" repeatCount="indefinite" additive="sum" accumulate="sum"/>'
+                          '<animate attributeName="opacity" to="0.2" dur="1s" begin="a.end+0.1s" fill="freeze"/></rect>'
+                          '<rect id="b" width="5" height="5"><animate id="a" attributeName="width" from="5" by="10" dur="0.5s" begin="0;a.end"/></rect></svg>' % ns, flags=at(2))
+    c["anim-css"] = seed('<svg %s width="64" height="64"><style>@keyframes k{from{fill:blue;transform:translate(0px,0px)}50%%{opacity:0.3}to{fill:green;transform:rotate(30deg)}} '
+                         'rect{animation:k 1s ease-in-out -0.25s 3 alternate both}circle{animation:k 2s steps(3) paused}</style><rect width="10" height="10"/><circle r="5" cx="20" cy="20"/></svg>' % ns, flags=at(4))
+    c["anim-motion"] = seed('<svg %s width="64" height="64"><path id="p" d="M0 0 C10 0 20 20 30 30 A5 5 0 0 1 40 40"/><rect width="4" height="4" transform="scale(2)">'
+                            '<animateMotion dur="3s" rotate="auto-reverse" keyPoints="0;0.5;1" keyTimes="0;0.2;1" calcMode="linear"><mpath href="#p"/></animateMotion>'
+                            '<animateMotion values="0,0;5,5;0,10" dur="1s" additive="sum"/><animateTransform attributeName="transform" type="rotate" from="0 2 2" to="360 2 2" dur="1s" additive="sum" repeatCount="2"/></rect></svg>' % ns, flags=at(6))
+    c["anim-attributes"] = seed('<svg %s width="64" height="64"><linearGradient id="g" x2="0.5"><animate attributeName="x2" to="100%%" dur="1s"/><animate attributeName="spreadMethod" values="pad;reflect;repeat" dur="1s"/>'
+                                '<stop offset="0" stop-color="red"><animate attributeName="offset" from="0" to="1" dur="2s"/></stop><stop offset="1" stop-color="blue"/></linearGradient>'
+                                '<filter id="f"><feGaussianBlur stdDeviation="1 2"><animate attributeName="stdDeviation" to="4 0" dur="1s"/></feGaussianBlur></filter>'
+                                '<polygon points="0,0 10,0 10,10" fill="url(#g)" filter="url(#f)"><animate attributeName="points" to="0,0 20,0 20,20" dur="1s"/><set attributeName="class" to="x"/></polygon>'
+                                '<path d="M0 0 L5 5 A3 3 0 0 0 9 9"><animate attributeName="d" to="M1 1 L6 6 A4 4 0 1 1 10 10" dur="1s"/></path>'
+                                '<svg viewBox="0 0 5 5" width="20" height="20"><animate attributeName="viewBox" to="0 0 10 10" dur="1s"/><rect width="5" height="5"/></svg></svg>' % ns, flags=at(8))
+    c["anim-discard"] = seed('<svg %s width="64" height="64"><g><rect width="10" height="10"><discard begin="0.5s"/></rect><use href="#u"><discard begin="0.2s"/></use>'
+                             '<rect id="u" width="3" height="3"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="indefinite;click;wallclock(2000-01-01T00:00:00Z);u.repeat(1)"/></rect>'
+                             '<discard href="#nothing"/></g></svg>' % ns, flags=at(3))
+    c["anim-ring"] = seed('<svg %s width="64" height="64"><rect width="10" height="10"><set id="a" attributeName="fill" to="green" dur="0.001ms" begin="0;b.end"/>'
+                          '<set id="b" attributeName="fill" to="red" dur="0.001ms" begin="a.end"/></rect></svg>' % ns, flags=at(15))
     c["not-svg"] = seed(b"this is not xml")
     c["short"] = bytes([0x0f])
     return c

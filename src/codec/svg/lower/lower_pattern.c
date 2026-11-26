@@ -42,6 +42,7 @@
 #include <ghoti.io/shape-geometry/path.h>
 #include <ghoti.io/shape-scene/pattern.h>
 
+#include "../animate/anim_internal.h"
 #include "lower_internal.h"
 
 /* A reference chain is followed for this many patterns and no further, as a gradient's is. */
@@ -162,7 +163,7 @@ GVEC_Result gvec_lw_pattern_paint_in(gvec_lw_ctx * ctx, const GVEC_Svg_Instance 
   }
   const GVEC_Svg_Element * e = server;
   for (int hops = 0; e && hops < CHAIN_LIMIT && is_pattern(e); hops++, e = gvec_svg_element_href_target_uncut(e)) {
-    if (!gvec_svg_element_find_attribute(e, "patternTransform")) {
+    if (!gvec_svg_element_find_attribute(e, "patternTransform") && !gvec_anim_animates(ctx->document, e, "patternTransform")) {
       continue;
     }
     const GVEC_Svg_Instance * at;

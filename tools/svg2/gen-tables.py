@@ -486,7 +486,7 @@ def render(inputs):
     meaning = {
         "RAW_ARIA": "kept as written (accessibility metadata; does not affect drawing)",
         "EVENT": "kept as written, never evaluated",
-        "RAW_ANIM": "kept as written; animation is not applied",
+        "RAW_ANIM": "kept as written in the typed document; read by a lowering at a time (design.md A1 to A12), which applies the animation",
         "RAW_FILTER": "kept as written; read when filters are (a later phase)",
         "STRING": "a string, kept as written",
         "TRANSFORM": "a transform list, typed by the cascade",

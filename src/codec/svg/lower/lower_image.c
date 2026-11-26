@@ -506,7 +506,7 @@ static bool root_gives_size(const GVEC_Svg_Element * root, const char * name) {
  * (the document then has an aspect ratio and no size: its image is as large as the viewBox, and `image` scales it). */
 static GVEC_Result svg_intrinsic_size(gvec_lw_ctx * ctx, GVEC_Doc * doc, const char * uri, double * width, double * height, bool * usable) {
   gvec_lw_ctx probe;
-  GVEC_Result r = gvec_lw_begin_in(&probe, doc, ctx->options, ctx->store, NULL, ctx, uri);
+  GVEC_Result r = gvec_lw_begin_in(&probe, doc, ctx->options, ctx->store, NULL, ctx, uri, true);
   *usable = false;
   if (r != GVEC_OK) {
     return r;

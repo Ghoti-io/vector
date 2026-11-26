@@ -97,7 +97,7 @@ static GVEC_Result make_context(gvec_lw_ctx * ctx, gvec_lw_ctx * holder, const G
     holder->nested = fresh;
     holder->nested_capacity = capacity;
   }
-  GVEC_Result r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, url);
+  GVEC_Result r = gvec_lw_begin_in(n, doc, ctx->options, ctx->store, ctx->diagnostics, ctx, url, false);
   if (r != GVEC_OK) {
     gvec_free(ctx->allocator, n);
     return r;

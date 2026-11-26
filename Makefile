@@ -261,7 +261,7 @@ TESTFLAGS := `PKG_CONFIG_PATH=$(PKG_CONFIG_LOOKUP_PATH) pkg-config --libs --cfla
 
 # coverage clears this: --coverage links the gcov runtime, whose mangle_path
 # check-symbols is right to reject in a shipping library.
-TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-lower-gate check-tables check-doc-oracle check-style-oracle
+TEST_GATES ?= check-symbols check-aliasing check-stamps check-fp-contract check-edges check-libm check-no-x87 check-front-end check-gates check-test-data fuzz-replay check-planted run-examples check-conformance check-conformance-planted check-lower-gate check-tables check-doc-oracle check-style-oracle check-anim-oracle
 
 VALGRIND_FLAGS := --leak-check=full --show-leak-kinds=definite,indirect,possible --track-origins=yes --error-exitcode=1 --suppressions=tests/valgrind.supp
 
@@ -475,6 +475,11 @@ STYLE_DUMP := $(APP_DIR)/tools/style_dump$(EXE_EXTENSION)
 $(STYLE_DUMP): tools/doc-oracle/style_dump.c $(APP_DIR)/$(STATIC_TARGET) $(FLAGS_STAMP) | $(APP_DIR)/$(TARGET) $(LIBVER_GEN)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(INCLUDE) -o $@ $< $(LDFLAGS) $(SELF_LIBRARY) $(DEP_LIBS)
+
+.PHONY: check-anim-oracle
+check-anim-oracle: $(STYLE_DUMP) ## Fail unless the computed style at a time agrees with two browsers paused there (or is classified), and the check is seen to fail
+	@LD_LIBRARY_PATH="$(TEST_LD_PATH)" python3 tools/doc-oracle/anim_oracle.py selftest --dump $(STYLE_DUMP) tests/data/svg-anim/smil-timing.svg && \
+		LD_LIBRARY_PATH="$(TEST_LD_PATH)" python3 tools/doc-oracle/anim_oracle.py check --dump $(STYLE_DUMP) tests/data/svg-anim/*.svg
 
 .PHONY: check-style-oracle
 check-style-oracle: $(STYLE_DUMP) ## Fail unless the computed style agrees with two browsers (or is classified), and the comparison is seen to fail on planted differences

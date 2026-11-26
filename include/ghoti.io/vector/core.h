@@ -112,8 +112,9 @@ GVEC_API const char * gvec_result_string(GVEC_Result result);
  * | max_image_bytes | default 32 MiB, ceiling 1 GiB: the encoded bytes of one image (the decoded payload of a `data:` URI, or a file); an `image` or `feImage` with more is refused when it is lowered |
  * | max_image_pixels | default 33,554,432 (2^25), ceiling 2^28 (the most the scene's image carries): pixels in one decoded image, tested before the pixels are allocated; one with more is refused when it is lowered |
  * | max_image_decoded_bytes | default 512 MiB, ceiling 2 GiB: the bytes of the decoded samples of every image one lowering decodes, an image counted once however often it is drawn |
+ * | max_animation_intervals | default 1,000,000, ceiling 2^28: the interval boundaries (begins and ends) the timing model of one lowering at a time passes, every animation element counted; a document past it is drawn without its animation |
  *
- * The default of every field but max_diagnostics and the three image limits is also its ceiling: it is
+ * The default of every field but max_diagnostics, the three image limits and max_animation_intervals is also its ceiling: it is
  * the XML parser's own limit for the same quantity.
  */
 typedef struct GVEC_Limits {
@@ -138,6 +139,7 @@ typedef struct GVEC_Limits {
   size_t max_image_bytes;           ///< Encoded bytes of one image, read from a `data:` URI or a file; an `image` or `feImage` with more is refused (`LIMIT`).
   size_t max_image_pixels;          ///< Pixels of one decoded image; checked by the decoder before it allocates; an image with more is refused (`LIMIT`).
   size_t max_image_decoded_bytes;   ///< Bytes of decoded samples over every image one lowering decodes; an image that would pass it is refused (`LIMIT`).
+  size_t max_animation_intervals;   ///< Interval boundaries the timing model of one lowering at a time passes (design A3); past it the animation is not applied (`LIMIT`).
   uint8_t _reserved[8];             ///< Zero.
 } GVEC_Limits;
 
@@ -164,6 +166,7 @@ typedef enum GVEC_Limit_Field {
   GVEC_LIMIT_IMAGE_BYTES,
   GVEC_LIMIT_IMAGE_PIXELS,
   GVEC_LIMIT_IMAGE_DECODED_BYTES,
+  GVEC_LIMIT_ANIMATION_INTERVALS,
   GVEC_LIMIT_FIELD_COUNT ///< The number of fields; not a field.
 } GVEC_Limit_Field;
 
@@ -202,7 +205,7 @@ typedef enum GVEC_Diag_Code {
   GVEC_DIAG_UNKNOWN_ELEMENT,   ///< An element in the SVG namespace that SVG 2 does not define; kept, not rendered (once per name).
   GVEC_DIAG_UNKNOWN_ATTRIBUTE, ///< An attribute SVG 2 does not define for its element; kept, ignored (once per name).
   GVEC_DIAG_SCRIPT_IGNORED,    ///< Script (an event handler or a `script` element) is kept and never evaluated (once).
-  GVEC_DIAG_ANIMATION_NOT_APPLIED, ///< The document contains animation, which is kept and not applied (once).
+  GVEC_DIAG_ANIMATION_NOT_APPLIED, ///< The document contains animation (once), which only a lowering with GVEC_LOWER_ANIMATED applies.
   GVEC_DIAG_DUPLICATE_ID,      ///< An `id` already used earlier in the document; the first one wins.
   GVEC_DIAG_REFERENCE_MISSING, ///< An `href` names an element the document does not have.
   GVEC_DIAG_REFERENCE_CYCLE,   ///< An element is on a reference cycle; its referring edge was cut.
@@ -211,6 +214,7 @@ typedef enum GVEC_Diag_Code {
   GVEC_DIAG_UNSUPPORTED_COLOR_SPACE, ///< A colour the shape waist cannot carry (a space `text` parses and the waist has no gamut for, or a colour that needs conversion); the element using it is refused.
   GVEC_DIAG_RENDERING_DISABLED, ///< An element's geometry disables its rendering (a viewport or viewBox of zero size, SVG 2 8.2): nothing is drawn for it, and that is the document's meaning, not a refusal.
   GVEC_DIAG_IMAGE_UNUSABLE, ///< An `image` or `feImage` names data that cannot be used (no data, a file that cannot be read, bytes no decoder reads, a reference that is not an image): nothing is drawn for it, as a browser draws nothing for a broken image, and that is not a refusal. `detail` is a GVEC_Image_Problem (lower.h).
+  GVEC_DIAG_ANIMATION_INVALID, ///< An animation element is in error and is ignored (a lowering at a time): a list or value it needs is not in its grammar, or it targets nothing it can animate. The message says which.
   GVEC_DIAG_CODE_COUNT      ///< One past the last code; not a code.
 } GVEC_Diag_Code;
 

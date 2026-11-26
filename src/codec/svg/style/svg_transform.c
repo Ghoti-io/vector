@@ -31,6 +31,7 @@
 
 #include <ghoti.io/math/elementary.h>
 
+#include "../animate/anim_internal.h"
 #include "svg_style.h"
 #include "svg_used.h"
 
@@ -297,6 +298,16 @@ GVEC_Result gvec_svg_transform_resolve(const GVEC_Svg_Transform * transform, dou
   if (gshgeom_map_translate(2, ox, oy, 0, &result) != GSHGEOM_OK) {
     return GVEC_ERR_UNSUPPORTED;
   }
+  if (transform->has_motion) {
+    /* The motion is outside the whole transform, origin and all (design A7). */
+    const double * m = transform->motion;
+    const double rows[4] = {m[0], m[2], m[1], m[3]};
+    const double t[2] = {m[4], m[5]};
+    GSHGEOM_Map motion;
+    if (gshgeom_map_from_matrix(2, rows, t, &motion) != GSHGEOM_OK || gshgeom_map_compose(&motion, &result, &result) != GSHGEOM_OK) {
+      return GVEC_ERR_UNSUPPORTED;
+    }
+  }
   for (size_t i = 0; i < transform->op_count; i++) {
     GVEC_Result r = map_of_op(&transform->ops[i], box_width, box_height, &step);
     if (r != GVEC_OK || gshgeom_map_compose(&result, &step, &result) != GSHGEOM_OK) {
@@ -533,13 +544,14 @@ GVEC_Result gvec_svg_used_transform(GVEC_Svg_Style_Context * context, const GVEC
   }
   out->ops = ops;
   out->op_count = count;
+  out->has_motion = gvec_anim_motion_of(context->document, e, out->motion);
   out->origin[0] = ox[0];
   out->origin[1] = ox[1];
   out->origin_fraction[0] = frac[0];
   out->origin_fraction[1] = frac[1];
   /* With any box but the viewport the origin is an offset from the box's own corner, so a transform of any list depends on the box, a
    * percentage or not (CSS Transforms 1, transform-origin: an origin of `0 0` in a `fill-box` is the corner of the box, not of the user space). */
-  if ((percent || count > 0) && out->box != GVEC_SVG_BOX_VIEW) {
+  if ((percent || count > 0 || out->has_motion) && out->box != GVEC_SVG_BOX_VIEW) {
     out->depends_on_box = true;
     gshgeom_map_identity(2, &out->map);
     return GVEC_OK;

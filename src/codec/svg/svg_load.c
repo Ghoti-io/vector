@@ -216,8 +216,18 @@ GVEC_Result gvec_svg_load(GVEC_Doc * doc, const unsigned char * data, size_t siz
   build.viewport_width = load_options ? load_options->viewport_width : 0;
   build.viewport_height = load_options ? load_options->viewport_height : 0;
   build.color_scheme = load_options ? load_options->color_scheme : GVEC_COLOR_SCHEME_LIGHT;
+  build.rebuild = NULL;
   GVEC_Result built = gvec_svg_build(root, elements, &build, doc->allocator, diagnostics, &svg->document);
-  gtext_markup_document_free(tree);
+  if (built == GVEC_OK && svg->document->has_animation) {
+    /* A lowering at a time builds the document again from the markup with the animated values in it (design A4). */
+    built = gvec_svg_keep_markup(svg->document, tree, elements, build.languages, build.language_count);
+    if (built == GVEC_OK) {
+      tree = NULL;
+    }
+  }
+  if (tree) {
+    gtext_markup_document_free(tree);
+  }
   if (built == GVEC_OK) {
     built = gvec_svg_resolve(svg->document, limits, diagnostics);
   }

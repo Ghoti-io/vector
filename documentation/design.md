@@ -170,7 +170,8 @@ is false for any value, because no extension is supported; an empty value of eit
 is not SVG 2 and is ignored. An element whose condition is false is treated as `display: none`, and a `switch` records
 the first renderable child whose conditions are true.
 
-**T12 Animation and script** are kept and not applied or evaluated, with one notice per document.
+**T12 Animation and script** are kept. Script is never evaluated. Animation is not applied in a static lowering, the default, with one notice per
+document; a lowering at a time applies it (A1 to A12). The typed document is the one the file says; the animated one is made from it for each time.
 
 **T13 Keys.** An element's 64-bit key is the hash (Murmur3, little-endian bytes) of its parent's key and either its
 `id` or its kind and its place among the siblings of that kind. Two elements that come out equal are told apart
@@ -1036,6 +1037,112 @@ takes the box of the referent's instance, moved by the `use`'s `x` and `y` and t
 nothing or of an element `display` removes adds nothing. The box of a `use` of a viewport (a `symbol` or a nested `svg`) is still not known,
 and a clip or filter in the box units on it is refused as before.
 
+## Animation (A1 to A12)
+
+The normative texts are SVG 2's processing modes (conform.html, "Processing modes") and styling 6.6 ("Animation of presentation attributes
+is equivalent to animating the corresponding property"), SVG 1.1 Second Edition's chapter 19 for the animation elements SVG 2 hands on
+(`animate`, `set`, `animateTransform`, `animateMotion`, `mpath`), SVG Tiny 1.2 for `discard`, and SMIL 3.0's Timing and Animation modules,
+which those chapters defer to for the timing model and the animation function. They are fetched and checked by tools/svg-animations/fetch.sh.
+SVG 2 links its animation elements to the SVG Animations editor's draft, a page that changes; the chapters above are the fixed texts that
+draft was made from, and both browsers agree with them on every case the tests probe.
+
+**A1 Modes.** A lowering is static unless `GVEC_Lower_Options.flags` has GVEC_LOWER_ANIMATED: the secure static and static modes of SVG 2,
+in which "animation elements or CSS Transitions or Animations must not be applied or run". With the flag, the document is drawn as it is at
+`animation_time_ms`, milliseconds of document time from 0 (the document's begin): SVG 2's animated modes, without events or script. A time
+that is negative or not finite is GVEC_ERR_INVALID. The same time is the time of an SVG document an `image` draws (secure animated mode);
+a `use` of an element of another document and a paint server of another document are drawn static, as SVG 2 requires of them.
+
+**A2 What moves.** SMIL animation elements and CSS Animations (text's sampler) are applied. Nothing in a snapshot makes a style change event,
+so no CSS Transition runs; no event is dispatched and no script runs, so an event value, a repeat value (`id.repeat(n)` is the element's
+repeat event, which a seek does not fire: both browsers ignore it when paused and seeked, probed), an `accessKey` value and `indefinite`
+never resolve; the wall clock is not known, so a `wallclock()` value never resolves either. Both
+browsers draw those documents the same way when paused at a time (probed).
+
+**A3 Timing.** Every animation element is a timed element of the root time container, which begins at 0. Its intervals are those of SMIL 3.0
+Timing ("Computing the active duration", "Getting the first interval", "Getting the next interval", "Restart"): `begin` and `end` are lists
+of offsets and syncbase values (`id.begin`, `id.end`, with an offset; a `.` in the id escaped as `\.`), sorted into instance times; a
+value that is not in the grammar, or names no element, is dropped from its list, and a list with nothing left never resolves (probed); `dur`,
+`repeatCount`, `repeatDur`, `min`, `max` and `restart` make the active duration and the next interval. The model runs forward from 0 to the
+time, interval boundary by boundary, and a new interval of one element gives its dependents their instance times as SMIL's "propagating
+changes" does, so the usual loop (`begin="0;b.end"` and `begin="a.end"`) works. A boundary is an event, and their number per lowering is
+bounded by `GVEC_Lower_Options.max_animation_intervals`: a document past it, like a ring of zero-length intervals, is refused with GVEC_LOWER_LIMIT and
+drawn static. Within an interval the active time gives the iteration and the simple time; an indefinite simple duration samples the first
+value; after the active end, `fill="freeze"` holds the value at the end of the active duration (the end of the last simple duration when the
+active duration is a whole number of them) until the next interval, and a `min` that lengthens the active duration holds that value too.
+
+**A4 What is animated.** The target is the element `href` (or `xlink:href`) names in this document, or else the parent. `attributeName`
+names, by the presentation attribute table, either a property or an attribute. A presentation attribute of the target (`fill`, `x`, `d`,
+`transform`, and `gradientTransform` and `patternTransform`, which are the `transform` of their element) animates the property (styling
+6.6); `attributeType` does not change that. Its value goes into the cascade where both browsers put it: above every normal declaration, the
+`style` attribute included, and below the important ones and below CSS Animations (probed). That is the animation origin, as the effects of
+text's sampler of the class of a replaced transition. Chromium is the one exception both ways: it keeps `animateTransform` at the level of
+the attribute, under a style rule's `transform`, where Firefox and styling 6.6 put it above; this library follows styling 6.6. Any other
+attribute that SVG 2 defines on the target is animated as the attribute unless its definition says "Animatable: no" (`id`, `lang`,
+`xml:space`, `style`, `tabindex`, `role`, `systemLanguage`, `requiredExtensions`, `zoomAndPan`, an `a`'s `download`, `ping`, `rel`,
+`hreflang`, `type` and `referrerPolicy`, `xlink:title`, the event attributes) or it belongs to an animation, `style` or `script` element: the document is made
+again from the markup with the animated value in place of the written one (an attribute absent from the markup is added), so a changed
+`class`, `href`, `points`, `viewBox`, gradient or filter attribute is read, cascaded, referenced and resolved exactly as if it had been
+written. A name that is neither, a CSS property with no presentation attribute (`mix-blend-mode`: both browsers ignore it) and a
+non-animatable attribute are ignored, with a warning on the animation element.
+
+**A5 Values.** The values are `values`, else `from`/`to`/`by` (SMIL 3.0 Animation, "Simple animation functions"); `keyTimes`,
+`keySplines` and `calcMode` (`discrete`, `linear`, `paced`, `spline`; `paced` is the default of `animateMotion`) place them in the simple
+duration; a list that is invalid (a count that does not match, `keyTimes` that do not begin at 0 or, but for `discrete`, end at 1) makes
+the animation an error that is ignored, as both browsers do (SVG 1.1 would stop every animation of the document; neither does). A value
+that is not a value of the attribute and a `keySplines` that is not four numbers from 0 to 1 per interval are errors of the same kind. A
+`dur`, `repeatCount`, `repeatDur`, `min` or `max` that is invalid (a `dur` of 0 or less included) is ignored alone: an animation with no valid
+`dur` has an indefinite simple duration and shows its first value (probed). `additive="sum"` adds to the value beneath it and `accumulate="sum"` adds the last
+value once for each finished iteration; a to-animation takes its start from the value beneath it and is never additive or cumulative; a
+by-animation is additive. For a property the values are written as the presentation attribute is (text's own conversion of an attribute's
+value into CSS) and handed to text's sampler as the keyframes of one effect, so a property is interpolated, added and accumulated by the
+CSS rules for its type, in the element's own context (`em`, `currentColor`, `inherit`); calcMode is carried in the keyframes' offsets and the
+progress, so no easing is needed. `paced` uses the distance of SMIL for the type: the difference of numbers and lengths, the Euclidean
+distance of RGB colors, the angle of a rotation and the vector of a translation or a scale; a type with no distance is linear. Path data
+(`d`, which text interpolates as a string, that is discretely) is interpolated here, by SVG 2's rule (paths.html: the same commands in the same
+order, each parameter as a real number, a flag as a fraction that is true when it is not zero), as are an attribute's typed values: a number,
+a length, a list of numbers or lengths, `points`, `viewBox` (each number). Lengths in different units are put in user units first (absolute
+units by CSS's ratios; a percentage of the document's viewport along the attribute's axis, its width, height or normalized diagonal; an `em`
+as 16 px, since the value is worked out before the cascade), unless the attribute is in object bounding box units, where a number is a
+fraction and a percentage a hundredth and the result is written as a percentage (Chromium agrees; Firefox resolves the percentage against
+the viewport there too). Any other type, and two values that cannot be interpolated, are
+discrete: the first value until half way.
+
+**A6 `animateTransform`** writes its `type` and values as the transform function they stand for (`rotate(a cx cy)` is the three-function
+form text's conversion makes), so its interpolation, addition (the function after the transform beneath it) and accumulation (the
+arguments) are the CSS ones. Its distance for `paced` is the one in A5.
+
+**A7 `animateMotion`** moves its target along `path` (or its `mpath`, which wins, or `values`, `from`, `to`, `by` as points), with
+`keyPoints` and `rotate` (`auto`, `auto-reverse`, an angle). The motion is a transform applied outside the target's own transform: the
+transform an element is drawn with is its parent's, then the motion, then its `transform` (probed: a `scale(2)` element on the path at
+(100, 50) facing down has the matrix 0 2 -2 0 100 50 in both browsers). The motion is outside the `transform-origin` too (Chromium; Firefox
+turns the origin about the motion as well, which no text asks for). Several motions compose by the sandwich, a replace motion
+discarding those beneath it. With a path and a calcMode other than `paced`, the values the keys index are the path's points, a move adding
+none (SMIL 3.0 Animation, "path"): each segment takes an equal share of the time unless `keyTimes` say otherwise. Firefox does that;
+Chromium moves by distance instead, as for `paced`, and also ignores a `rotate` that is an angle, which Firefox applies.
+
+**A8 `discard`** removes its target, and the target's subtree, from the document at its begin time. Neither browser removes it when paused
+and seeked (probed); SVG 2 lists the element and Tiny 1.2 defines it, so this library follows the text. The root is never discarded.
+
+**A9 CSS Animations** are text's sampler over the document's `@keyframes`. Every animation was made by the first style, at time 0, so the
+current time of each is the document time (0 when `animation-play-state` is `paused`); an animation on a scroll or view timeline has no
+scrolling to follow and is not sampled.
+
+**A10 The sandwich.** Animations of one target attribute are applied in SMIL's order: the later begin of the current interval above, then
+a syncbase's dependent above the syncbase, then the later in document order. An animation that is neither active nor frozen applies
+nothing. The order of the animation origin between SMIL and CSS is A4's.
+
+**A11 Instances.** A `use` draws the animations of what it refers to (its instance is the element). An animation element inside a `use`'s
+subtree targets the element of the document it is in; the clone of it is not a second animation.
+
+**Checks.** The values of A3 to A9 were probed in both browsers, paused and seeked (`pauseAnimations()`, `setCurrentTime()`, every
+CSS animation that plays paused at the time). What is a computed style is a gate, `check-anim-oracle`; motion, the attributes that are not
+presentation attributes and `discard` are unit tests with the values both browsers gave, and each place they disagree says which is
+followed and why.
+
+**A12 Not done.** `begin`/`end` values that need events, an `accessKey`, the wall clock or a call (`indefinite`), CSS Transitions and
+`timelineBegin` (Tiny 1.2 only) are A2's. A to-animation or an additive animation of `d` takes the `d` attribute as the value beneath it, not
+a `d` a style sheet declares (text interpolates `path()` discretely, so this library interpolates `d` and needs the value beneath it as a path).
+
 ## Gates
 
 | Gate | What it refuses |
@@ -1053,6 +1160,7 @@ and a clip or filter in the box units on it is refused as before.
 | `check-tables` | committed element and attribute tables that are not what the generator writes from the pinned pages; a generator that does not fail on its plants |
 | `check-doc-oracle` | a dump that disagrees with an independent reader of the same documents (values, references, cycles, expansion counts, conditions), or a comparison that does not fail on a planted difference |
 | `check-style-oracle` | a computed style that disagrees with Chromium and Firefox in a way `tools/doc-oracle/style_divergences.txt` does not classify (with the sentence that decides it), a classified difference that no longer occurs, or a comparison that does not fail on a planted difference; the browsers are a pinned image (`make oracle-images`), and without it the check is skipped, counted, and fails under `GHOTI_ORACLE_REQUIRED=1` |
+| `check-anim-oracle` | a computed style at a time (`tests/data/svg-anim`, each fixture read at the times it names) that disagrees with Chromium and Firefox paused at that time in a way `tools/doc-oracle/anim_divergences.txt` does not classify, or a check that does not see time (our side read 100 ms away must differ); the same pinned image as `check-style-oracle`, with `tools/doc-oracle/anim_driver.mjs` (the style driver with its reading function paused and seeked) mounted beside it |
 | `check-conformance` | a scorer, runner or oracle wrapper that gives a wrong outcome on a synthetic corpus (see `conformance.md`) |
 | `check-conformance-planted` | a defect planted in the runner, the scorer or the oracle wrapper that the check above does not catch |
 

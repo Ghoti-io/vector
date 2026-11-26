@@ -161,7 +161,32 @@ struct GVEC_Svg_Document {
   double viewport_height;
   GVEC_Color_Scheme color_scheme;
   GVEC_Limits limits;             ///< The limits the document was loaded under, defaults applied (the style layer's bounds are among them).
+  /** The XML parser's tree, kept (and owned) when the document has animation: an animated document is built again from it (anim_doc.c). */
+  void * markup;
+  size_t markup_elements;         ///< The elements of the tree, as the build was told.
+  const char * const * languages; ///< The load's languages (copied into the arena), for a build again; NULL for {"en"}.
+  size_t language_count;
+  /** An animated document: the time it is at and what the style layer and the lowering apply (anim_doc.c); NULL for a document as written. */
+  struct gvec_anim_state * anim;
+  const struct GVEC_Svg_Document * base; ///< An animated document's document as written.
 };
+
+/** An attribute an animated document has in place of the markup's, or in addition to it. */
+typedef struct gvec_svg_override {
+  uint32_t element;   ///< The element's order in the document as written.
+  const char * name;  ///< The attribute's name as the document has it (`xlink:href`, `xml:lang`).
+  const char * value;
+  size_t length;
+} gvec_svg_override;
+
+/** What a build again from the markup changes (an animated document). */
+typedef struct gvec_svg_rebuild {
+  const gvec_svg_override * overrides; ///< Sorted by element.
+  size_t override_count;
+  const uint8_t * discarded;           ///< Per element of the document as written: 1 when it and its subtree are not built (`discard`); NULL for none.
+  const uint32_t * subtree;            ///< Per element of the document as written: its subtree size.
+  GVEC_Svg_Element ** from_base;       ///< Out, per element of the document as written: the element built for it, NULL when discarded.
+} gvec_svg_rebuild;
 
 /** What the build needs besides the markup tree. */
 typedef struct gvec_svg_build_options {
@@ -171,6 +196,7 @@ typedef struct gvec_svg_build_options {
   double viewport_width;          ///< 0 for the default.
   double viewport_height;
   GVEC_Color_Scheme color_scheme;
+  const gvec_svg_rebuild * rebuild; ///< NULL for a build of the markup as written.
 } gvec_svg_build_options;
 
 /** The document of a GVEC_Doc whose codec is SVG, or NULL. */
@@ -186,6 +212,20 @@ GVEC_INTERNAL_API const GVEC_Svg_Document * gvec_svg_document_of(const GVEC_Doc 
 GVEC_INTERNAL_API GVEC_Result gvec_svg_build(const void * markup_root, size_t element_count,
     const gvec_svg_build_options * options, const GVEC_Allocator * allocator, GVEC_Diagnostics * diagnostics,
     GVEC_Svg_Document ** out);
+
+/**
+ * Type one value of an attribute of an element of `kind` as the build types it (svg_build.c): grammar, presentation, class and the typed value.
+ * A presentation attribute (but `d`), `style` and an attribute with no grammar are RAW: not typed here.
+ */
+GVEC_INTERNAL_API gvec_svg_parse_status gvec_svg_type_value(gvec_svg_parse_context * parse, GVEC_Svg_Kind kind, const char * name, const char * raw,
+    size_t length, GVEC_Svg_Attribute * out, gvec_svg_parse_error * err);
+
+/** Keep the markup tree (owned from now on) and a copy of the languages in `document`, for a build again. */
+GVEC_INTERNAL_API GVEC_Result gvec_svg_keep_markup(GVEC_Svg_Document * document, void * tree, size_t elements, const char * const * languages,
+    size_t language_count);
+
+/** Free what an animated document's animation holds (anim_doc.c); NULL is ignored. */
+GVEC_INTERNAL_API void gvec_anim_state_free(struct gvec_anim_state * state, const GVEC_Allocator * allocator);
 
 /** Free a document built by gvec_svg_build(). */
 GVEC_INTERNAL_API void gvec_svg_document_free(GVEC_Svg_Document * document);

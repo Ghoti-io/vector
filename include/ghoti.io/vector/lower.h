@@ -240,7 +240,14 @@ enum {
    * it is `none` (SVG 2, 13.2.3, which says a gradient with no stops is as `none`, and uses the fallback only when the reference
    * cannot be resolved). The renderers disagree: the browsers paint nothing, `resvg` and Batik use the fallback.
    */
-  GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK = 1u << 3
+  GVEC_LOWER_GRADIENT_NO_STOPS_USES_FALLBACK = 1u << 3,
+  /**
+   * Draw the document as it is at `animation_time_ms` of document time, its SMIL animations and CSS Animations applied (SVG 2's animated
+   * modes, with no events and no script: design.md A1 to A12). Without it a lowering is static, as SVG 2's static modes require: no
+   * animation is applied, not even one that begins at 0. An SVG document an `image` draws is at the same time; one a `use` or a paint
+   * server of another document names is drawn static.
+   */
+  GVEC_LOWER_ANIMATED = 1u << 4
 };
 
 /** Options for a lowering. Zero-fill it, then set what you need. */
@@ -327,6 +334,8 @@ typedef struct GVEC_Lower_Options {
    * name one another can make: with the depth and the cycle check, a hostile set costs at most this many instantiations, not their product.
    */
   size_t max_resource_instances;
+  /** With GVEC_LOWER_ANIMATED: the document time, in milliseconds from the document's begin; finite and not negative (else GVEC_ERR_INVALID). */
+  double animation_time_ms;
   uint8_t _reserved[8];                  ///< Zero.
 } GVEC_Lower_Options;
 

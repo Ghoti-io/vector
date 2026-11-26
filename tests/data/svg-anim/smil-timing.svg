@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <!-- times: 0 100 250 500 750 1000 1250 2500 4250 -->
+  <!-- SMIL timing (design.md A3): begin and end lists, syncbases and the loop they make, repeats, freeze, restart, min and max. -->
+  <rect id="linear" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s"/></rect>
+  <rect id="delayed" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="0.25s" fill="freeze"/></rect>
+  <rect id="negative" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="-0.5s"/></rect>
+  <rect id="repeat" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="0.4s" repeatCount="2.5" fill="freeze"/></rect>
+  <rect id="repeatdur" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="0.5s" repeatDur="1.1s" fill="freeze"/></rect>
+  <rect id="ended" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="0;0.6s" end="0.3s;0.9s" fill="freeze"/></rect>
+  <rect id="restart" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="0;0.5s"/></rect>
+  <rect id="nevermore" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="0;0.5s" restart="never"/></rect>
+  <rect id="notactive" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="0;0.5s;1.2s" restart="whenNotActive"/></rect>
+  <rect id="minmax" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" min="2s" max="3s" fill="freeze"/></rect>
+  <rect id="capped" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" max="0.4s" fill="freeze"/></rect>
+  <rect id="loopa" width="10" height="10"><animate id="a" attributeName="opacity" from="0" to="1" dur="1s" begin="0;b.end"/></rect>
+  <rect id="loopb" width="10" height="10"><animate id="b" attributeName="opacity" from="1" to="0" dur="1s" begin="a.end"/></rect>
+  <rect id="synced" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="0.5s" begin="a.begin+0.25s" fill="freeze"/></rect>
+  <rect id="never" width="10" height="10"><set attributeName="opacity" to="0.5" begin="click"/></rect>
+  <rect id="nodur" width="10" height="10"><animate attributeName="opacity" values="0.2;0.5;0.8"/></rect>
+  <rect id="badbegin" width="10" height="10"><animate attributeName="opacity" from="0" to="1" dur="1s" begin="0.1s;not a value"/></rect>
+</svg>

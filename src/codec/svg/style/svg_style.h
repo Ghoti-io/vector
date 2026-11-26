@@ -73,6 +73,7 @@ typedef enum gvec_svg_once {
   GVEC_ONCE_COLOR,       ///< A colour it uses that the waist cannot carry.
   GVEC_ONCE_REFERENCE,   ///< A reference of a property it uses that names nothing.
   GVEC_ONCE_CYCLE,       ///< It is on a cycle through the references of properties.
+  GVEC_ONCE_ANIMATION,   ///< A value an animation of one of its properties gives is not a value of the property.
   GVEC_ONCE_COUNT
 } gvec_svg_once;
 
@@ -112,6 +113,16 @@ GVEC_INTERNAL_API GVEC_Result gvec_svg_engine_make_private(const GVEC_Allocator 
 /** gvec_svg_style_context_new() with @p hooks (NULL: none, the context shares the cached engine). */
 GVEC_INTERNAL_API GVEC_Result gvec_svg_style_context_new_with_fonts(const GVEC_Svg_Document * document, GVEC_Diagnostics * diagnostics,
     const GVEC_Allocator * allocator, const gvec_svg_font_hooks * hooks, GVEC_Svg_Style_Context ** out_context);
+
+/** Draw the context's document as it is at `time_ms` of document time (design A1): CSS Animations sampled there, and the animations of
+ *  properties of an animated document (anim_doc.c) applied. Call before any style is computed. */
+GVEC_INTERNAL_API void gvec_svg_style_set_time(GVEC_Svg_Style_Context * context, double time_ms);
+
+/** The options' animation for a style computation of the context, or NULL when the context is static (svg_anim_style.c). */
+GVEC_INTERNAL_API const GTEXT_CSS_Style_Animation * gvec_svg_style_animation(GVEC_Svg_Style_Context * context);
+
+/** Free what the animation of a context holds. */
+GVEC_INTERNAL_API void gvec_svg_style_animation_free(GVEC_Svg_Style_Context * context);
 
 /** The engine for an environment: from the cache when `allocator` is the default and one was made, else made now. */
 GVEC_INTERNAL_API GVEC_Result gvec_svg_engine_acquire(const GVEC_Allocator * allocator, double viewport_width, double viewport_height,
@@ -180,6 +191,13 @@ struct GVEC_Svg_Style_Context {
   size_t res_depth;                 ///< The depth of the document (0 for the one being lowered): an import is one deeper.
   GTEXT_CSS_Computed_Style ** styles; ///< Every style made, to free.
   size_t style_count, style_capacity;
+  /* A lowering at a time (design A1, A4, A9): the time of the CSS Animations, and the effects of the SMIL animations of properties. */
+  bool animated;
+  double animation_time_ms;
+  GTEXT_CSS_Style_Animation animation;  ///< Handed to every style computation while `animated`.
+  gvec_arena animation_scratch;          ///< What one call of the effects callback hands back (valid until the next).
+  GTEXT_CSS_Script_Effect * animation_effects;
+  size_t animation_effect_capacity;
 };
 
 /** The context that owns an instance: the document of its element is that context's, whatever context the caller holds (a clip, a mask, a filter or a paint server

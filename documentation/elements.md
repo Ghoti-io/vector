@@ -141,7 +141,7 @@ kept as written, never evaluated
 
 ### RAW_ANIM
 
-kept as written; animation is not applied
+kept as written in the typed document; read by a lowering at a time (design.md A1 to A12), which applies the animation
 
 | attribute | elements |
 | --- | --- |

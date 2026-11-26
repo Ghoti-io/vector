@@ -37,6 +37,7 @@
 #include <ghoti.io/shape-scene/glyph.h>
 
 #include "../../../codec/codec_internal.h"
+#include "../animate/anim_internal.h"
 #include "../style/svg_style.h"
 #include "lower_internal.h"
 
@@ -221,7 +222,8 @@ uint32_t gvec_lw_new_site(gvec_lw_ctx * ctx, const GVEC_Svg_Element * element, u
     ctx->site_capacity = capacity;
   }
   gvec_lw_site * site = &ctx->sites[ctx->site_count];
-  site->element = element;
+  /* A trace outlives the lowering, and with it the animated document: a site names the element as written. */
+  site->element = ctx->animated ? gvec_anim_written_element(ctx->document, element) : element;
   site->key = key;
   site->use_depth = ctx->use_depth;
   return (uint32_t) ctx->site_count++;
@@ -248,16 +250,32 @@ GVEC_Result gvec_lw_hold(gvec_lw_ctx * ctx, const GSHSCENE_Resource * resource) 
 
 GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_Store * store,
     GVEC_Diagnostics * diagnostics) {
-  return gvec_lw_begin_in(ctx, doc, options, store, diagnostics, NULL, options ? options->base_uri : NULL);
+  return gvec_lw_begin_in(ctx, doc, options, store, diagnostics, NULL, options ? options->base_uri : NULL, true);
 }
 
 GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options, GSHSCENE_Store * store,
-    GVEC_Diagnostics * diagnostics, gvec_lw_ctx * parent, const char * base) {
+    GVEC_Diagnostics * diagnostics, gvec_lw_ctx * parent, const char * base, bool animate) {
   memset(ctx, 0, sizeof *ctx);
   ctx->doc = doc;
   ctx->document = gvec_svg_document(doc);
   if (!ctx->document || !store) {
     return GVEC_ERR_INVALID;
+  }
+  const bool animated = animate && options && (options->flags & GVEC_LOWER_ANIMATED);
+  if (animated) {
+    double t = options->animation_time_ms;
+    if (!(t >= 0) || t - t != 0) {
+      return GVEC_ERR_INVALID;
+    }
+    /* The document at the time (design A1 to A12); past max_animation_intervals it is reported and drawn without its animation. */
+    GVEC_Result ar = gvec_svg_animate(ctx->document, t, diagnostics, &ctx->animated);
+    if (ar == GVEC_ERR_OOM) {
+      return ar;
+    }
+    if (ctx->animated) {
+      ctx->document = ctx->animated;
+    }
+    ctx->animation_live = ar == GVEC_OK;
   }
   ctx->allocator = doc->allocator;
   ctx->diagnostics = diagnostics;
@@ -314,6 +332,9 @@ GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC
     hooks.reuse = parent && parent->style ? parent->style->engine : NULL;
   }
   GVEC_Result r = gvec_svg_style_context_new_with_fonts(ctx->document, diagnostics, ctx->allocator, fonted ? &hooks : NULL, &ctx->style);
+  if (r == GVEC_OK && ctx->animation_live) {
+    gvec_svg_style_set_time(ctx->style, options->animation_time_ms);
+  }
   if (r == GVEC_OK) {
     ctx->style->res = ctx->res;
     ctx->style->base = ctx->base;
@@ -362,6 +383,8 @@ void gvec_lw_end(gvec_lw_ctx * ctx) {
   }
   gvec_free(ctx->allocator, ctx->tables);
   gvec_svg_style_context_free(ctx->style);
+  gvec_svg_document_free(ctx->animated);
+  ctx->animated = NULL;
   if (ctx->res == &ctx->res_own) {
     /* After every context that was made for what it loaded: their documents and urls are its entries'. */
     gvec_res_free(&ctx->res_own);
@@ -1108,7 +1131,7 @@ GVEC_Result gvec_lw_svg_image_node(gvec_lw_ctx * ctx, const GVEC_Svg_Element * e
     ctx->nested = fresh;
     ctx->nested_capacity = capacity;
   }
-  r = gvec_lw_begin_in(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics, ctx, image->uri);
+  r = gvec_lw_begin_in(nested, image->svg, ctx->options, ctx->store, ctx->diagnostics, ctx, image->uri, true);
   if (r != GVEC_OK) {
     gvec_free(ctx->allocator, nested);
     return r;

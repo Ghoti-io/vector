@@ -314,7 +314,9 @@ typedef struct GVEC_Svg_Transform {
   double origin_fraction[2];   ///< Its percentage part as a fraction (50% is 0.5) of the reference box; zero once resolved against the viewport.
   GVEC_Svg_Transform_Box box;  ///< `transform-box`.
   bool depends_on_box;         ///< Some percentage is of a bounding box: use gvec_svg_transform_resolve().
-  GSHGEOM_Map map;             ///< `translate(origin) * ops * translate(-origin)` when `depends_on_box` is false; the identity otherwise.
+  GSHGEOM_Map map;             ///< `motion * translate(origin) * ops * translate(-origin)` when `depends_on_box` is false; the identity otherwise.
+  bool has_motion;             ///< A lowering at a time: an `animateMotion` moves the element, outside its transform (design.md A7).
+  double motion[6];            ///< That motion, `a b c d e f` as SVG writes a matrix.
 } GVEC_Svg_Transform;
 
 /**

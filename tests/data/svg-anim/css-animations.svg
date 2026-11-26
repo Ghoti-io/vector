@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="root">
+  <!-- times: 0 100 250 500 900 1500 2600 -->
+  <!-- CSS Animations at the document time (design.md A9): delays, counts, directions, fill modes, easing, paused, two at once. -->
+  <style>
+    @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes paint { 0% { fill: rgb(0, 0, 0) } 50% { fill: rgb(200, 0, 0) } 100% { fill: rgb(200, 200, 0) } }
+    @keyframes grow { to { stroke-width: 10 } }
+    #plain { animation: fade 1s linear }
+    #delay { animation: fade 1s linear 250ms }
+    #negative { animation: fade 2s linear -1s }
+    #backwards { animation: fade 1s linear 500ms backwards }
+    #forwards { animation: fade 1s linear forwards }
+    #alternate { animation: fade 1s linear 3 alternate }
+    #steps { animation: fade 1s steps(4) }
+    #ease { animation: fade 1s ease-in-out }
+    #paused { animation: fade 1s linear paused }
+    #two { animation: fade 1s linear, paint 2s linear }
+    #partial { stroke-width: 2; animation: grow 1s linear }
+    #middle { animation: paint 2s linear infinite }
+  </style>
+  <rect id="plain" width="10" height="10"/>
+  <rect id="delay" width="10" height="10"/>
+  <rect id="negative" width="10" height="10"/>
+  <rect id="backwards" width="10" height="10"/>
+  <rect id="forwards" width="10" height="10"/>
+  <rect id="alternate" width="10" height="10"/>
+  <rect id="steps" width="10" height="10"/>
+  <rect id="ease" width="10" height="10"/>
+  <rect id="paused" width="10" height="10"/>
+  <rect id="two" width="10" height="10"/>
+  <rect id="partial" width="10" height="10"/>
+  <rect id="middle" width="10" height="10"/>
+</svg>

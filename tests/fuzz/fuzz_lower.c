@@ -218,6 +218,8 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
   GVEC_Limits document_limits;
   memset(&document_limits, 0, sizeof document_limits);
   document_limits.max_reference_expansion = 3000;
+  /* A ring of short intervals is bounded the same way: a fraction of the default, so that the limit is reached and the refusal walked. */
+  document_limits.max_animation_intervals = 20000;
   GVEC_Load_Options load;
   memset(&load, 0, sizeof load);
   load.limits = &document_limits;
@@ -260,6 +262,11 @@ int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size) {
     options.flags = GVEC_LOWER_SET_FOREGROUND;
     gshscene_color_init(&options.foreground);
     options.foreground.rgba[0] = 0.25;
+  }
+  if (flags & 8) {
+    /* A lowering at a time (design A1): the high bits of the flags give one of sixteen times a quarter of a second apart. */
+    options.flags |= GVEC_LOWER_ANIMATED;
+    options.animation_time_ms = (double) (flags >> 4) * 250;
   }
   options.fonts = fuzz_fonts();
   /* The images of the fixtures are the only files an input may name: the root is their directory (the run's directory is the library's). */

@@ -44,6 +44,7 @@ typedef struct build_ctx {
   GVEC_Diagnostics * diag;
   gvec_svg_parse_context parse;
   uint32_t next_order;
+  uint32_t base_next;    ///< The order the next element has in the document as written (a build again).
   GVEC_Result error;
   const char * noted[MAX_NAMES_NOTED];
   size_t noted_count;
@@ -130,7 +131,7 @@ static const char * const * keywords_for(GVEC_Svg_Grammar g, size_t * count) {
 }
 
 /** Parse a TYPED attribute by its grammar into `a`; returns the parse status. */
-static gvec_svg_parse_status parse_typed(build_ctx * ctx, GVEC_Svg_Kind kind, GVEC_Svg_Attribute * a,
+static gvec_svg_parse_status parse_typed(gvec_svg_parse_context * parse, GVEC_Svg_Kind kind, GVEC_Svg_Attribute * a,
     GVEC_Svg_Grammar g, gvec_svg_parse_error * err) {
   const char * s = a->raw;
   size_t n = a->raw_length;
@@ -175,13 +176,13 @@ static gvec_svg_parse_status parse_typed(build_ctx * ctx, GVEC_Svg_Kind kind, GV
     a->value_kind = GVEC_SVG_VALUE_INTEGER;
     return gvec_svg_parse_integer(s, n, &v->integer, err);
   case GVEC_SVG_GRAMMAR_HREF: {
-    gvec_svg_parse_status st = gvec_svg_parse_reference(s, n, &ctx->parse, &v->reference, err);
+    gvec_svg_parse_status st = gvec_svg_parse_reference(s, n, parse, &v->reference, err);
     a->value_kind = GVEC_SVG_VALUE_REFERENCE;
     return st;
   }
   case GVEC_SVG_GRAMMAR_SYSTEM_LANGUAGE:
     a->value_kind = GVEC_SVG_VALUE_LANGUAGES;
-    return gvec_svg_parse_language_list(s, n, &ctx->parse, (const char ***) &v->languages.tags, &v->languages.count, err);
+    return gvec_svg_parse_language_list(s, n, parse, (const char ***) &v->languages.tags, &v->languages.count, err);
   case GVEC_SVG_GRAMMAR_REQUIRED_EXTENSIONS:
     a->value_kind = GVEC_SVG_VALUE_EXTENSIONS;
     return gvec_svg_parse_extension_list(s, n, &v->count);
@@ -206,16 +207,16 @@ static gvec_svg_parse_status parse_typed(build_ctx * ctx, GVEC_Svg_Kind kind, GV
     return gvec_svg_parse_length(s, n, &v->length, err);
   case GVEC_SVG_GRAMMAR_COORD_LIST:
     a->value_kind = GVEC_SVG_VALUE_LENGTH_LIST;
-    return gvec_svg_parse_length_list(s, n, &ctx->parse, &v->lengths, err);
+    return gvec_svg_parse_length_list(s, n, parse, &v->lengths, err);
   case GVEC_SVG_GRAMMAR_NUMBER_LIST:
     a->value_kind = GVEC_SVG_VALUE_NUMBER_LIST;
-    return gvec_svg_parse_number_list(s, n, &ctx->parse, &v->numbers, err);
+    return gvec_svg_parse_number_list(s, n, parse, &v->numbers, err);
   case GVEC_SVG_GRAMMAR_POINTS:
     a->value_kind = GVEC_SVG_VALUE_POINTS;
-    return gvec_svg_parse_points(s, n, &ctx->parse, &v->numbers, err);
+    return gvec_svg_parse_points(s, n, parse, &v->numbers, err);
   case GVEC_SVG_GRAMMAR_PATH_DATA:
     a->value_kind = GVEC_SVG_VALUE_PATH;
-    return gvec_svg_parse_path(s, n, &ctx->parse, &v->path, err);
+    return gvec_svg_parse_path(s, n, parse, &v->path, err);
   case GVEC_SVG_GRAMMAR_ORIENT:
     a->value_kind = GVEC_SVG_VALUE_ORIENT;
     return gvec_svg_parse_orient(s, n, &v->orient, err);
@@ -230,6 +231,32 @@ static gvec_svg_parse_status parse_typed(build_ctx * ctx, GVEC_Svg_Kind kind, GV
     err->reason = "no grammar";
     return GVEC_SVG_PARSE_INVALID;
   }
+}
+
+gvec_svg_parse_status gvec_svg_type_value(gvec_svg_parse_context * parse, GVEC_Svg_Kind kind, const char * name, const char * raw,
+    size_t length, GVEC_Svg_Attribute * out, gvec_svg_parse_error * err) {
+  memset(out, 0, sizeof *out);
+  out->name = name;
+  out->raw = raw;
+  out->raw_length = length;
+  size_t nl = strlen(name);
+  GVEC_Svg_Grammar g = gvec_svg_grammar_for(kind, name, nl);
+  bool presentation = gvec_svg_is_presentation(kind, name, nl);
+  out->presentation = presentation;
+  if (presentation && strcmp(name, "d") == 0) {
+    g = GVEC_SVG_GRAMMAR_PATH_DATA;
+  }
+  out->grammar = (uint8_t) g;
+  err->offset = 0;
+  err->reason = NULL;
+  if (g == GVEC_SVG_GRAMMAR_NONE || g == GVEC_SVG_GRAMMAR_EVENT || g == GVEC_SVG_GRAMMAR_TRANSFORM || g == GVEC_SVG_GRAMMAR_RAW_ARIA ||
+      g == GVEC_SVG_GRAMMAR_RAW_ANIM || g == GVEC_SVG_GRAMMAR_RAW_FILTER || (presentation && strcmp(name, "d") != 0) || strcmp(name, "style") == 0) {
+    out->cls = GVEC_SVG_ATTR_RAW;
+    return GVEC_SVG_PARSE_OK;
+  }
+  gvec_svg_parse_status st = parse_typed(parse, kind, out, g, err);
+  out->cls = st == GVEC_SVG_PARSE_INVALID ? GVEC_SVG_ATTR_INVALID : GVEC_SVG_ATTR_TYPED;
+  return st;
 }
 
 /** Fill `a` from the markup attribute; classify, parse, diagnose. */
@@ -332,7 +359,7 @@ static void build_attribute(build_ctx * ctx, GVEC_Svg_Element * e, const GTEXT_M
     return;
   }
   gvec_svg_parse_error err = {0, NULL};
-  gvec_svg_parse_status st = parse_typed(ctx, e->kind, a, g, &err);
+  gvec_svg_parse_status st = parse_typed(&ctx->parse, e->kind, a, g, &err);
   switch (st) {
   case GVEC_SVG_PARSE_OK:
     a->cls = GVEC_SVG_ATTR_TYPED;
@@ -359,6 +386,18 @@ static void build_attribute(build_ctx * ctx, GVEC_Svg_Element * e, const GTEXT_M
         err.reason ? err.reason : "the attribute is invalid");
     break;
   }
+}
+
+/* Whether an override names the markup attribute: by the name the document gives it. */
+static bool override_names(const gvec_svg_override * o, const GTEXT_Markup_Attribute * view) {
+  const char * n = o->name;
+  if (view->ns && strcmp(view->ns, GVEC_XLINK_NS) == 0) {
+    return strncmp(n, "xlink:", 6) == 0 && strcmp(n + 6, view->local) == 0;
+  }
+  if (view->ns && strcmp(view->ns, GVEC_XML_NS) == 0) {
+    return strncmp(n, "xml:", 4) == 0 && strcmp(n + 4, view->local) == 0;
+  }
+  return !view->ns && strcmp(n, view->local) == 0;
 }
 
 static void append_node(GVEC_Svg_Element * parent, GVEC_Svg_Node * node) {
@@ -441,6 +480,13 @@ static void build_children(build_ctx * ctx, const GTEXT_Markup_Node * mnode, GVE
 static GVEC_Svg_Element * build_element(build_ctx * ctx, const GTEXT_Markup_Node * mnode, GVEC_Svg_Element * parent,
     uint32_t ordinal) {
   gvec_arena * arena = &ctx->doc->arena;
+  const gvec_svg_rebuild * rebuild = ctx->options->rebuild;
+  uint32_t base = ctx->base_next++;
+  if (rebuild && rebuild->discarded && rebuild->discarded[base]) {
+    /* Discarded with its subtree: the orders of the document as written move past them, the ordinal of its kind stays used. */
+    ctx->base_next += rebuild->subtree[base] - 1;
+    return NULL;
+  }
   GVEC_Svg_Element * e = gvec_arena_alloc(arena, sizeof *e, 8);
   if (!e) {
     ctx->error = GVEC_ERR_OOM;
@@ -480,7 +526,7 @@ static GVEC_Svg_Element * build_element(build_ctx * ctx, const GTEXT_Markup_Node
     ctx->animation_noted = true;
     ctx->doc->has_animation = true;
     note(ctx, GVEC_DIAG_NOTICE, GVEC_DIAG_ANIMATION_NOT_APPLIED, 0, where.line, where.column, where.offset, e->name,
-        "animation is kept and not applied; a still render draws the initial values");
+        "animation is applied only by a lowering at a time (GVEC_LOWER_ANIMATED); a static lowering draws the values as written");
   }
   if (e->kind == GVEC_SVG_KIND_SCRIPT && !ctx->script_noted) {
     ctx->script_noted = true;
@@ -491,8 +537,38 @@ static GVEC_Svg_Element * build_element(build_ctx * ctx, const GTEXT_Markup_Node
   /* Attributes. */
   size_t total = gtext_markup_element_attribute_count(mnode);
   size_t kept = 0;
-  GVEC_Svg_Attribute * attributes = total ? gvec_arena_array(arena, total, sizeof(GVEC_Svg_Attribute), 8) : NULL;
-  if (total && !attributes) {
+  /* A build again: the overrides of this element (the ones the markup has replace its value; the others are added). */
+  const gvec_svg_override * ov = NULL;
+  size_t ov_count = 0;
+  if (rebuild) {
+    size_t lo = 0, hi = rebuild->override_count;
+    while (lo < hi) {
+      size_t mid = lo + (hi - lo) / 2;
+      if (rebuild->overrides[mid].element < base) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    ov = rebuild->overrides + lo;
+    while (lo + ov_count < rebuild->override_count && ov[ov_count].element == base) {
+      ov_count++;
+    }
+    if (rebuild->from_base) {
+      rebuild->from_base[base] = e;
+    }
+  }
+  bool * ov_used = ov_count ? gvec_arena_array(arena, ov_count, sizeof *ov_used, 1) : NULL;
+  if (ov_count && !ov_used) {
+    ctx->error = GVEC_ERR_OOM;
+    return NULL;
+  }
+  if (ov_used) {
+    memset(ov_used, 0, ov_count * sizeof *ov_used);
+  }
+  size_t capacity = total + ov_count;
+  GVEC_Svg_Attribute * attributes = capacity ? gvec_arena_array(arena, capacity, sizeof(GVEC_Svg_Attribute), 8) : NULL;
+  if (capacity && !attributes) {
     ctx->error = GVEC_ERR_OOM;
     return NULL;
   }
@@ -507,6 +583,14 @@ static GVEC_Svg_Element * build_element(build_ctx * ctx, const GTEXT_Markup_Node
     GTEXT_Markup_Location at;
     memset(&at, 0, sizeof at);
     bool have = gtext_markup_element_attribute_location(mnode, i, &at);
+    for (size_t k = 0; k < ov_count; k++) {
+      if (!ov_used[k] && override_names(&ov[k], &view)) {
+        ov_used[k] = true;
+        view.value = ov[k].value;
+        view.value_length = ov[k].length;
+        break;
+      }
+    }
     GVEC_Svg_Attribute * a = &attributes[kept];
     memset(a, 0, sizeof *a);
     build_attribute(ctx, e, &view, have ? &at : NULL, a);
@@ -514,6 +598,34 @@ static GVEC_Svg_Element * build_element(build_ctx * ctx, const GTEXT_Markup_Node
     if (a->cls == GVEC_SVG_ATTR_TYPED && a->grammar == GVEC_SVG_GRAMMAR_ID && !e->id) {
       e->id = a->raw;
     }
+    if (a->cls == GVEC_SVG_ATTR_TYPED && a->grammar == GVEC_SVG_GRAMMAR_HREF && a->value.reference.kind != GVEC_SVG_REF_EMPTY) {
+      if (strcmp(a->name, "href") == 0 || !e->href) {
+        e->href = a;
+      }
+    }
+  }
+  for (size_t k = 0; k < ov_count && !ctx->error; k++) {
+    if (ov_used[k]) {
+      continue;
+    }
+    GTEXT_Markup_Attribute view;
+    memset(&view, 0, sizeof view);
+    const char * name = ov[k].name;
+    if (strncmp(name, "xlink:", 6) == 0) {
+      view.ns = GVEC_XLINK_NS;
+      view.local = name + 6;
+    } else if (strncmp(name, "xml:", 4) == 0) {
+      view.ns = GVEC_XML_NS;
+      view.local = name + 4;
+    } else {
+      view.local = name;
+    }
+    view.value = ov[k].value;
+    view.value_length = ov[k].length;
+    GVEC_Svg_Attribute * a = &attributes[kept];
+    memset(a, 0, sizeof *a);
+    build_attribute(ctx, e, &view, NULL, a);
+    kept++;
     if (a->cls == GVEC_SVG_ATTR_TYPED && a->grammar == GVEC_SVG_GRAMMAR_HREF && a->value.reference.kind != GVEC_SVG_REF_EMPTY) {
       if (strcmp(a->name, "href") == 0 || !e->href) {
         e->href = a;
@@ -670,11 +782,36 @@ GVEC_Result gvec_svg_build(const void * markup_root, size_t element_count, const
   return GVEC_OK;
 }
 
+GVEC_Result gvec_svg_keep_markup(GVEC_Svg_Document * document, void * tree, size_t elements, const char * const * languages,
+    size_t language_count) {
+  if (languages && language_count) {
+    const char ** copy = gvec_arena_array(&document->arena, language_count, sizeof *copy, 8);
+    if (!copy) {
+      return GVEC_ERR_OOM;
+    }
+    for (size_t i = 0; i < language_count; i++) {
+      copy[i] = gvec_arena_strndup(&document->arena, languages[i], strlen(languages[i]));
+      if (!copy[i]) {
+        return GVEC_ERR_OOM;
+      }
+    }
+    document->languages = copy;
+    document->language_count = language_count;
+  }
+  document->markup = tree;
+  document->markup_elements = elements;
+  return GVEC_OK;
+}
+
 void gvec_svg_document_free(GVEC_Svg_Document * document) {
   if (!document) {
     return;
   }
   const GVEC_Allocator * allocator = document->allocator;
+  if (document->markup) {
+    gtext_markup_document_free((GTEXT_Markup_Document *) document->markup);
+  }
+  gvec_anim_state_free(document->anim, allocator);
   gvec_arena_destroy(&document->arena);
   gvec_free(allocator, document);
 }

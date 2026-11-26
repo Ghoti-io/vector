@@ -159,6 +159,8 @@ typedef struct gvec_lw_caps {
 typedef struct gvec_lw_ctx {
   const GVEC_Doc * doc;
   const GVEC_Svg_Document * document;
+  bool animation_live;                ///< The animation is applied (not refused past max_animation_intervals).
+  GVEC_Svg_Document * animated;       ///< The document at the time of a lowering with GVEC_LOWER_ANIMATED (owned; `document` is it), or NULL.
   const GVEC_Allocator * allocator;
   GVEC_Diagnostics * diagnostics;
   const GVEC_Lower_Options * options;
@@ -249,7 +251,7 @@ GVEC_INTERNAL_API GVEC_Result gvec_lw_begin(gvec_lw_ctx * ctx, const GVEC_Doc * 
  * resolver's state is `parent`'s, `base` is the url the document was loaded from, and the document is one level deeper.
  */
 GVEC_INTERNAL_API GVEC_Result gvec_lw_begin_in(gvec_lw_ctx * ctx, const GVEC_Doc * doc, const GVEC_Lower_Options * options,
-    GSHSCENE_Store * store, GVEC_Diagnostics * diagnostics, gvec_lw_ctx * parent, const char * base);
+    GSHSCENE_Store * store, GVEC_Diagnostics * diagnostics, gvec_lw_ctx * parent, const char * base, bool animate);
 
 /** Free the context: the tree, the sites, the held resources and the style context. */
 GVEC_INTERNAL_API void gvec_lw_end(gvec_lw_ctx * ctx);
